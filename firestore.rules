@@ -1,0 +1,94 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function memberDocId(teamId) {
+      return teamId + '_' + request.auth.uid;
+    }
+
+    function isTeamMember(teamId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/teamMembers/$(memberDocId(teamId)));
+    }
+
+    function isCoach(teamId) {
+      return isTeamMember(teamId)
+        && get(/databases/$(database)/documents/teamMembers/$(memberDocId(teamId))).data.role == 'coach';
+    }
+
+    match /users/{uid} {
+      allow read: if isSelf(uid);
+      allow create: if isSelf(uid)
+        && request.resource.data.uid == uid
+        && request.resource.data.keys().hasAll(['uid', 'email', 'displayName', 'activeTeamId', 'createdAt', 'updatedAt']);
+      allow update: if isSelf(uid);
+      allow delete: if false;
+    }
+
+    match /teams/{teamId} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.keys().hasAll(['name', 'inviteCode', 'createdBy', 'createdAt', 'updatedAt']);
+      allow update: if isCoach(teamId);
+      allow delete: if false;
+    }
+
+    match /inviteCodes/{code} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.keys().hasAll(['code', 'teamId', 'createdBy', 'createdAt']);
+      allow update, delete: if signedIn()
+        && resource.data.createdBy == request.auth.uid;
+    }
+
+    match /teamMembers/{memberId} {
+      allow get: if signedIn()
+        && (resource.data.userId == request.auth.uid
+            || isTeamMember(resource.data.teamId));
+      allow list: if signedIn()
+        && (resource.data.userId == request.auth.uid
+            || isTeamMember(resource.data.teamId));
+
+      allow create: if signedIn()
+        && request.resource.data.userId == request.auth.uid
+        && memberId == request.resource.data.teamId + '_' + request.auth.uid
+        && request.resource.data.role in ['coach', 'player']
+        && (
+          request.resource.data.role == 'coach'
+          || (
+            exists(/databases/$(database)/documents/inviteCodes/$(
+              get(/databases/$(database)/documents/teams/$(request.resource.data.teamId)).data.inviteCode
+            ))
+            && get(/databases/$(database)/documents/inviteCodes/$(
+              get(/databases/$(database)/documents/teams/$(request.resource.data.teamId)).data.inviteCode
+            )).data.teamId == request.resource.data.teamId
+          )
+        );
+
+      allow update: if isCoach(resource.data.teamId);
+      allow delete: if isSelf(resource.data.userId) || isCoach(resource.data.teamId);
+    }
+
+    match /events/{eventId} {
+      allow get: if isTeamMember(resource.data.teamId)
+        && resource.data.deletedAt == null;
+      allow list: if isTeamMember(resource.data.teamId)
+        && resource.data.deletedAt == null;
+      allow create: if isCoach(request.resource.data.teamId)
+        && request.resource.data.createdBy == request.auth.uid;
+      allow update: if isCoach(resource.data.teamId);
+      allow delete: if false;
+    }
+  }
+}
