@@ -53,6 +53,7 @@ import TeamScreen from './src/screens/TeamScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import EventDetailScreen from './src/screens/EventDetailScreen';
 import CreateEditEventScreen from './src/screens/CreateEditEventScreen';
+import AdminScreen from './src/screens/AdminScreen';
 
 import {
   subscribeToAuthChanges,
@@ -68,13 +69,18 @@ import {
 } from './src/firebase/teams';
 
 import {
-  Team,
-  TeamMember,
-} from './src/types/models';
+  isSuperAdminRole,
+} from './src/lib/roles';
 
 import {
   captureInviteCodeFromUrl,
 } from './src/lib/deepLink';
+
+import {
+  AppRole,
+  Team,
+  TeamMember,
+} from './src/types/models';
 
 import {
   colors,
@@ -90,6 +96,7 @@ export type AuthStackParamList = {
 export type OnboardingStackParamList = {
   CreateTeam: undefined;
   JoinTeam: { code?: string } | undefined;
+  AdminHome: undefined;
 };
 
 export type RootStackParamList = {
@@ -101,6 +108,7 @@ export type RootStackParamList = {
 export type MainTabParamList = {
   Schedule: undefined;
   Team: undefined;
+  Admin: undefined;
   Profile: undefined;
 };
 
@@ -126,16 +134,26 @@ function OnboardingNavigator({
   user,
   displayName,
   pendingInviteCode,
+  appRole,
   onJoined,
 }: {
   user: User;
   displayName: string;
   pendingInviteCode: string | null;
+  appRole: AppRole;
   onJoined: () => void;
 }) {
+  const isSuperAdmin = isSuperAdminRole(appRole);
+
   return (
     <OnboardingStack.Navigator
-      initialRouteName={pendingInviteCode ? 'JoinTeam' : 'CreateTeam'}
+      initialRouteName={
+        pendingInviteCode
+          ? 'JoinTeam'
+          : isSuperAdmin
+            ? 'AdminHome'
+            : 'CreateTeam'
+      }
       screenOptions={{ headerShown: false }}
     >
       <OnboardingStack.Screen name="CreateTeam">
@@ -159,6 +177,18 @@ function OnboardingNavigator({
           />
         )}
       </OnboardingStack.Screen>
+      {isSuperAdmin ? (
+        <OnboardingStack.Screen name="AdminHome">
+          {({ navigation }) => (
+            <AdminScreen
+              user={user}
+              activeTeamId={null}
+              onTeamSelected={onJoined}
+              onGoToOnboarding={() => navigation.navigate('CreateTeam')}
+            />
+          )}
+        </OnboardingStack.Screen>
+      ) : null}
     </OnboardingStack.Navigator>
   );
 }
@@ -167,11 +197,17 @@ function MainTabs({
   user,
   team,
   membership,
+  appRole,
+  onTeamSelected,
 }: {
   user: User;
   team: Team;
   membership: TeamMember;
+  appRole: AppRole;
+  onTeamSelected: () => void;
 }) {
+  const isSuperAdmin = isSuperAdminRole(appRole);
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -188,8 +224,10 @@ function MainTabs({
               ? 'calendar'
               : route.name === 'Team'
                 ? 'people'
-                : 'person';
-          return <Ionicons name={iconName} size={size} color={color} />;
+                : route.name === 'Admin'
+                  ? 'shield-checkmark'
+                  : 'person';
+          return <Ionicons name={iconName as never} size={size} color={color} />;
         },
       })}
     >
@@ -198,21 +236,38 @@ function MainTabs({
           <ScheduleScreen
             teamId={team.id}
             membership={membership}
+            appRole={appRole}
             navigation={navigation as never}
           />
         )}
       </Tab.Screen>
       <Tab.Screen name="Team">
         {() => (
-          <TeamScreen teamId={team.id} membership={membership} />
+          <TeamScreen
+            teamId={team.id}
+            membership={membership}
+            appRole={appRole}
+          />
         )}
       </Tab.Screen>
+      {isSuperAdmin ? (
+        <Tab.Screen name="Admin">
+          {() => (
+            <AdminScreen
+              user={user}
+              activeTeamId={team.id}
+              onTeamSelected={onTeamSelected}
+            />
+          )}
+        </Tab.Screen>
+      ) : null}
       <Tab.Screen name="Profile">
         {() => (
           <ProfileScreen
             user={user}
             team={team}
             membership={membership}
+            appRole={appRole}
           />
         )}
       </Tab.Screen>
@@ -224,10 +279,14 @@ function AppNavigator({
   user,
   team,
   membership,
+  appRole,
+  onTeamSelected,
 }: {
   user: User;
   team: Team;
   membership: TeamMember;
+  appRole: AppRole;
+  onTeamSelected: () => void;
 }) {
   return (
     <RootStack.Navigator>
@@ -236,7 +295,13 @@ function AppNavigator({
         options={{ headerShown: false }}
       >
         {() => (
-          <MainTabs user={user} team={team} membership={membership} />
+          <MainTabs
+            user={user}
+            team={team}
+            membership={membership}
+            appRole={appRole}
+            onTeamSelected={onTeamSelected}
+          />
         )}
       </RootStack.Screen>
       <RootStack.Screen
@@ -246,6 +311,7 @@ function AppNavigator({
         {({ navigation, route }) => (
           <EventDetailScreen
             membership={membership}
+            appRole={appRole}
             navigation={navigation}
             route={route}
           />
@@ -282,6 +348,7 @@ export default function App() {
   const [team, setTeam] = useState<Team | null>(null);
   const [membership, setMembership] = useState<TeamMember | null>(null);
   const [displayName, setDisplayName] = useState('');
+  const [appRole, setAppRole] = useState<AppRole>('user');
   const [pendingInviteCode, setPendingInviteCode] = useState<string | null>(
     null,
   );
@@ -294,6 +361,7 @@ export default function App() {
       if (!nextUser) {
         setTeam(null);
         setMembership(null);
+        setAppRole('user');
         setTeamReady(true);
       } else {
         setTeamReady(false);
@@ -320,6 +388,7 @@ export default function App() {
     if (!user) {
       setTeam(null);
       setMembership(null);
+      setAppRole('user');
       setTeamReady(true);
       return;
     }
@@ -332,10 +401,15 @@ export default function App() {
         user.displayName ?? user.email?.split('@')[0] ?? 'Player',
       );
       setDisplayName(profile.displayName || user.displayName || '');
+      setAppRole(profile.appRole);
 
       const resolved = await resolveActiveMembership(
         user.uid,
         profile.activeTeamId,
+        {
+          isSuperAdmin: isSuperAdminRole(profile.appRole),
+          displayName: profile.displayName,
+        },
       );
       setTeam(resolved?.team ?? null);
       setMembership(resolved?.membership ?? null);
@@ -344,6 +418,7 @@ export default function App() {
       setDisplayName(
         fallback?.displayName || user.displayName || '',
       );
+      setAppRole(fallback?.appRole ?? 'user');
       setTeam(null);
       setMembership(null);
     } finally {
@@ -373,6 +448,7 @@ export default function App() {
             user={user}
             displayName={displayName}
             pendingInviteCode={pendingInviteCode}
+            appRole={appRole}
             onJoined={() => setTeamVersion((v) => v + 1)}
           />
         ) : (
@@ -380,6 +456,8 @@ export default function App() {
             user={user}
             team={team}
             membership={membership}
+            appRole={appRole}
+            onTeamSelected={() => setTeamVersion((v) => v + 1)}
           />
         )}
       </NavigationContainer>

@@ -46,6 +46,7 @@ import {
   regenerateInviteCode,
   resolveActiveMembership,
   updateTeamName,
+  listAllTeams,
 } from '../teams';
 
 describe('firebase/teams', () => {
@@ -370,7 +371,7 @@ describe('firebase/teams', () => {
     });
     await expect(
       regenerateInviteCode({ teamId: 't1', userId: 'u2' }),
-    ).rejects.toThrow('Only coaches can regenerate invite codes');
+    ).rejects.toThrow('Only coaches or super admins can regenerate invite codes');
 
     mockGetDoc
       .mockResolvedValueOnce({
@@ -459,4 +460,90 @@ describe('firebase/teams', () => {
     });
     mockGetDoc.mockResolvedValue({ exists: () => false });
     await expect(resolveActiveMembership('u1', 't1')).resolves.toBeNull();
+  });
+
+
+  it('allows super admin to regenerate without coach membership', async () => {
+    mockGetDoc
+      .mockResolvedValueOnce({ exists: () => false })
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({
+          name: 'Tigers',
+          inviteCode: 'OLDCODE1',
+          createdBy: 'u9',
+          sport: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }),
+      })
+      .mockResolvedValue({ exists: () => false });
+
+    const batch = {
+      delete: jest.fn(),
+      set: jest.fn(),
+      update: jest.fn(),
+      commit: jest.fn().mockResolvedValue(undefined),
+    };
+    mockWriteBatch.mockReturnValue(batch);
+
+    const result = await regenerateInviteCode({
+      teamId: 't1',
+      userId: 'super1',
+      isSuperAdmin: true,
+    });
+    expect(result.inviteCode).toHaveLength(8);
+  });
+
+  it('lists all teams for super admin', async () => {
+    mockGetDocs.mockResolvedValue({
+      docs: [
+        {
+          id: 't2',
+          data: () => ({
+            name: 'Wolves',
+            inviteCode: 'WOLF1234',
+            createdBy: 'c1',
+            sport: null,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          }),
+        },
+        {
+          id: 't1',
+          data: () => ({
+            name: 'Tigers',
+            inviteCode: 'ABCD2345',
+            createdBy: 'c1',
+            sport: 'soccer',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          }),
+        },
+      ],
+    });
+    const teams = await listAllTeams();
+    expect(teams.map((x) => x.name)).toEqual(['Tigers', 'Wolves']);
+  });
+
+  it('resolves preferred team for super admin without membership', async () => {
+    mockGetDocs.mockResolvedValue({ docs: [] });
+    mockGetDoc.mockResolvedValue({
+      id: 't1',
+      exists: () => true,
+      data: () => ({
+        name: 'Tigers',
+        inviteCode: 'ABCD2345',
+        createdBy: 'c1',
+        sport: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    });
+    const resolved = await resolveActiveMembership('super1', 't1', {
+      isSuperAdmin: true,
+      displayName: 'Orkun',
+    });
+    expect(resolved?.membership.id).toBe('super_t1_super1');
+    expect(resolved?.membership.role).toBe('coach');
   });

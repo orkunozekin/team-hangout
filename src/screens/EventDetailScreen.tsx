@@ -41,6 +41,11 @@ import {
 } from '../lib/eventForm';
 
 import {
+  canManageTeam,
+} from '../lib/roles';
+
+import {
+  AppRole,
   TeamEvent,
   TeamMember,
 } from '../types/models';
@@ -59,18 +64,20 @@ type RootStackParamList = {
 
 type Props = {
   membership: TeamMember;
+  appRole?: AppRole;
   navigation: NativeStackNavigationProp<RootStackParamList, 'EventDetail'>;
   route: RouteProp<RootStackParamList, 'EventDetail'>;
 };
 
 export default function EventDetailScreen({
   membership,
+  appRole,
   navigation,
   route,
 }: Props) {
   const [event, setEvent] = useState<TeamEvent | null>(null);
   const [loading, setLoading] = useState(true);
-  const isCoach = membership.role === 'coach';
+  const canManage = canManageTeam({ membership, appRole });
 
   const load = useCallback(async () => {
     const data = await getEvent(route.params.eventId);
@@ -166,7 +173,7 @@ export default function EventDetailScreen({
           <Text style={styles.notes}>{event.notes}</Text>
         ) : null}
 
-        {isCoach ? (
+        {canManage ? (
           <>
             <PrimaryButton
               label="Edit event"

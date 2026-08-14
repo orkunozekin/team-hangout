@@ -9,7 +9,7 @@ Decisions made while you were away. Change anything you disagree with.
 | White-label model | One multi-tenant app; coaches create teams inside it (not per-team app binaries) |
 | Backend for MVP | Firestore client + security rules only — no Next.js API |
 | Auth | Email/password only; Firebase `sendPasswordResetEmail` |
-| Roles | `coach` (creator) and `player` |
+| Roles | Team: `coach` / `player`. Platform: `appRole` `user` / `superAdmin` for app owners |
 | Invites | 8-char alphanumeric codes via `inviteCodes/{code}` lookup docs + deep link `teamhangout://join?code=XXXXXXXX` |
 | Events | `practice` \| `match`; coach CRUD; players read |
 | Filters | All / Practice / Match; sort by date then time ascending |
@@ -31,3 +31,6 @@ Decisions made while you were away. Change anything you disagree with.
 5. **Domain:** What production domain should deep links / marketing use later (e.g. `teamhangout.app`)?
 6. **EAS project:** Create an EAS project and add `extra.eas.projectId` to `app.json` when ready to ship builds.
 7. **Rules emulator tests:** Should we add `@firebase/rules-unit-testing` in a follow-up PR? (Not in this MVP.)
+
+
+8. **Super admin bootstrap:** First owner must set `users/{uid}.appRole = "superAdmin"` in Firebase console (clients cannot self-promote). After that, super admins can promote others via `setUserAppRole` (rules-enforced).

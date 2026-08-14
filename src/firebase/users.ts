@@ -11,6 +11,10 @@ import {
 } from './config';
 
 import {
+  parseAppRole,
+} from '../lib/roles';
+
+import {
   AppUser,
 } from '../types/models';
 
@@ -40,6 +44,7 @@ export function mapUserDoc(
     uid,
     email: String(data.email ?? ''),
     displayName: String(data.displayName ?? ''),
+    appRole: parseAppRole(data.appRole),
     activeTeamId:
       data.activeTeamId == null
         ? null
@@ -74,6 +79,7 @@ export async function ensureUserDocument(
     uid,
     email,
     displayName,
+    appRole: 'user',
     activeTeamId: null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -83,6 +89,7 @@ export async function ensureUserDocument(
     uid,
     email,
     displayName,
+    appRole: 'user',
     activeTeamId: null,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -105,6 +112,21 @@ export async function setActiveTeamId(
 ): Promise<void> {
   await updateDoc(doc(db, 'users', uid), {
     activeTeamId: teamId,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+/**
+ * Promote/demote platform role. Only callable successfully when Firestore
+ * rules allow (caller must already be a superAdmin). Bootstrap the first
+ * superAdmin via Firebase console.
+ */
+export async function setUserAppRole(
+  uid: string,
+  appRole: 'user' | 'superAdmin',
+): Promise<void> {
+  await updateDoc(doc(db, 'users', uid), {
+    appRole,
     updatedAt: serverTimestamp(),
   });
 }

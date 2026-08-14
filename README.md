@@ -12,6 +12,7 @@ Built with **Expo 54**, **React Native**, **Firebase Auth**, and **Firestore**.
 - Schedule with practice & match events
 - Filter: All / Practice / Match
 - Sort by date and time
+- Super admin role for app owners (cross-team access)
 
 ## Setup
 
@@ -59,6 +60,12 @@ yarn test:coverage
 - Reads and writes go through the Firebase JS SDK (no separate API server for MVP).
 - Invite join uses `inviteCodes/{code}` lookup docs so security rules can validate without collection scans.
 - See [`QUESTIONS.md`](QUESTIONS.md) for product decisions made during scaffolding.
+
+## Super admin
+
+1. Register normally in the app.
+2. In Firebase Console → Firestore → `users/{yourUid}`, set `appRole` to `superAdmin`.
+3. Reload the app — an **Admin** tab appears and you can enter any team with coach-level powers.
 
 ## Deep link
 
