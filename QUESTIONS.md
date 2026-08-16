@@ -8,13 +8,13 @@ Decisions made while you were away. Change anything you disagree with.
 |-------|----------|
 | White-label model | One multi-tenant app; coaches create teams inside it (not per-team app binaries) |
 | Backend for MVP | Firestore client + security rules only — no Next.js API |
-| Auth | Email/password only; Firebase `sendPasswordResetEmail` |
+| Auth | Email/password + Google Sign-In (native; requires development build) |
 | Roles | Team: `coach` / `player`. Platform: `appRole` `user` / `superAdmin` for app owners |
 | Invites | 8-char alphanumeric codes via `inviteCodes/{code}` lookup docs + deep link `teamhangout://join?code=XXXXXXXX` |
 | Events | `practice` \| `match`; coach CRUD; players read |
 | Filters | All / Practice / Match; sort by date then time ascending |
 | Sport | Sport-agnostic naming; optional free-text `sport` on team |
-| Out of scope | RSVP, geo check-in, chat, payments, web admin, Google Sign-In, push notifications |
+| Out of scope | RSVP, geo check-in, chat, payments, web admin, push notifications |
 
 ## Peer-review adjustments applied
 
@@ -25,7 +25,7 @@ Decisions made while you were away. Change anything you disagree with.
 ## Questions for you
 
 1. **Firebase project:** Confirm you will create a new Firebase project (Auth + Firestore) separate from Soccerville and paste config into `.env.local`.
-2. **Google Sign-In:** Do you want Google OAuth in v2 (needs a small backend / Cloud Function for the mobile token bridge)?
+2. **Google Sign-In:** Implemented with `@react-native-google-signin/google-signin` + Firebase credentials (no Cloud Function). Requires a development build.
 3. **Multi-team users:** Should a user belong to multiple teams and switch `activeTeamId`, or stay single-team for now? (Implemented: one active team; joining another replaces active membership context via `activeTeamId`.)
 4. **Invite expiry / rotation:** Should invite codes expire, or only rotate when the coach regenerates? (Implemented: no expiry; coach can regenerate.)
 5. **Domain:** What production domain should deep links / marketing use later (e.g. `teamhangout.app`)?

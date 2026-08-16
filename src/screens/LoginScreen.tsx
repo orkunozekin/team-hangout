@@ -14,7 +14,9 @@ import {
 } from '@react-navigation/native-stack';
 
 import {
+  getGoogleSignInErrorMessage,
   loginWithEmail,
+  loginWithGoogle,
 } from '../api/auth';
 
 import {
@@ -22,6 +24,7 @@ import {
   LinkButton,
   PrimaryButton,
   Screen,
+  SecondaryButton,
   Subtitle,
   TextField,
   Title,
@@ -47,6 +50,7 @@ export default function LoginScreen({ navigation }: Props) {
   const [password, setPassword] = useState('');
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
 
   async function onSubmit() {
     const nextErrors = validateLoginForm({ email, password });
@@ -65,6 +69,20 @@ export default function LoginScreen({ navigation }: Props) {
       );
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function onGoogle() {
+    setGoogleLoading(true);
+    try {
+      await loginWithGoogle();
+    } catch (error) {
+      Alert.alert(
+        'Google Sign-In failed',
+        getGoogleSignInErrorMessage(error),
+      );
+    } finally {
+      setGoogleLoading(false);
     }
   }
 
@@ -105,6 +123,14 @@ export default function LoginScreen({ navigation }: Props) {
             label="Sign in"
             onPress={onSubmit}
             loading={loading}
+            disabled={googleLoading}
+          />
+
+          <SecondaryButton
+            label="Continue with Google"
+            onPress={onGoogle}
+            loading={googleLoading}
+            disabled={loading}
           />
 
           <LinkButton

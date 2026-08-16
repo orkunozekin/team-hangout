@@ -1,7 +1,9 @@
 import {
   createUserWithEmailAndPassword,
+  GoogleAuthProvider,
   onAuthStateChanged,
   sendPasswordResetEmail,
+  signInWithCredential,
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
   updateProfile,
@@ -10,12 +12,37 @@ import {
 } from 'firebase/auth';
 
 import {
+  GoogleSignin,
+  isErrorWithCode,
+  isSuccessResponse,
+  statusCodes,
+} from '@react-native-google-signin/google-signin';
+
+import {
   auth,
 } from '../firebase/config';
 
 import {
   ensureUserDocument,
 } from '../firebase/users';
+
+let googleConfigured = false;
+
+function ensureGoogleConfigured(): void {
+  if (googleConfigured) {
+    return;
+  }
+
+  const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+  if (!webClientId) {
+    throw new Error(
+      'Missing EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID. Add your Firebase Web OAuth client ID to .env.local.',
+    );
+  }
+
+  GoogleSignin.configure({ webClientId });
+  googleConfigured = true;
+}
 
 export function subscribeToAuthChanges(
   callback: (user: User | null) => void,
@@ -56,6 +83,59 @@ export async function registerWithEmail(
   return credential;
 }
 
+export async function loginWithGoogle(): Promise<UserCredential | null> {
+  ensureGoogleConfigured();
+
+  await GoogleSignin.hasPlayServices({
+    showPlayServicesUpdateDialog: true,
+  });
+
+  const response = await GoogleSignin.signIn();
+  if (!isSuccessResponse(response)) {
+    return null;
+  }
+
+  const idToken = response.data.idToken;
+  if (!idToken) {
+    throw new Error('Google Sign-In did not return an ID token.');
+  }
+
+  const credential = GoogleAuthProvider.credential(idToken);
+  const userCredential = await signInWithCredential(auth, credential);
+  const { user } = userCredential;
+
+  await ensureUserDocument(
+    user.uid,
+    user.email ?? '',
+    user.displayName
+      ?? user.email?.split('@')[0]
+      ?? 'Player',
+  );
+
+  return userCredential;
+}
+
+export function getGoogleSignInErrorMessage(error: unknown): string {
+  if (isErrorWithCode(error)) {
+    switch (error.code) {
+      case statusCodes.SIGN_IN_CANCELLED:
+        return 'Google Sign-In was cancelled.';
+      case statusCodes.IN_PROGRESS:
+        return 'Google Sign-In is already in progress.';
+      case statusCodes.PLAY_SERVICES_NOT_AVAILABLE:
+        return 'Google Play Services is unavailable or out of date.';
+      default:
+        break;
+    }
+  }
+
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return 'Google Sign-In failed. Please try again.';
+}
+
 export async function resetPassword(
   email: string,
 ): Promise<void> {
@@ -63,6 +143,15 @@ export async function resetPassword(
 }
 
 export async function logout(): Promise<void> {
+  try {
+    ensureGoogleConfigured();
+    if (GoogleSignin.hasPreviousSignIn()) {
+      await GoogleSignin.signOut();
+    }
+  } catch {
+    // Continue with Firebase sign-out even if Google sign-out fails.
+  }
+
   await firebaseSignOut(auth);
 }
 

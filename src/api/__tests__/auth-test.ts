@@ -4,6 +4,8 @@ const mockUpdateProfile = jest.fn();
 const mockSendReset = jest.fn();
 const mockSignOut = jest.fn();
 const mockOnAuthStateChanged = jest.fn();
+const mockSignInWithCredential = jest.fn();
+const mockGoogleCredential = jest.fn();
 
 jest.mock('firebase/auth', () => ({
   signInWithEmailAndPassword: (...args: unknown[]) => mockSignIn(...args),
@@ -14,6 +16,41 @@ jest.mock('firebase/auth', () => ({
   signOut: (...args: unknown[]) => mockSignOut(...args),
   onAuthStateChanged: (...args: unknown[]) =>
     mockOnAuthStateChanged(...args),
+  signInWithCredential: (...args: unknown[]) =>
+    mockSignInWithCredential(...args),
+  GoogleAuthProvider: {
+    credential: (...args: unknown[]) => mockGoogleCredential(...args),
+  },
+}));
+
+const mockGoogleConfigure = jest.fn();
+const mockHasPlayServices = jest.fn();
+const mockGoogleSignIn = jest.fn();
+const mockGoogleSignOut = jest.fn();
+const mockHasPreviousSignIn = jest.fn();
+
+jest.mock('@react-native-google-signin/google-signin', () => ({
+  GoogleSignin: {
+    configure: (...args: unknown[]) => mockGoogleConfigure(...args),
+    hasPlayServices: (...args: unknown[]) => mockHasPlayServices(...args),
+    signIn: (...args: unknown[]) => mockGoogleSignIn(...args),
+    signOut: (...args: unknown[]) => mockGoogleSignOut(...args),
+    hasPreviousSignIn: (...args: unknown[]) =>
+      mockHasPreviousSignIn(...args),
+  },
+  isSuccessResponse: (response: { type?: string }) =>
+    response?.type === 'success',
+  isErrorWithCode: (error: unknown): error is { code: string } =>
+    typeof error === 'object'
+    && error != null
+    && 'code' in error,
+  statusCodes: {
+    SIGN_IN_CANCELLED: 'SIGN_IN_CANCELLED',
+    IN_PROGRESS: 'IN_PROGRESS',
+    PLAY_SERVICES_NOT_AVAILABLE: 'PLAY_SERVICES_NOT_AVAILABLE',
+    SIGN_IN_REQUIRED: 'SIGN_IN_REQUIRED',
+    NULL_PRESENTER: 'NULL_PRESENTER',
+  },
 }));
 
 const mockEnsureUserDocument = jest.fn();
@@ -23,9 +60,13 @@ jest.mock('../../firebase/users', () => ({
     mockEnsureUserDocument(...args),
 }));
 
+const ORIGINAL_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+
 import {
   getCurrentUser,
+  getGoogleSignInErrorMessage,
   loginWithEmail,
+  loginWithGoogle,
   logout,
   registerWithEmail,
   resetPassword,
@@ -40,6 +81,14 @@ describe('api/auth', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (auth as { currentUser: unknown }).currentUser = null;
+    process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID =
+      'test-web-client-id.apps.googleusercontent.com';
+    mockHasPlayServices.mockResolvedValue(true);
+    mockHasPreviousSignIn.mockReturnValue(false);
+  });
+
+  afterAll(() => {
+    process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID = ORIGINAL_WEB_CLIENT_ID;
   });
 
   it('subscribes to auth changes', () => {
@@ -79,15 +128,76 @@ describe('api/auth', () => {
     );
   });
 
+  it('signs in with Google and ensures user doc', async () => {
+    mockGoogleSignIn.mockResolvedValue({
+      type: 'success',
+      data: {
+        idToken: 'google-id-token',
+        user: {
+          id: 'g1',
+          email: 'player@gmail.com',
+          name: 'Alex Player',
+          photo: null,
+          familyName: null,
+          givenName: null,
+        },
+        scopes: [],
+        serverAuthCode: null,
+      },
+    });
+    mockGoogleCredential.mockReturnValue({ providerId: 'google.com' });
+    const firebaseUser = {
+      uid: 'u-google',
+      email: 'player@gmail.com',
+      displayName: 'Alex Player',
+    };
+    mockSignInWithCredential.mockResolvedValue({ user: firebaseUser });
+    mockEnsureUserDocument.mockResolvedValue({});
+
+    const result = await loginWithGoogle();
+
+    expect(mockGoogleConfigure).toHaveBeenCalledWith({
+      webClientId: 'test-web-client-id.apps.googleusercontent.com',
+    });
+    expect(mockGoogleCredential).toHaveBeenCalledWith('google-id-token');
+    expect(mockSignInWithCredential).toHaveBeenCalledWith(
+      auth,
+      { providerId: 'google.com' },
+    );
+    expect(mockEnsureUserDocument).toHaveBeenCalledWith(
+      'u-google',
+      'player@gmail.com',
+      'Alex Player',
+    );
+    expect(result?.user).toEqual(firebaseUser);
+  });
+
+  it('returns null when Google Sign-In is cancelled', async () => {
+    mockGoogleSignIn.mockResolvedValue({ type: 'cancelled' });
+    await expect(loginWithGoogle()).resolves.toBeNull();
+    expect(mockSignInWithCredential).not.toHaveBeenCalled();
+  });
+
+  it('maps Google Sign-In error codes to messages', () => {
+    expect(
+      getGoogleSignInErrorMessage({ code: 'SIGN_IN_CANCELLED' }),
+    ).toBe('Google Sign-In was cancelled.');
+  });
+
   it('sends password reset', async () => {
     mockSendReset.mockResolvedValue(undefined);
     await resetPassword(' a@b.com ');
     expect(mockSendReset).toHaveBeenCalledWith(auth, 'a@b.com');
   });
 
-  it('logs out and reads current user', async () => {
+  it('logs out Firebase and Google when previously signed in', async () => {
+    mockHasPreviousSignIn.mockReturnValue(true);
+    mockGoogleSignOut.mockResolvedValue(null);
     mockSignOut.mockResolvedValue(undefined);
+
     await logout();
+
+    expect(mockGoogleSignOut).toHaveBeenCalled();
     expect(mockSignOut).toHaveBeenCalledWith(auth);
     expect(getCurrentUser()).toBeNull();
   });

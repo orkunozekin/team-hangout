@@ -6,7 +6,7 @@ Built with **Expo 54**, **React Native**, **Firebase Auth**, and **Firestore**.
 
 ## Features (MVP)
 
-- Email/password auth
+- Email/password auth + Google Sign-In
 - Create a team (you become coach) or join with an invite code
 - Share / regenerate invite codes
 - Schedule with practice & match events
@@ -20,8 +20,8 @@ Built with **Expo 54**, **React Native**, **Firebase Auth**, and **Firestore**.
 
 - Node 20+
 - Yarn 1.x
-- Expo Go or iOS/Android simulator
-- A Firebase project (Auth email/password + Firestore)
+- Xcode and/or Android Studio (Google Sign-In needs a **development build**, not Expo Go)
+- A Firebase project (Auth email/password + Google, Firestore)
 
 ### Install
 
@@ -30,7 +30,28 @@ yarn install
 cp .env.sample .env.local
 ```
 
-Fill Firebase web config values in `.env.local`.
+Fill Firebase web config values and `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` in `.env.local`.
+
+The Web client ID is in Firebase Console → Project settings → Your apps → Web app, or Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client IDs (type **Web client**).
+
+### Firebase Google Sign-In
+
+1. Authentication → Sign-in method → enable **Google**.
+2. Register iOS and Android apps with package/bundle `com.orkunozekin.teamhangout`.
+3. Android: add your debug **SHA-1** (see below).
+4. Download `google-services.json` and `GoogleService-Info.plist` into the project root.
+   - Re-download after enabling Google / adding SHA-1 so OAuth clients are present.
+   - iOS plist should include `CLIENT_ID` and `REVERSED_CLIENT_ID`.
+
+Debug SHA-1 (local Android builds):
+
+```bash
+keytool -list -v \
+  -keystore ~/.android/debug.keystore \
+  -alias androiddebugkey \
+  -storepass android \
+  -keypass android
+```
 
 ### Firestore
 
@@ -38,14 +59,23 @@ Fill Firebase web config values in `.env.local`.
 2. Deploy rules from [`firestore.rules`](firestore.rules).
 3. Create composite indexes from [`firestore.indexes.json`](firestore.indexes.json) (or let the console prompt you on first query).
 
-### Run
+### Run (development build)
+
+Google Sign-In will not work in Expo Go. Build and install a native development client once:
+
+```bash
+yarn ios
+# or
+yarn android
+```
+
+Day-to-day after that:
 
 ```bash
 yarn start
-# or
-yarn ios
-yarn android
 ```
+
+Open the **Team Hangout** app on the simulator/device (not Expo Go). Rebuild only after changing native dependencies or `app.json`.
 
 ### Tests
 
@@ -59,6 +89,7 @@ yarn test:coverage
 
 - Reads and writes go through the Firebase JS SDK (no separate API server for MVP).
 - Invite join uses `inviteCodes/{code}` lookup docs so security rules can validate without collection scans.
+- Google Sign-In uses `@react-native-google-signin/google-signin` and Firebase `signInWithCredential`.
 - See [`QUESTIONS.md`](QUESTIONS.md) for product decisions made during scaffolding.
 
 ## Super admin

@@ -62,6 +62,7 @@ export default function CreateTeamScreen({
       });
       onJoined();
     } catch (err) {
+      console.error('Could not create team', err);
       Alert.alert(
         'Could not create team',
         err instanceof Error ? err.message : 'Please try again',

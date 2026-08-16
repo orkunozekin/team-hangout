@@ -14,6 +14,8 @@ import {
 } from '@react-navigation/native-stack';
 
 import {
+  getGoogleSignInErrorMessage,
+  loginWithGoogle,
   registerWithEmail,
 } from '../api/auth';
 
@@ -22,6 +24,7 @@ import {
   LinkButton,
   PrimaryButton,
   Screen,
+  SecondaryButton,
   Subtitle,
   TextField,
   Title,
@@ -52,6 +55,7 @@ export default function RegisterScreen({ navigation }: Props) {
     displayName?: string;
   }>({});
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
 
   async function onSubmit() {
     const nextErrors = validateRegisterForm({
@@ -74,6 +78,20 @@ export default function RegisterScreen({ navigation }: Props) {
       );
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function onGoogle() {
+    setGoogleLoading(true);
+    try {
+      await loginWithGoogle();
+    } catch (error) {
+      Alert.alert(
+        'Google Sign-In failed',
+        getGoogleSignInErrorMessage(error),
+      );
+    } finally {
+      setGoogleLoading(false);
     }
   }
 
@@ -122,6 +140,14 @@ export default function RegisterScreen({ navigation }: Props) {
             label="Create account"
             onPress={onSubmit}
             loading={loading}
+            disabled={googleLoading}
+          />
+
+          <SecondaryButton
+            label="Continue with Google"
+            onPress={onGoogle}
+            loading={googleLoading}
+            disabled={loading}
           />
 
           <LinkButton
