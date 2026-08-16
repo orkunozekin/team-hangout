@@ -178,10 +178,134 @@ describe('api/auth', () => {
     expect(mockSignInWithCredential).not.toHaveBeenCalled();
   });
 
+  it('throws when Google Sign-In omits an ID token', async () => {
+    mockGoogleSignIn.mockResolvedValue({
+      type: 'success',
+      data: {
+        idToken: null,
+        user: {
+          id: 'g1',
+          email: 'player@gmail.com',
+          name: null,
+          photo: null,
+          familyName: null,
+          givenName: null,
+        },
+        scopes: [],
+        serverAuthCode: null,
+      },
+    });
+
+    await expect(loginWithGoogle()).rejects.toThrow(
+      'Google Sign-In did not return an ID token.',
+    );
+  });
+
+  it('falls back to email local-part when Google user has no display name', async () => {
+    mockGoogleSignIn.mockResolvedValue({
+      type: 'success',
+      data: {
+        idToken: 'token-2',
+        user: {
+          id: 'g2',
+          email: 'noname@gmail.com',
+          name: null,
+          photo: null,
+          familyName: null,
+          givenName: null,
+        },
+        scopes: [],
+        serverAuthCode: null,
+      },
+    });
+    mockGoogleCredential.mockReturnValue({ providerId: 'google.com' });
+    mockSignInWithCredential.mockResolvedValue({
+      user: {
+        uid: 'u2',
+        email: 'noname@gmail.com',
+        displayName: null,
+      },
+    });
+    mockEnsureUserDocument.mockResolvedValue({});
+
+    await loginWithGoogle();
+
+    expect(mockEnsureUserDocument).toHaveBeenCalledWith(
+      'u2',
+      'noname@gmail.com',
+      'noname',
+    );
+  });
+
+  it('falls back to Player when Google user has no email or display name', async () => {
+    mockGoogleSignIn.mockResolvedValue({
+      type: 'success',
+      data: {
+        idToken: 'token-3',
+        user: {
+          id: 'g3',
+          email: '',
+          name: null,
+          photo: null,
+          familyName: null,
+          givenName: null,
+        },
+        scopes: [],
+        serverAuthCode: null,
+      },
+    });
+    mockGoogleCredential.mockReturnValue({ providerId: 'google.com' });
+    mockSignInWithCredential.mockResolvedValue({
+      user: {
+        uid: 'u3',
+        email: null,
+        displayName: null,
+      },
+    });
+    mockEnsureUserDocument.mockResolvedValue({});
+
+    await loginWithGoogle();
+
+    expect(mockEnsureUserDocument).toHaveBeenCalledWith(
+      'u3',
+      '',
+      'Player',
+    );
+  });
+
   it('maps Google Sign-In error codes to messages', () => {
     expect(
       getGoogleSignInErrorMessage({ code: 'SIGN_IN_CANCELLED' }),
     ).toBe('Google Sign-In was cancelled.');
+    expect(
+      getGoogleSignInErrorMessage({ code: 'IN_PROGRESS' }),
+    ).toBe('Google Sign-In is already in progress.');
+    expect(
+      getGoogleSignInErrorMessage({
+        code: 'PLAY_SERVICES_NOT_AVAILABLE',
+      }),
+    ).toBe('Google Play Services is unavailable or out of date.');
+    expect(
+      getGoogleSignInErrorMessage({ code: 'UNKNOWN', message: 'nope' }),
+    ).toBe('Google Sign-In failed. Please try again.');
+    expect(
+      getGoogleSignInErrorMessage(new Error('Network down')),
+    ).toBe('Network down');
+    expect(getGoogleSignInErrorMessage('boom')).toBe(
+      'Google Sign-In failed. Please try again.',
+    );
+  });
+
+  it('throws when Google web client id is missing', async () => {
+    await jest.isolateModulesAsync(async () => {
+      process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID = '';
+      // Re-require against a fresh module so googleConfigured starts false.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const freshAuth = require('../auth') as typeof import('../auth');
+      await expect(freshAuth.loginWithGoogle()).rejects.toThrow(
+        'Missing EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID',
+      );
+    });
   });
 
   it('sends password reset', async () => {
@@ -200,5 +324,15 @@ describe('api/auth', () => {
     expect(mockGoogleSignOut).toHaveBeenCalled();
     expect(mockSignOut).toHaveBeenCalledWith(auth);
     expect(getCurrentUser()).toBeNull();
+  });
+
+  it('still signs out of Firebase if Google sign-out fails', async () => {
+    mockHasPreviousSignIn.mockReturnValue(true);
+    mockGoogleSignOut.mockRejectedValue(new Error('google down'));
+    mockSignOut.mockResolvedValue(undefined);
+
+    await logout();
+
+    expect(mockSignOut).toHaveBeenCalledWith(auth);
   });
 });
