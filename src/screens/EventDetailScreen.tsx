@@ -121,7 +121,7 @@ export default function EventDetailScreen({
 
   if (loading) {
     return (
-      <Screen>
+      <Screen edges={['bottom']}>
         <EmptyState message="Loading event..." />
       </Screen>
     );
@@ -129,14 +129,14 @@ export default function EventDetailScreen({
 
   if (!event) {
     return (
-      <Screen>
+      <Screen edges={['bottom']}>
         <EmptyState message="Event not found." />
       </Screen>
     );
   }
 
   return (
-    <Screen>
+    <Screen edges={['bottom']}>
       <ScrollView>
         <View
           style={[

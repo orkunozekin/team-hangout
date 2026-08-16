@@ -5,11 +5,24 @@ import {
 
 import {
   getAuth,
+  initializeAuth,
+  // getReactNativePersistence ships in Firebase's React Native bundle but is
+  // not present in the default (web) type declarations, so we pull it in via
+  // require below to keep TypeScript happy.
 } from 'firebase/auth';
+
+import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
 
 import {
   getFirestore,
 } from 'firebase/firestore';
+
+const { getReactNativePersistence } =
+  require('firebase/auth') as {
+    getReactNativePersistence: (
+      storage: typeof ReactNativeAsyncStorage,
+    ) => unknown;
+  };
 
 const firebaseConfig = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
@@ -20,10 +33,15 @@ const firebaseConfig = {
   appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
 };
 
-const app =
-  getApps().length === 0
-    ? initializeApp(firebaseConfig)
-    : getApps()[0];
+const isFirstInit = getApps().length === 0;
+const app = isFirstInit ? initializeApp(firebaseConfig) : getApps()[0];
 
-export const auth = getAuth(app);
+export const auth = isFirstInit
+  ? initializeAuth(app, {
+      persistence: getReactNativePersistence(
+        ReactNativeAsyncStorage,
+      ) as never,
+    })
+  : getAuth(app);
+
 export const db = getFirestore(app);

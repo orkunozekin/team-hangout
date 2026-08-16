@@ -12,6 +12,10 @@ import {
 } from 'react-native';
 
 import {
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
+
+import {
   colors,
   fonts,
   radius,
@@ -20,15 +24,31 @@ import {
   type,
 } from '../theme/theme';
 
+export type ScreenEdge = 'top' | 'bottom';
+
 export function Screen({
   children,
   style,
+  edges = ['top'],
 }: {
   children: React.ReactNode;
   style?: ViewStyle;
+  edges?: ScreenEdge[];
 }) {
+  const insets = useSafeAreaInsets();
+
   return (
-    <View style={[styles.screen, style]}>
+    <View
+      style={[
+        styles.screen,
+        {
+          paddingTop:
+            spacing.lg + (edges.includes('top') ? insets.top : 0),
+          paddingBottom: edges.includes('bottom') ? insets.bottom : 0,
+        },
+        style,
+      ]}
+    >
       {children}
     </View>
   );
@@ -147,7 +167,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
   },
   title: {
     ...type.h1,
