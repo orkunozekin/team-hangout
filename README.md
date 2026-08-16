@@ -18,7 +18,7 @@ Built with **Expo 54**, **React Native**, **Firebase Auth**, and **Firestore**.
 
 ### Prerequisites
 
-- Node 20+
+- Node 22+
 - Yarn 1.x
 - Xcode and/or Android Studio (Google Sign-In needs a **development build**, not Expo Go)
 - A Firebase project (Auth email/password + Google, Firestore)
