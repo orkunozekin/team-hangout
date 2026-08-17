@@ -154,7 +154,7 @@ export default function CreateEditEventScreen({
   }
 
   return (
-    <Screen>
+    <Screen edges={['bottom']}>
       <ScrollView keyboardShouldPersistTaps="handled">
         <Title>{isEdit ? 'Edit event' : 'New event'}</Title>
 

@@ -28,6 +28,12 @@ import {
 } from '../lib/inviteCode';
 
 import {
+  canManageTeam,
+  displayTeamRole,
+  isSuperAdminRole,
+} from '../lib/roles';
+
+import {
   EmptyState,
   PrimaryButton,
   Screen,
@@ -37,6 +43,7 @@ import {
 } from '../components/ui';
 
 import {
+  AppRole,
   Team,
   TeamMember,
 } from '../types/models';
@@ -52,14 +59,16 @@ import {
 type Props = {
   teamId: string;
   membership: TeamMember;
+  appRole?: AppRole;
 };
 
-export default function TeamScreen({ teamId, membership }: Props) {
+export default function TeamScreen({ teamId, membership, appRole }: Props) {
   const [team, setTeam] = useState<Team | null>(null);
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingCode, setLoadingCode] = useState(false);
-  const isCoach = membership.role === 'coach';
+  const canManage = canManageTeam({ membership, appRole });
+  const isSuperAdmin = isSuperAdminRole(appRole);
 
   const load = useCallback(async () => {
     const [teamData, memberData] = await Promise.all([
@@ -108,6 +117,7 @@ export default function TeamScreen({ teamId, membership }: Props) {
               const result = await regenerateInviteCode({
                 teamId,
                 userId: membership.userId,
+                isSuperAdmin,
               });
               setTeam((prev) =>
                 prev
@@ -134,10 +144,10 @@ export default function TeamScreen({ teamId, membership }: Props) {
         <Title>{team?.name ?? 'Team'}</Title>
         <Subtitle>
           {team?.sport ? `${team.sport} · ` : ''}
-          Your role: {membership.role}
+          Your role: {displayTeamRole(membership.role, appRole)}
         </Subtitle>
 
-        {isCoach && team ? (
+        {canManage && team ? (
           <View style={styles.inviteBox}>
             <Text style={styles.inviteLabel}>Invite code</Text>
             <Text style={styles.inviteCode}>{team.inviteCode}</Text>

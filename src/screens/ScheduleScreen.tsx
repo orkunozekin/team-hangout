@@ -41,9 +41,14 @@ import {
 } from '../lib/eventForm';
 
 import {
+  canManageTeam,
+} from '../lib/roles';
+
+import {
   EventTypeFilter,
   TeamEvent,
   TeamMember,
+  AppRole,
 } from '../types/models';
 
 import {
@@ -64,6 +69,7 @@ type RootStackParamList = {
 type Props = {
   teamId: string;
   membership: TeamMember;
+  appRole?: AppRole;
   navigation: NativeStackNavigationProp<RootStackParamList>;
 };
 
@@ -76,6 +82,7 @@ const FILTERS: { key: EventTypeFilter; label: string }[] = [
 export default function ScheduleScreen({
   teamId,
   membership,
+  appRole,
   navigation,
 }: Props) {
   const [events, setEvents] = useState<TeamEvent[]>([]);
@@ -115,7 +122,7 @@ export default function ScheduleScreen({
   }
 
   const visible = applyScheduleView(events, filter, 'asc');
-  const isCoach = membership.role === 'coach';
+  const canManage = canManageTeam({ membership, appRole });
 
   return (
     <Screen style={{ paddingHorizontal: 0 }}>
@@ -148,7 +155,7 @@ export default function ScheduleScreen({
           })}
         </View>
 
-        {isCoach ? (
+        {canManage ? (
           <PrimaryButton
             label="Add event"
             onPress={() => navigation.navigate('CreateEditEvent', {})}

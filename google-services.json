@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "306917103775",
+    "project_id": "team-hangout-ddf27",
+    "storage_bucket": "team-hangout-ddf27.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:306917103775:android:be2c52b5436c4050956aaa",
+        "android_client_info": {
+          "package_name": "com.orkunozekin.teamhangout"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "306917103775-vd2vbq6enhif56p2avevq7u0umb22d7v.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.orkunozekin.teamhangout",
+            "certificate_hash": "083c75c9d8ebef362319f407ed8fe6cb6efbeb5c"
+          }
+        },
+        {
+          "client_id": "306917103775-cajf90nns8grn0a9ngfe9d5n3ip7vu85.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA6Tb_Abl-eTowfVNwUXDDH4zds87CVVD8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "306917103775-cajf90nns8grn0a9ngfe9d5n3ip7vu85.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "306917103775-97oqq9vjdl90ed3qlouelvov8am5pbe3.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.orkunozekin.teamhangout"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

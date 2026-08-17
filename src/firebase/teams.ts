@@ -24,6 +24,10 @@ import {
 } from '../lib/inviteCode';
 
 import {
+  buildSyntheticCoachMembership,
+} from '../lib/roles';
+
+import {
   Team,
   TeamMember,
   TeamRole,
@@ -271,10 +275,14 @@ export async function joinTeamWithInviteCode(params: {
 export async function regenerateInviteCode(params: {
   teamId: string;
   userId: string;
+  isSuperAdmin?: boolean;
 }): Promise<{ inviteCode: string; inviteDeepLink: string }> {
   const membership = await getMembership(params.teamId, params.userId);
-  if (!membership || membership.role !== 'coach') {
-    throw new Error('Only coaches can regenerate invite codes');
+  const allowed =
+    params.isSuperAdmin === true ||
+    (membership != null && membership.role === 'coach');
+  if (!allowed) {
+    throw new Error('Only coaches or super admins can regenerate invite codes');
   }
 
   const team = await getTeam(params.teamId);
@@ -305,11 +313,42 @@ export async function regenerateInviteCode(params: {
   };
 }
 
+export async function listAllTeams(): Promise<Team[]> {
+  const snap = await getDocs(collection(db, 'teams'));
+  return snap.docs
+    .map((d) => mapTeamDoc(d.id, d.data() as Record<string, unknown>))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export async function resolveActiveMembership(
   userId: string,
   preferredTeamId?: string | null,
+  options?: {
+    isSuperAdmin?: boolean;
+    displayName?: string;
+  },
 ): Promise<{ team: Team; membership: TeamMember } | null> {
   const memberships = await getMembershipsForUser(userId);
+
+  if (
+    memberships.length === 0 &&
+    options?.isSuperAdmin &&
+    preferredTeamId
+  ) {
+    const team = await getTeam(preferredTeamId);
+    if (!team) {
+      return null;
+    }
+    return {
+      team,
+      membership: buildSyntheticCoachMembership({
+        teamId: team.id,
+        userId,
+        displayName: options.displayName ?? 'Super Admin',
+      }),
+    };
+  }
+
   if (memberships.length === 0) {
     return null;
   }
@@ -318,6 +357,20 @@ export async function resolveActiveMembership(
     preferredTeamId
       ? memberships.find((m) => m.teamId === preferredTeamId)
       : undefined;
+
+  if (!membership && options?.isSuperAdmin && preferredTeamId) {
+    const team = await getTeam(preferredTeamId);
+    if (team) {
+      return {
+        team,
+        membership: buildSyntheticCoachMembership({
+          teamId: team.id,
+          userId,
+          displayName: options.displayName ?? 'Super Admin',
+        }),
+      };
+    }
+  }
 
   if (!membership) {
     membership = memberships[0];

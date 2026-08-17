@@ -1,5 +1,8 @@
 export type TeamRole = 'coach' | 'player';
 
+/** Platform-level role for app owners/devs (not team-scoped). */
+export type AppRole = 'user' | 'superAdmin';
+
 export type EventType = 'practice' | 'match';
 
 export type EventTypeFilter = 'all' | EventType;
@@ -8,6 +11,7 @@ export interface AppUser {
   uid: string;
   email: string;
   displayName: string;
+  appRole: AppRole;
   activeTeamId: string | null;
   createdAt: Date;
   updatedAt: Date;

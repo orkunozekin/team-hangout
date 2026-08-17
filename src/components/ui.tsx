@@ -12,6 +12,10 @@ import {
 } from 'react-native';
 
 import {
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
+
+import {
   colors,
   fonts,
   radius,
@@ -20,15 +24,31 @@ import {
   type,
 } from '../theme/theme';
 
+export type ScreenEdge = 'top' | 'bottom';
+
 export function Screen({
   children,
   style,
+  edges = ['top'],
 }: {
   children: React.ReactNode;
   style?: ViewStyle;
+  edges?: ScreenEdge[];
 }) {
+  const insets = useSafeAreaInsets();
+
   return (
-    <View style={[styles.screen, style]}>
+    <View
+      style={[
+        styles.screen,
+        {
+          paddingTop:
+            spacing.lg + (edges.includes('top') ? insets.top : 0),
+          paddingBottom: edges.includes('bottom') ? insets.bottom : 0,
+        },
+        style,
+      ]}
+    >
       {children}
     </View>
   );
@@ -101,21 +121,28 @@ export function SecondaryButton({
   label,
   onPress,
   disabled,
+  loading,
 }: {
   label: string;
   onPress: () => void;
   disabled?: boolean;
+  loading?: boolean;
 }) {
+  const isDisabled = disabled || loading;
   return (
     <Pressable
       onPress={onPress}
-      disabled={disabled}
+      disabled={isDisabled}
       style={[
         styles.secondaryButton,
-        disabled ? styles.buttonDisabled : null,
+        isDisabled ? styles.buttonDisabled : null,
       ]}
     >
-      <Text style={styles.secondaryButtonText}>{label}</Text>
+      {loading ? (
+        <ActivityIndicator color={colors.primary} />
+      ) : (
+        <Text style={styles.secondaryButtonText}>{label}</Text>
+      )}
     </Pressable>
   );
 }
@@ -147,7 +174,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
   },
   title: {
     ...type.h1,

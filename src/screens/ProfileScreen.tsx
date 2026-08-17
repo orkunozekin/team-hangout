@@ -30,25 +30,33 @@ import {
 } from '../components/ui';
 
 import {
+  AppRole,
   Team,
   TeamMember,
 } from '../types/models';
+
+import {
+  isSuperAdminRole,
+} from '../lib/roles';
 
 type Props = {
   user: User;
   team: Team | null;
   membership: TeamMember | null;
+  appRole?: AppRole;
 };
 
 export default function ProfileScreen({
   user,
   team,
   membership,
+  appRole,
 }: Props) {
   const [displayName, setDisplayName] = useState(
     user.displayName || membership?.displayName || '',
   );
   const [loading, setLoading] = useState(false);
+  const isSuperAdmin = isSuperAdminRole(appRole);
 
   async function onSave() {
     const trimmed = displayName.trim();
@@ -87,6 +95,7 @@ export default function ProfileScreen({
       <ScrollView>
         <Title>Profile</Title>
         <Subtitle>
+          {isSuperAdmin ? 'Super Admin · ' : ''}
           {team
             ? `${team.name} · ${membership?.role ?? 'member'}`
             : 'No team selected'}

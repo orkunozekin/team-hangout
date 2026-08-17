@@ -17,6 +17,7 @@ import {
   mapUserDoc,
   setActiveTeamId,
   updateUserDisplayName,
+  setUserAppRole,
 } from '../users';
 
 import {
@@ -32,12 +33,14 @@ describe('firebase/users', () => {
     const withDate = mapUserDoc('u1', {
       email: 'a@b.com',
       displayName: 'Alex',
+      appRole: 'superAdmin',
       activeTeamId: 't1',
       createdAt: new Date('2026-01-01'),
       updatedAt: '2026-01-02',
     });
     expect(withDate.uid).toBe('u1');
     expect(withDate.activeTeamId).toBe('t1');
+    expect(withDate.appRole).toBe('superAdmin');
 
     const withToDate = mapUserDoc('u2', {
       email: 'b@c.com',
@@ -97,3 +100,14 @@ describe('firebase/users', () => {
     expect(mockUpdateDoc).toHaveBeenCalledTimes(3);
   });
 });
+
+
+  it('defaults appRole to user and can set app role', async () => {
+    mockGetDoc.mockResolvedValue({ exists: () => false });
+    mockSetDoc.mockResolvedValue(undefined);
+    const user = await ensureUserDocument('u1', 'a@b.com', 'Alex');
+    expect(user.appRole).toBe('user');
+    mockUpdateDoc.mockResolvedValue(undefined);
+    await setUserAppRole('u1', 'superAdmin');
+    expect(mockUpdateDoc).toHaveBeenCalled();
+  });
