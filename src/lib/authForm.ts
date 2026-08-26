@@ -8,6 +8,7 @@ export interface AuthFormErrors {
   email?: string;
   password?: string;
   displayName?: string;
+  consent?: string;
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

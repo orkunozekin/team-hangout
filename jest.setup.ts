@@ -24,4 +24,5 @@ jest.mock('./src/firebase/config', () => ({
     currentUser: null,
   },
   db: {},
+  functions: {},
 }));

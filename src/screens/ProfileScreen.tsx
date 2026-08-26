@@ -4,7 +4,9 @@ import React, {
 
 import {
   Alert,
+  Linking,
   ScrollView,
+  Text,
 } from 'react-native';
 
 import {
@@ -16,11 +18,17 @@ import {
 } from '../api/auth';
 
 import {
+  deleteAccount,
+  getDeleteAccountErrorMessage,
+} from '../api/account';
+
+import {
   updateUserDisplayName,
 } from '../firebase/users';
 
 import {
   FieldLabel,
+  LinkButton,
   PrimaryButton,
   Screen,
   SecondaryButton,
@@ -28,6 +36,10 @@ import {
   TextField,
   Title,
 } from '../components/ui';
+
+import {
+  getLegalUrls,
+} from '../lib/legalUrls';
 
 import {
   AppRole,
@@ -39,12 +51,26 @@ import {
   isSuperAdminRole,
 } from '../lib/roles';
 
+import {
+  colors,
+  type,
+} from '../theme/theme';
+
 type Props = {
   user: User;
   team: Team | null;
   membership: TeamMember | null;
   appRole?: AppRole;
 };
+
+async function openUrl(url: string): Promise<void> {
+  const canOpen = await Linking.canOpenURL(url);
+  if (!canOpen) {
+    Alert.alert('Could not open link', url);
+    return;
+  }
+  await Linking.openURL(url);
+}
 
 export default function ProfileScreen({
   user,
@@ -56,7 +82,9 @@ export default function ProfileScreen({
     user.displayName || membership?.displayName || '',
   );
   const [loading, setLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const isSuperAdmin = isSuperAdminRole(appRole);
+  const legal = getLegalUrls();
 
   async function onSave() {
     const trimmed = displayName.trim();
@@ -90,9 +118,36 @@ export default function ProfileScreen({
     }
   }
 
+  function onDeleteAccount() {
+    Alert.alert(
+      'Delete account?',
+      'This permanently deletes your account and team memberships. Teams and events you created will remain. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleting(true);
+            try {
+              await deleteAccount();
+            } catch (err) {
+              Alert.alert(
+                'Delete failed',
+                getDeleteAccountErrorMessage(err),
+              );
+            } finally {
+              setDeleting(false);
+            }
+          },
+        },
+      ],
+    );
+  }
+
   return (
     <Screen>
-      <ScrollView>
+      <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
         <Title>Profile</Title>
         <Subtitle>
           {isSuperAdmin ? 'Super Admin · ' : ''}
@@ -115,9 +170,60 @@ export default function ProfileScreen({
           label="Save profile"
           onPress={onSave}
           loading={loading}
+          disabled={deleting}
         />
 
-        <SecondaryButton label="Sign out" onPress={onLogout} />
+        <SecondaryButton
+          label="Sign out"
+          onPress={onLogout}
+          disabled={loading || deleting}
+        />
+
+        {(legal.privacy || legal.terms || legal.support) ? (
+          <>
+            <Text
+              style={{
+                ...type.label,
+                color: colors.text,
+                marginTop: 24,
+                marginBottom: 4,
+              }}
+            >
+              Legal & support
+            </Text>
+            {legal.privacy ? (
+              <LinkButton
+                label="Privacy Policy"
+                onPress={() => {
+                  void openUrl(legal.privacy!);
+                }}
+              />
+            ) : null}
+            {legal.terms ? (
+              <LinkButton
+                label="Terms of Service"
+                onPress={() => {
+                  void openUrl(legal.terms!);
+                }}
+              />
+            ) : null}
+            {legal.support ? (
+              <LinkButton
+                label="Support"
+                onPress={() => {
+                  void openUrl(legal.support!);
+                }}
+              />
+            ) : null}
+          </>
+        ) : null}
+
+        <SecondaryButton
+          label="Delete account"
+          onPress={onDeleteAccount}
+          loading={deleting}
+          disabled={loading}
+        />
       </ScrollView>
     </Screen>
   );

@@ -6,13 +6,15 @@ Built with **Expo 54**, **React Native**, **Firebase Auth**, and **Firestore**.
 
 ## Features (MVP)
 
-- Email/password auth + Google Sign-In
+- Email/password auth + Google Sign-In + Sign in with Apple (iOS)
 - Create a team (you become coach) or join with an invite code
 - Share / regenerate invite codes
 - Schedule with practice & match events
 - Filter: All / Practice / Match
 - Sort by date and time
 - Super admin role for app owners (cross-team access)
+- In-app account deletion (Cloud Function)
+- Privacy / Terms / Support links (env-configured)
 
 ## Setup
 
@@ -32,6 +34,12 @@ cp .env.sample .env.local
 
 Fill Firebase web config values and `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` in `.env.local`.
 
+Optional App Store legal URLs (links appear in Profile / Register when set):
+
+- `EXPO_PUBLIC_PRIVACY_URL`
+- `EXPO_PUBLIC_TERMS_URL`
+- `EXPO_PUBLIC_SUPPORT_URL`
+
 The Web client ID is in Firebase Console → Project settings → Your apps → Web app, or Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client IDs (type **Web client**).
 
 ### Firebase Google Sign-In
@@ -42,6 +50,14 @@ The Web client ID is in Firebase Console → Project settings → Your apps → 
 4. Download `google-services.json` and `GoogleService-Info.plist` into the project root.
    - Re-download after enabling Google / adding SHA-1 so OAuth clients are present.
    - iOS plist should include `CLIENT_ID` and `REVERSED_CLIENT_ID`.
+
+### Sign in with Apple (iOS)
+
+1. Apple Developer → Identifiers → App ID `com.orkunozekin.teamhangout` → enable **Sign In with Apple**.
+2. Firebase Console → Authentication → Sign-in method → enable **Apple** (Team ID, Key ID, `.p8` private key).
+3. Rebuild the native app after config changes (`app.config.ts` sets `ios.usesAppleSignIn`).
+
+See [`docs/APP_STORE_FITTING.md`](docs/APP_STORE_FITTING.md) for the full App Store checklist.
 
 Debug SHA-1 (local Android builds):
 
@@ -59,6 +75,18 @@ keytool -list -v \
 2. Deploy rules from [`firestore.rules`](firestore.rules).
 3. Create composite indexes from [`firestore.indexes.json`](firestore.indexes.json) (or let the console prompt you on first query).
 
+### Account deletion (Cloud Function)
+
+Requires a **Blaze** Firebase plan.
+
+```bash
+cd functions && yarn install && yarn build
+# from repo root, with Firebase CLI logged in:
+firebase deploy --only functions
+```
+
+The callable `deleteAccount` removes the Auth user, `users/{uid}`, and that user's `teamMembers` docs. Teams/events they created are left in place.
+
 ### Run (development build)
 
 Google Sign-In will not work in Expo Go. Build and install a native development client once:
@@ -75,7 +103,9 @@ Day-to-day after that:
 yarn start
 ```
 
-Open the **Team Hangout** app on the simulator/device (not Expo Go). Rebuild only after changing native dependencies or `app.json`.
+Open the **Team Hangout** app on the simulator/device (not Expo Go). Rebuild only after changing native dependencies or `app.config.ts`.
+
+EAS production builds set `APP_VARIANT=production` so `expo-dev-client` is omitted from the store binary.
 
 ### Tests
 
@@ -87,10 +117,11 @@ yarn test:coverage
 
 ## Architecture notes
 
-- Reads and writes go through the Firebase JS SDK (no separate API server for MVP).
+- Reads and writes go through the Firebase JS SDK; account deletion uses a Callable Cloud Function (`functions/`).
 - Invite join uses `inviteCodes/{code}` lookup docs so security rules can validate without collection scans.
 - Google Sign-In uses `@react-native-google-signin/google-signin` and Firebase `signInWithCredential`.
-- See [`QUESTIONS.md`](QUESTIONS.md) for product decisions made during scaffolding.
+- Sign in with Apple uses `expo-apple-authentication` and Firebase `OAuthProvider('apple.com')`.
+- See [`QUESTIONS.md`](QUESTIONS.md) for product decisions and [`docs/APP_STORE_FITTING.md`](docs/APP_STORE_FITTING.md) for App Store readiness.
 
 ## Super admin
 

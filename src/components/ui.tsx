@@ -161,6 +161,42 @@ export function LinkButton({
   );
 }
 
+export function ConsentCheckbox({
+  checked,
+  onToggle,
+  label,
+  error,
+}: {
+  checked: boolean;
+  onToggle: () => void;
+  label: React.ReactNode;
+  error?: string;
+}) {
+  return (
+    <View style={styles.consentWrap}>
+      <Pressable
+        onPress={onToggle}
+        style={styles.consentRow}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked }}
+      >
+        <View
+          style={[
+            styles.checkbox,
+            checked ? styles.checkboxChecked : null,
+          ]}
+        >
+          {checked ? (
+            <Text style={styles.checkboxMark}>✓</Text>
+          ) : null}
+        </View>
+        <View style={styles.consentLabel}>{label}</View>
+      </Pressable>
+      <FieldError message={error} />
+    </View>
+  );
+}
+
 export function EmptyState({ message }: { message: string }) {
   return (
     <View style={styles.empty}>
@@ -249,6 +285,39 @@ const styles = StyleSheet.create({
   linkText: {
     ...type.bodyMedium,
     color: colors.primaryLight,
+  },
+  consentWrap: {
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  consentRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  checkboxChecked: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  checkboxMark: {
+    color: colors.white,
+    fontSize: 14,
+    fontFamily: fonts.bold,
+    lineHeight: 16,
+  },
+  consentLabel: {
+    flex: 1,
   },
   empty: {
     paddingVertical: spacing.xxl,
