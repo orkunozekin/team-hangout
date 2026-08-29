@@ -42,6 +42,10 @@ coverage/
 /ios
 /android
 
+# Cloud Functions build output
+functions/lib/
+functions/node_modules/
+
 # secrets
 firebase-service-account.json
 *-service-account.json

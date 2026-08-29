@@ -6,6 +6,12 @@ const mockSignOut = jest.fn();
 const mockOnAuthStateChanged = jest.fn();
 const mockSignInWithCredential = jest.fn();
 const mockGoogleCredential = jest.fn();
+const mockOAuthCredential = jest.fn();
+function MockOAuthProvider(this: {
+  credential: (...args: unknown[]) => unknown;
+}, _providerId: string) {
+  this.credential = (...args: unknown[]) => mockOAuthCredential(...args);
+}
 
 jest.mock('firebase/auth', () => ({
   signInWithEmailAndPassword: (...args: unknown[]) => mockSignIn(...args),
@@ -21,6 +27,7 @@ jest.mock('firebase/auth', () => ({
   GoogleAuthProvider: {
     credential: (...args: unknown[]) => mockGoogleCredential(...args),
   },
+  OAuthProvider: MockOAuthProvider,
 }));
 
 const mockGoogleConfigure = jest.fn();
@@ -53,6 +60,31 @@ jest.mock('@react-native-google-signin/google-signin', () => ({
   },
 }));
 
+const mockAppleIsAvailable = jest.fn();
+const mockAppleSignIn = jest.fn();
+
+jest.mock('expo-apple-authentication', () => ({
+  isAvailableAsync: (...args: unknown[]) => mockAppleIsAvailable(...args),
+  signInAsync: (...args: unknown[]) => mockAppleSignIn(...args),
+  AppleAuthenticationScope: {
+    FULL_NAME: 0,
+    EMAIL: 1,
+  },
+  AppleAuthenticationButton: () => null,
+  AppleAuthenticationButtonType: {
+    SIGN_IN: 0,
+    SIGN_UP: 1,
+  },
+  AppleAuthenticationButtonStyle: {
+    BLACK: 0,
+    WHITE: 1,
+  },
+}));
+
+jest.mock('react-native', () => ({
+  Platform: { OS: 'ios' },
+}));
+
 const mockEnsureUserDocument = jest.fn();
 
 jest.mock('../../firebase/users', () => ({
@@ -63,8 +95,11 @@ jest.mock('../../firebase/users', () => ({
 const ORIGINAL_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
 
 import {
+  getAppleSignInErrorMessage,
   getCurrentUser,
   getGoogleSignInErrorMessage,
+  isAppleSignInAvailable,
+  loginWithApple,
   loginWithEmail,
   loginWithGoogle,
   logout,
@@ -85,6 +120,7 @@ describe('api/auth', () => {
       'test-web-client-id.apps.googleusercontent.com';
     mockHasPlayServices.mockResolvedValue(true);
     mockHasPreviousSignIn.mockReturnValue(false);
+    mockAppleIsAvailable.mockResolvedValue(true);
   });
 
   afterAll(() => {
@@ -306,6 +342,115 @@ describe('api/auth', () => {
         'Missing EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID',
       );
     });
+  });
+
+  it('reports Apple Sign-In availability on iOS', async () => {
+    mockAppleIsAvailable.mockResolvedValue(true);
+    await expect(isAppleSignInAvailable()).resolves.toBe(true);
+  });
+
+  it('signs in with Apple and uses Apple full name on first sign-in', async () => {
+    mockAppleSignIn.mockResolvedValue({
+      identityToken: 'apple-id-token',
+      email: 'hidden@privaterelay.appleid.com',
+      fullName: {
+        givenName: 'Alex',
+        familyName: 'Coach',
+      },
+    });
+    mockOAuthCredential.mockReturnValue({ providerId: 'apple.com' });
+    const firebaseUser = {
+      uid: 'u-apple',
+      email: 'hidden@privaterelay.appleid.com',
+      displayName: null,
+    };
+    mockSignInWithCredential.mockResolvedValue({ user: firebaseUser });
+    mockUpdateProfile.mockResolvedValue(undefined);
+    mockEnsureUserDocument.mockResolvedValue({});
+
+    const result = await loginWithApple();
+
+    expect(MockOAuthProvider).toBeDefined();
+    expect(mockOAuthCredential).toHaveBeenCalledWith({
+      idToken: 'apple-id-token',
+    });
+    expect(mockUpdateProfile).toHaveBeenCalledWith(firebaseUser, {
+      displayName: 'Alex Coach',
+    });
+    expect(mockEnsureUserDocument).toHaveBeenCalledWith(
+      'u-apple',
+      'hidden@privaterelay.appleid.com',
+      'Alex Coach',
+    );
+    expect(result?.user).toEqual(firebaseUser);
+  });
+
+  it('returns null when Apple Sign-In is cancelled', async () => {
+    mockAppleSignIn.mockRejectedValue({ code: 'ERR_REQUEST_CANCELED' });
+    await expect(loginWithApple()).resolves.toBeNull();
+    expect(mockSignInWithCredential).not.toHaveBeenCalled();
+  });
+
+  it('throws when Apple Sign-In omits an identity token', async () => {
+    mockAppleSignIn.mockResolvedValue({
+      identityToken: null,
+      email: null,
+      fullName: null,
+    });
+    await expect(loginWithApple()).rejects.toThrow(
+      'Apple Sign-In did not return an identity token.',
+    );
+  });
+
+  it('throws when Apple Sign-In is unavailable', async () => {
+    mockAppleIsAvailable.mockResolvedValue(false);
+    await expect(loginWithApple()).rejects.toThrow(
+      'Sign in with Apple is not available on this device.',
+    );
+  });
+
+  it('falls back to email local-part when Apple provides no name', async () => {
+    mockAppleSignIn.mockResolvedValue({
+      identityToken: 'apple-id-token-2',
+      email: 'relay@privaterelay.appleid.com',
+      fullName: {
+        givenName: null,
+        familyName: null,
+      },
+    });
+    mockOAuthCredential.mockReturnValue({ providerId: 'apple.com' });
+    mockSignInWithCredential.mockResolvedValue({
+      user: {
+        uid: 'u-apple-2',
+        email: 'relay@privaterelay.appleid.com',
+        displayName: null,
+      },
+    });
+    mockEnsureUserDocument.mockResolvedValue({});
+
+    await loginWithApple();
+
+    expect(mockUpdateProfile).not.toHaveBeenCalled();
+    expect(mockEnsureUserDocument).toHaveBeenCalledWith(
+      'u-apple-2',
+      'relay@privaterelay.appleid.com',
+      'relay',
+    );
+  });
+
+  it('rethrows non-cancel Apple Sign-In errors', async () => {
+    mockAppleSignIn.mockRejectedValue(new Error('apple boom'));
+    await expect(loginWithApple()).rejects.toThrow('apple boom');
+  });
+
+  it('maps Apple Sign-In error messages', () => {
+    expect(
+      getAppleSignInErrorMessage({ code: 'ERR_REQUEST_CANCELED' }),
+    ).toBe('Sign in with Apple was cancelled.');
+    expect(getAppleSignInErrorMessage(new Error('boom'))).toBe('boom');
+    expect(getAppleSignInErrorMessage('x')).toBe(
+      'Sign in with Apple failed. Please try again.',
+    );
   });
 
   it('sends password reset', async () => {

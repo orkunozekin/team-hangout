@@ -7,8 +7,8 @@ Decisions made while you were away. Change anything you disagree with.
 | Topic | Decision |
 |-------|----------|
 | White-label model | One multi-tenant app; coaches create teams inside it (not per-team app binaries) |
-| Backend for MVP | Firestore client + security rules only — no Next.js API |
-| Auth | Email/password + Google Sign-In (native; requires development build) |
+| Backend for MVP | Firestore client + security rules; Callable Cloud Function for account deletion only |
+| Auth | Email/password + Google Sign-In + Sign in with Apple (native; requires development build) |
 | Roles | Team: `coach` / `player`. Platform: `appRole` `user` / `superAdmin` for app owners |
 | Invites | 8-char alphanumeric codes via `inviteCodes/{code}` lookup docs + deep link `teamhangout://join?code=XXXXXXXX` |
 | Events | `practice` \| `match`; coach CRUD; players read |

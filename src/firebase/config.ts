@@ -11,6 +11,10 @@ import {
   // require below to keep TypeScript happy.
 } from 'firebase/auth';
 
+import {
+  getFunctions,
+} from 'firebase/functions';
+
 import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
 
 import {
@@ -45,3 +49,5 @@ export const auth = isFirstInit
   : getAuth(app);
 
 export const db = getFirestore(app);
+
+export const functions = getFunctions(app);

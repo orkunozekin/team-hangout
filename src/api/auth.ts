@@ -1,6 +1,7 @@
 import {
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
+  OAuthProvider,
   onAuthStateChanged,
   sendPasswordResetEmail,
   signInWithCredential,
@@ -17,6 +18,12 @@ import {
   isSuccessResponse,
   statusCodes,
 } from '@react-native-google-signin/google-signin';
+
+import * as AppleAuthentication from 'expo-apple-authentication';
+
+import {
+  Platform,
+} from 'react-native';
 
 import {
   auth,
@@ -42,6 +49,21 @@ function ensureGoogleConfigured(): void {
 
   GoogleSignin.configure({ webClientId });
   googleConfigured = true;
+}
+
+function appleDisplayName(
+  fullName: AppleAuthentication.AppleAuthenticationFullName | null,
+): string | null {
+  if (!fullName) {
+    return null;
+  }
+  const parts = [fullName.givenName, fullName.familyName]
+    .map((part) => part?.trim())
+    .filter((part): part is string => Boolean(part && part.length > 0));
+  if (parts.length === 0) {
+    return null;
+  }
+  return parts.join(' ');
 }
 
 export function subscribeToAuthChanges(
@@ -115,6 +137,69 @@ export async function loginWithGoogle(): Promise<UserCredential | null> {
   return userCredential;
 }
 
+export async function isAppleSignInAvailable(): Promise<boolean> {
+  if (Platform.OS !== 'ios') {
+    return false;
+  }
+  return AppleAuthentication.isAvailableAsync();
+}
+
+export async function loginWithApple(): Promise<UserCredential | null> {
+  const available = await isAppleSignInAvailable();
+  if (!available) {
+    throw new Error('Sign in with Apple is not available on this device.');
+  }
+
+  let appleCredential: AppleAuthentication.AppleAuthenticationCredential;
+  try {
+    appleCredential = await AppleAuthentication.signInAsync({
+      requestedScopes: [
+        AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+        AppleAuthentication.AppleAuthenticationScope.EMAIL,
+      ],
+    });
+  } catch (error: unknown) {
+    if (
+      typeof error === 'object'
+      && error != null
+      && 'code' in error
+      && (error as { code: unknown }).code === 'ERR_REQUEST_CANCELED'
+    ) {
+      return null;
+    }
+    throw error;
+  }
+
+  if (!appleCredential.identityToken) {
+    throw new Error('Apple Sign-In did not return an identity token.');
+  }
+
+  const provider = new OAuthProvider('apple.com');
+  const credential = provider.credential({
+    idToken: appleCredential.identityToken,
+  });
+  const userCredential = await signInWithCredential(auth, credential);
+  const { user } = userCredential;
+
+  const nameFromApple = appleDisplayName(appleCredential.fullName);
+  const displayName = user.displayName
+    ?? nameFromApple
+    ?? user.email?.split('@')[0]
+    ?? 'Player';
+
+  if (!user.displayName && nameFromApple) {
+    await updateProfile(user, { displayName: nameFromApple });
+  }
+
+  await ensureUserDocument(
+    user.uid,
+    user.email ?? appleCredential.email ?? '',
+    displayName,
+  );
+
+  return userCredential;
+}
+
 export function getGoogleSignInErrorMessage(error: unknown): string {
   if (isErrorWithCode(error)) {
     switch (error.code) {
@@ -134,6 +219,23 @@ export function getGoogleSignInErrorMessage(error: unknown): string {
   }
 
   return 'Google Sign-In failed. Please try again.';
+}
+
+export function getAppleSignInErrorMessage(error: unknown): string {
+  if (
+    typeof error === 'object'
+    && error != null
+    && 'code' in error
+    && (error as { code: unknown }).code === 'ERR_REQUEST_CANCELED'
+  ) {
+    return 'Sign in with Apple was cancelled.';
+  }
+
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return 'Sign in with Apple failed. Please try again.';
 }
 
 export async function resetPassword(
