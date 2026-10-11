@@ -157,7 +157,7 @@ export async function applyPlan(db: Firestore, plan: Plan, approvedChecksum: str
   let applied = 0;
   for (let index = 0; index < plan.operations.length && applied < maxOperations; index++) {
     const operation = plan.operations[index];
-    await db.runTransaction(async tx => {
+    const wrote = await db.runTransaction(async tx => {
       const target = db.doc(operation.path); const checkpoint = run.collection('checkpoints').doc(String(index).padStart(8, '0'));
       const [saved, current] = await tx.getAll(checkpoint, target);
       const dependencyPaths = operation.dependencyPaths;
@@ -165,13 +165,14 @@ export async function applyPlan(db: Firestore, plan: Plan, approvedChecksum: str
       dependencies.forEach(doc => requireValue(checksum(doc.data() ?? null) === checksum(plan.dependencies[doc.ref.path]), `Dependency changed: ${doc.ref.path}`));
       if (saved.exists) {
         requireValue(saved.data()?.checksum === digest && checksum(current.data() ?? null) === checksum(operation.after), `Completed target changed: ${operation.path}`);
-        return;
+        return false;
       }
       requireValue(checksum(current.data() ?? null) === checksum(operation.before), `Source/target changed: ${operation.path}`);
       tx.set(target, operation.after);
       tx.create(checkpoint, { checksum: digest, path: operation.path, before: operation.before, after: operation.after });
+      return true;
     });
-    applied++;
+    if (wrote) applied++;
   }
   const checkpoints = await run.collection('checkpoints').get();
   const complete = checkpoints.size === plan.operations.length;

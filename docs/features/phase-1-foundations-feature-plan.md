@@ -6,8 +6,8 @@
 | --- | --- |
 | Status | in-progress |
 | Last updated | 2026-10-11 |
-| Implementation | Steps 1–3 merged. Step 4 migration tooling implemented on `codex/phase-1-legacy-migration`; 42 backend tests, typecheck and 91 native tests pass; PR review pending. Steps 5–15 not started. |
-| Related PR | Step 4 branch `codex/phase-1-legacy-migration`; [Step 3 PR #7](https://github.com/orkunozekin/team-hangout/pull/7) merged. |
+| Implementation | Steps 1–3 merged. Step 4 migration tooling implemented on `codex/phase-1-legacy-migration`; 42 backend tests, typecheck and 91 native tests pass. Step 4 PR #8 is open; AI reviews unavailable due to exhausted credits. Steps 5–15 not started. |
+| Related PR | [Step 4 PR #8](https://github.com/orkunozekin/team-hangout/pull/8), subscribed, branch `codex/phase-1-legacy-migration`. Steps 1–3 merged. |
 | Product approval | Phase 1 capabilities approved; technical choices below are implementation defaults, not deployed behavior. |
 | Commercial approval | **Business model selection pending.** No prices, fees, ads, or entitlement restrictions are enabled by this plan. |
 
@@ -380,7 +380,7 @@ Proposed, uncreated locations: `shared/` contracts, `admin/` browser application
 
 ### Remaining work
 
-1. Finish Step 4 validation and PR AI review, then owner review/merge. Step 4 is implemented, not merged; no live migration has run.
+1. Owner review of Step 4 PR #8. Local validation passes; final CI status is recorded below. Greptile hit its 50-credit trial limit, and Macroscope skipped correctness/approvability with “Credit balance exhausted.” No AI code review was available, and no inline feedback was posted. Subscription is verified as `SUBSCRIBED`. Step 4 is implemented, not merged; no live migration has run. Do not treat missing AI review as approval or merge without owner authorization.
 2. Next implementation invocation is Step 5 only: participant, roster and guardian command boundaries. Steps 5–15 remain incomplete.
 
 ### Blockers / risks

@@ -96,6 +96,7 @@ test('seeded emulator run resumes, runs twice unchanged, reconciles counts and p
   const plan = buildPlan(manifest, inventory); const digest = checksum(plan);
   await assert.rejects(applyPlan(db, plan, 'wrong'), /checksum/);
   const first = await applyPlan(db, plan, digest, 3); assert.equal(first.complete, false); assert.equal(first.completed, 3);
+  const continued = await applyPlan(db, plan, digest, 3); assert.equal(continued.complete, false); assert.equal(continued.completed, 6);
   const done = await applyPlan(db, plan, digest); assert.equal(done.complete, true); assert.equal(done.completed, plan.operations.length);
   const snapshots = {};
   for (const op of plan.operations) snapshots[op.path] = (await db.doc(op.path).get()).data();
