@@ -43,3 +43,22 @@ jobs:
           path: coverage/lcov.info
           if-no-files-found: ignore
           retention-days: 14
+
+  backend-tests:
+    name: Emulator security & contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: yarn install --frozen-lockfile
+      - run: yarn --cwd functions install --frozen-lockfile
+      - name: Run isolated Firestore, Auth and callable tests
+        run: yarn test:backend
