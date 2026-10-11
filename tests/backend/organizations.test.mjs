@@ -199,6 +199,33 @@ test('season archive is reversible, retains reads/history and rejects all ordina
   await call('org-staff', 'archiveSeason', req({ orgId: a.orgId, seasonId: a.season.id, expectedRevision: 2, status: 'active' }));
   assert.equal((await call('org-staff', 'updateEvent', req({ eventId: event.id, expectedRevision: 1, patch: { title: 'Restored' } }))).revision, 2);
 });
+test('completed hierarchy and event commands replay after archive without writes and still require authority', async () => {
+  const f = await fixture('Archived replay fixture');
+  const requests = [
+    ['saveTeam', req({ orgId: f.orgId, teamId: f.team.id, fields: { ...f.teamFields, name: 'Saved team' }, expectedRevision: 1 })],
+    ['saveHierarchyEntity', req({ orgId: f.orgId, kind: 'season', entityId: f.season.id, expectedRevision: 1, fields: { name: 'Saved season', programId: f.program.id, startsOn: '2026-09-01', endsOn: '2026-12-01', status: 'active' } })],
+    ['saveHierarchyEntity', req({ orgId: f.orgId, kind: 'division', entityId: f.division.id, expectedRevision: 1, fields: { name: 'Saved division', programId: f.program.id, seasonId: f.season.id, status: 'active' } })],
+    ['archiveSeason', req({ orgId: f.orgId, seasonId: f.season.id, expectedRevision: 2, status: 'active' })],
+    ['setStaffAssignment', req({ orgId: f.orgId, userId: 'org-outsider', roles: ['programStaff'], programIds: [f.program.id], status: 'active', expectedRevision: 0 })],
+    ['createEvent', req({ teamId: f.team.id, event: { ...fields, teamIds: [f.team.id] } })],
+  ];
+  const saved = [];
+  for (const [name, payload] of requests) saved.push(await call('org-owner', name, payload));
+  requests.push(['updateEvent', req({ eventId: saved[5].id, expectedRevision: 1, patch: { title: 'Saved event' } })]);
+  saved.push(await call('org-owner', ...requests[6]));
+  for (const path of [`organizations/${f.orgId}`, `organizations/${f.orgId}/programs/${f.program.id}`, `organizations/${f.orgId}/seasons/${f.season.id}`, `organizations/${f.orgId}/divisions/${f.division.id}`, `teams/${f.team.id}`]) {
+    await db.doc(path).update({ status: 'archived' });
+  }
+  const paths = [`teams/${f.team.id}`, `events/${saved[5].id}`, `organizations/${f.orgId}/seasons/${f.season.id}`, `organizations/${f.orgId}/divisions/${f.division.id}`];
+  const before = await Promise.all(paths.map(async path => (await db.doc(path).get()).data()));
+  const audits = await db.collection(`organizations/${f.orgId}/audit`).get();
+  for (let i = 0; i < requests.length; i++) assert.deepEqual(await call('org-owner', ...requests[i]), saved[i]);
+  assert.deepEqual(await Promise.all(paths.map(async path => (await db.doc(path).get()).data())), before);
+  assert.equal((await db.collection(`organizations/${f.orgId}/audit`).get()).size, audits.size);
+  for (const [name, payload] of requests) await assert.rejects(call('org-owner', name, req({ ...payload, requestId: `new-archive-${++sequence}` })), error => error.details.domainCode === 'HIERARCHY_ARCHIVED');
+  await db.doc(`organizations/${f.orgId}/members/org-owner`).update({ status: 'revoked' });
+  for (const [name, payload] of requests) await deny(call('org-owner', name, payload));
+});
 test('support directory filters v2 teams and refuses ordinary actors', async () => {
   const ref = db.collection('teams').doc(); await ref.set({ name: 'Legacy directory fixture' });
   await deny(call('org-owner', 'listLegacyTeams'));

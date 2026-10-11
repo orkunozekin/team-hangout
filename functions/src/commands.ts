@@ -134,7 +134,7 @@ export const createEvent = command('createEvent', data => {
     if (payload.event.startsAt === undefined) throw new HttpsError('failed-precondition', 'Organization event times are required.');
     const ids = teamIds(payload.event.teamIds);
     if (ids[0] !== payload.teamId) invalid('teamId must match the first teamIds entry.');
-    const scope = await eventScope(tx, ids, uid);
+    const scope = await eventScope(tx, ids, uid, !replay);
     event = { ...storageFields(payload.event), orgId: scope.orgId, programId: scope.programId, seasonId: scope.seasonId,
       divisionId: scope.teams.every(team => team.divisionId === scope.teams[0].divisionId) ? scope.teams[0].divisionId : null,
       schemaVersion: 2, publicationOperationId: null, teamId: ids[0] };
@@ -162,7 +162,7 @@ function changeEvent(deleting: boolean) {
     const v2 = event.schemaVersion === 2 || event.orgId != null;
     let changes: Data = {};
     if (v2) {
-      const scope = await eventScope(tx, teamIds(event.teamIds), uid);
+      const scope = await eventScope(tx, teamIds(event.teamIds), uid, !replay);
       validateStoredEvent(event, scope);
       // Reauthorize against current state, but never reapply an old patch to a later edit.
       if (replay) return replay;

@@ -89,9 +89,9 @@ export const saveHierarchyEntity = command('saveHierarchyEntity', data => {
   for (const field of ['programId', 'seasonId']) {
     if (before && before[field] !== fields[field]) invalid(`${field} is immutable.`);
   }
-  if (kind !== 'organization' && scope.organization.status === 'archived') inactive();
-  if (kind === 'season') await hierarchy(tx, orgId, fields.programId);
-  if (kind === 'division') await hierarchy(tx, orgId, fields.programId, fields.seasonId);
+  if (!replay && kind !== 'organization' && scope.organization.status === 'archived') inactive();
+  if (kind === 'season') await hierarchy(tx, orgId, fields.programId, undefined, undefined, !replay);
+  if (kind === 'division') await hierarchy(tx, orgId, fields.programId, fields.seasonId, undefined, !replay);
   if (replay) return replay;
   if (kind === 'season' && before?.status === 'archived') inactive();
   checkRevision(before, payload.expectedRevision);
@@ -116,7 +116,7 @@ export const saveTeam = command('saveTeam', data => {
     requireProgram(scope, before.programId);
     for (const field of ['programId', 'seasonId', 'divisionId']) if (before[field] !== payload.fields[field]) invalid(`${field} is immutable.`);
   }
-  const parents = await hierarchy(tx, payload.orgId, payload.fields.programId, payload.fields.seasonId, payload.fields.divisionId);
+  const parents = await hierarchy(tx, payload.orgId, payload.fields.programId, payload.fields.seasonId, payload.fields.divisionId, !replay);
   if (replay) return replay;
   checkRevision(before, payload.expectedRevision);
   // V2 invitations are a later command. Never issue a legacy code for a tenant team.
@@ -137,7 +137,7 @@ export const setStaffAssignment = command('setStaffAssignment', data => {
 }, async (tx, payload, uid, _actor, replay) => {
   const db = getFirestore(); const scope = await staffScope(tx, payload.orgId, uid); enabled(scope.organization);
   if (!scope.admin) denied();
-  if (scope.organization.status !== 'active') inactive();
+  if (!replay && scope.organization.status !== 'active') inactive();
   // Self-demotion is a separate handover/deletion policy, never an accidental lockout here.
   if (payload.userId === uid && (payload.status !== 'active' || !payload.roles.includes('orgAdmin'))) {
     throw new HttpsError('failed-precondition', 'Another organization administrator must change your assignment.');
@@ -165,7 +165,7 @@ export const archiveSeason = command('archiveSeason', data => {
   const db = getFirestore(); const scope = await staffScope(tx, payload.orgId, uid); enabled(scope.organization);
   const ref = db.doc(`organizations/${payload.orgId}/seasons/${payload.seasonId}`); const before = (await tx.get(ref)).data();
   if (!before || before.orgId !== payload.orgId) denied();
-  requireProgram(scope, before!.programId); await hierarchy(tx, payload.orgId, before!.programId);
+  requireProgram(scope, before!.programId); await hierarchy(tx, payload.orgId, before!.programId, undefined, undefined, !replay);
   if (replay) return replay;
   checkRevision(before, payload.expectedRevision);
   const season = { ...before, status: payload.status, ...metadata(uid, before) };

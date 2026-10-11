@@ -2,9 +2,9 @@
 
 ### 2026-10-11: Replay saved results before validating a patch against later state
 
-- **Source:** PR #7, Greptile review.
+- **Source:** PR #7, Greptile and Macroscope reviews.
 - **Gap:** A successful event time patch was merged into the latest event during replay, so a later edit could make the old patch invalid and hide the original success.
-- **Going forward:** Recheck current canonical authorization and scope before returning a receipt, but do not reapply or validate an already-completed mutation against later mutable state. Test replay after intervening edits and after revocation, including no extra writes or audit entries.
+- **Going forward:** Recheck current canonical authorization and scope before returning a receipt, but do not reapply or validate an already-completed mutation against later mutable state. Archive restrictions apply to new writes, while replay still rechecks canonical authority and parent integrity. Test replay after intervening edits, archival and revocation, including no extra writes or audit entries.
 - **Pointers:** `functions/src/commands.ts`, `tests/backend/organizations.test.mjs`.
 
 ## Lessons
