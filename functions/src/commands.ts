@@ -164,6 +164,8 @@ function changeEvent(deleting: boolean) {
     if (v2) {
       const scope = await eventScope(tx, teamIds(event.teamIds), uid);
       validateStoredEvent(event, scope);
+      // Reauthorize against current state, but never reapply an old patch to a later edit.
+      if (replay) return replay;
       if (!deleting) {
         changes = v2Fields(payload.patch, true);
         // Lifecycle controls and fenced publication are reserved for Phase 2.
