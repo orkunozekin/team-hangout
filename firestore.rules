@@ -35,6 +35,15 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/teamMembers/$(memberDocId(teamId))).data.role == 'coach';
     }
 
+    function isLegacy(data) {
+      return !('orgId' in data) && (!('schemaVersion' in data) || data.schemaVersion != 2);
+    }
+
+    function legacyTeam(teamId) {
+      return exists(/databases/$(database)/documents/teams/$(teamId))
+        && isLegacy(get(/databases/$(database)/documents/teams/$(teamId)).data);
+    }
+
     function canManageTeam(teamId) {
       return isCoach(teamId) || isSuperAdmin();
     }
@@ -71,8 +80,8 @@ service cloud.firestore {
     }
 
     match /teams/{teamId} {
-      allow get: if isTeamMember(teamId) || isSuperAdmin();
-      allow list: if isSuperAdmin();
+      allow get: if isLegacy(resource.data) && (isTeamMember(teamId) || isSuperAdmin());
+      allow list: if false;
       // Update Team Hangout: team writes now require authenticated callable commands.
       allow create, update, delete: if false;
     }
@@ -85,22 +94,20 @@ service cloud.firestore {
     match /teamMembers/{memberId} {
       allow get: if signedIn()
         && (resource.data.userId == request.auth.uid
-            || isTeamMember(resource.data.teamId)
-            || isSuperAdmin());
+            || (legacyTeam(resource.data.teamId) && (isTeamMember(resource.data.teamId) || isSuperAdmin())));
       allow list: if signedIn()
         && (resource.data.userId == request.auth.uid
-            || isTeamMember(resource.data.teamId)
-            || isSuperAdmin());
+            || (legacyTeam(resource.data.teamId) && (isTeamMember(resource.data.teamId) || isSuperAdmin())));
 
       allow create, update: if false;
-      allow delete: if isSelf(resource.data.userId)
-        || canManageTeam(resource.data.teamId);
+      allow delete: if isLegacy(resource.data) && legacyTeam(resource.data.teamId)
+        && (isSelf(resource.data.userId) || canManageTeam(resource.data.teamId));
     }
 
     match /events/{eventId} {
-      allow get: if (isTeamMember(resource.data.teamId) || isSuperAdmin())
+      allow get: if legacyTeam(resource.data.teamId) && (isTeamMember(resource.data.teamId) || isSuperAdmin())
         && resource.data.deletedAt == null;
-      allow list: if (isTeamMember(resource.data.teamId) || isSuperAdmin())
+      allow list: if legacyTeam(resource.data.teamId) && (isTeamMember(resource.data.teamId) || isSuperAdmin())
         && resource.data.deletedAt == null;
       // Update Team Hangout: event writes now require revisioned callable commands.
       allow create, update, delete: if false;

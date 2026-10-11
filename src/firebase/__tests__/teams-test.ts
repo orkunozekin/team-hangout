@@ -230,34 +230,13 @@ describe('firebase/teams', () => {
 
 
   it('lists all teams for super admin', async () => {
-    mockGetDocs.mockResolvedValue({
-      docs: [
-        {
-          id: 't2',
-          data: () => ({
-            name: 'Wolves',
-            inviteCode: 'WOLF1234',
-            createdBy: 'c1',
-            sport: null,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          }),
-        },
-        {
-          id: 't1',
-          data: () => ({
-            name: 'Tigers',
-            inviteCode: 'ABCD2345',
-            createdBy: 'c1',
-            sport: 'soccer',
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          }),
-        },
-      ],
-    });
+    mockRunCommand
+      .mockResolvedValueOnce({ items: [{ id: 't2', name: 'Wolves' }], nextCursor: 't2' })
+      .mockResolvedValueOnce({ items: [{ id: 't1', name: 'Tigers' }], nextCursor: null });
     const teams = await listAllTeams();
     expect(teams.map((x) => x.name)).toEqual(['Tigers', 'Wolves']);
+    expect(mockRunCommand).toHaveBeenNthCalledWith(1, 'listLegacyTeams', { pageSize: 50, cursor: null });
+    expect(mockRunCommand).toHaveBeenNthCalledWith(2, 'listLegacyTeams', { pageSize: 50, cursor: 't2' });
   });
 
   it('resolves preferred team for super admin without membership', async () => {

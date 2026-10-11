@@ -87,3 +87,5 @@ export const deleteAccount = onCall(async (request) => {
 });
 
 export { createTeam, joinTeamWithInvite, regenerateInvite, renameTeam, createEvent, updateEvent, softDeleteEvent } from './commands';
+
+export { createOrganization, saveHierarchyEntity, saveTeam, setStaffAssignment, archiveSeason, listMyOrganizations, listOrganizationHierarchy, listLegacyTeams } from './organizations/commands';
