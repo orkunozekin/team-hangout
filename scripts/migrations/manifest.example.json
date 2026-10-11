@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "noEmail": true,
+  "confirmedAt": "2026-10-11T12:00:00.000Z",
+  "mappings": [
+    {
+      "teamId": "synthetic-team",
+      "orgId": "synthetic-org",
+      "programId": "soccer",
+      "seasonId": "fall-2026",
+      "divisionId": "u12",
+      "timeZone": "America/Chicago",
+      "confirmedBy": "reviewing-owner",
+      "defaultDurationMinutes": 60
+    }
+  ]
+}
