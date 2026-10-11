@@ -1,3 +1,4 @@
+import { householdOrganization } from '../participants/policy';
 import { FieldPath, getFirestore, Timestamp, Transaction } from 'firebase-admin/firestore';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { Data, command, id, invalid, keys, object, optional, revision, text, wire } from '../commandSupport';
@@ -143,7 +144,8 @@ export const setStaffAssignment = command('setStaffAssignment', data => {
     throw new HttpsError('failed-precondition', 'Another organization administrator must change your assignment.');
   }
   const ref = db.doc(`organizations/${payload.orgId}/members/${payload.userId}`);
-  const [target, previous] = await tx.getAll(db.doc(`users/${payload.userId}`), ref);
+  const discovery = db.doc(`users/${payload.userId}/organizationLinks/${payload.orgId}`);
+  const [target, previous, previousDiscovery] = await tx.getAll(db.doc(`users/${payload.userId}`), ref, discovery);
   if (!target.exists || target.data()?.accountState === 'deleting') denied();
   for (const programId of payload.programIds) await hierarchy(tx, payload.orgId, programId, undefined, undefined, false);
   if (replay) return replay;
@@ -152,7 +154,7 @@ export const setStaffAssignment = command('setStaffAssignment', data => {
   const member = { orgId: payload.orgId, roles: payload.roles, programIds: payload.programIds, status: payload.status,
     grantedBy: uid, grantedAt: now, revokedAt: payload.status === 'revoked' ? now : null, ...metadata(uid, previous.data()) };
   tx.set(ref, member);
-  tx.set(db.doc(`users/${payload.userId}/organizationLinks/${payload.orgId}`), { orgId: payload.orgId, status: payload.status, revision: member.revision });
+  tx.set(discovery, { orgId: payload.orgId, status: payload.status, ...metadata(uid, previousDiscovery.data()) }, { merge: true });
   audit(tx, payload.orgId, uid, 'setStaffAssignment', payload.userId, member.revision);
   return { member: { id: payload.userId, ...member } };
 });
@@ -201,7 +203,13 @@ export const listMyOrganizations = readCommand(data => {
       const scope = await staffScope(tx, link.id, uid);
       items.push({ id: link.id, name: scope.organization.name, status: scope.organization.status,
         roles: scope.admin ? ['orgAdmin'] : ['programStaff'], programIds: scope.admin ? [] : scope.programIds });
-    } catch (error) { if (!(error instanceof HttpsError) || error.code !== 'permission-denied') throw error; }
+    } catch (error) {
+      if (!(error instanceof HttpsError) || error.code !== 'permission-denied') throw error;
+      try {
+        const access = await householdOrganization(tx, link.id, uid);
+        items.push({ id: link.id, name: access.organization.name, status: access.organization.status, roles: [access.relationship], programIds: [] });
+      } catch (householdError) { if (!(householdError instanceof HttpsError) || householdError.code !== 'permission-denied') throw householdError; }
+    }
   }
   return { items, nextCursor: links.size > payload.pageSize ? links.docs[payload.pageSize - 1].id : null };
 });
