@@ -4,10 +4,10 @@
 
 | Field | Value |
 | --- | --- |
-| Status | planned |
+| Status | in-progress |
 | Last updated | 2026-10-10 |
-| Implementation | Not started; this document specifies future work. |
-| Related PR | None for implementation. |
+| Implementation | Step 1 implemented on `codex/phase-1-security-fixtures`, pending PR review and merge. Steps 2–15 not started. |
+| Related PR | [Step 1 PR #5](https://github.com/orkunozekin/team-hangout/pull/5), open and subscribed; CI passed on Node 22/Java 21; Greptile re-review and Macroscope correctness passed on `fa78eec`. Latest review/check state is tracked on the PR. |
 | Product approval | Phase 1 capabilities approved; technical choices below are implementation defaults, not deployed behavior. |
 | Commercial approval | **Business model selection pending.** No prices, fees, ads, or entitlement restrictions are enabled by this plan. |
 
@@ -357,11 +357,16 @@ Proposed, uncreated locations: `shared/` contracts, `admin/` browser application
 
 - Inspected current models, rules, adapters, UI anchors, deployment configuration and account deletion.
 - Read exact SDK 54 references and official backend/browser/calendar/accessibility documentation.
-- Defined PR-sized work, migration contracts, security boundaries and required proof. No implementation or runtime prototype executed for this document.
+- Defined PR-sized work, migration contracts, security boundaries and required proof.
+- Step 1 implemented: `firebase.emulators.json`, `scripts/test-backend.mjs`, `tests/backend/`, `shared/contracts.ts`, and the backend CI job. Live rules/adapters/Functions behavior is unchanged.
+- Validation: `yarn typecheck`, 13 existing suites/93 tests with coverage, and 14 backend tests (5 pure contracts, 7 rules, 2 callable integration) passed locally. The direct rules-test invocation without emulator opt-in was rejected before database access. Local runtime: Node 24.19.0 and Java 26; CI uses Node 22 and Java 21. No production credentials or data used.
+- UI evidence: not applicable; no user-visible behavior changed. Both known rule vulnerabilities are reproduced intentionally, with cutover instructions in `docs/backend-testing.md`.
 
 ### Remaining work
 
-Start with Step 1 only. Run `/feature-context` on this document and `/implement-feature` for the selected numbered step; after that PR's review loop, update this Handoff with concrete tests, screenshots, PR URL, completed step and next incomplete step, then stop.
+1. Review and merge Step 1 PR #5 separately; implementation is not yet merged. Both CI jobs passed. Greptile identified nullable-division scope and weak preservation assertions; both were fixed with regression coverage and threads resolved. Greptile re-review of `fa78eec` passed with zero new comments. Macroscope correctness passed; its approvability result was neutral while its summary still cited the original findings, so a new top-level re-evaluation request was posted. Check the PR for that result and latest checks before merging.
+2. Next implementation invocation: Step 2 only, server team/event commands plus the atomic legacy rules cutover. Replace the two `KNOWN VULNERABILITY` success assertions with denial assertions when closing those paths.
+3. Steps 3–15 remain incomplete. Do not expose organization-v2 data before the Step 2 cutover.
 
 ### Blockers / risks
 
@@ -369,4 +374,4 @@ Existing coach self-assignment and broad team-get rules are source-confirmed ris
 
 ### Pointers for the next agent
 
-Preserve the canonical organization-local participant identity and existing team/event IDs. Do not infer guardian rights or organization ownership. Do not claim a test was run without its output. Every UI PR requires current-checkout inspected captures; every implementation PR targets main on a codex branch, subscribes to review, uses address-pr-feedback, requests fresh bot re-review after fixes, and leaves merging to the owner.
+Start at `docs/backend-testing.md` and `tests/backend/`. Run `yarn test:backend` with Node 22 and Java 21+. Pure contracts are not live authorization or migration code. Preserve the canonical organization-local participant identity and existing team/event IDs. Do not infer guardian rights or organization ownership. Do not claim a test was run without its output. Every UI PR requires current-checkout inspected captures; every implementation PR targets main on a codex branch, subscribes to review, uses address-pr-feedback, requests fresh bot re-review after fixes, and leaves merging to the owner.

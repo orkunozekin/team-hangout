@@ -49,3 +49,6 @@ functions/node_modules/
 # secrets
 firebase-service-account.json
 *-service-account.json
+
+# Emulator scratch logs
+*-debug.log
