@@ -85,3 +85,5 @@ export const deleteAccount = onCall(async (request) => {
     membershipsRemoved: membersSnap.size,
   };
 });
+
+export { createTeam, joinTeamWithInvite, regenerateInvite, renameTeam, createEvent, updateEvent, softDeleteEvent } from './commands';

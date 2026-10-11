@@ -25,7 +25,9 @@ service cloud.firestore {
 
     function isTeamMember(teamId) {
       return signedIn()
-        && exists(/databases/$(database)/documents/teamMembers/$(memberDocId(teamId)));
+        && exists(/databases/$(database)/documents/teamMembers/$(memberDocId(teamId)))
+        && get(/databases/$(database)/documents/teamMembers/$(memberDocId(teamId))).data.teamId == teamId
+        && get(/databases/$(database)/documents/teamMembers/$(memberDocId(teamId))).data.userId == request.auth.uid;
     }
 
     function isCoach(teamId) {
@@ -40,43 +42,41 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if isSelf(uid) || isSuperAdmin();
 
-      // New accounts always start as appRole == 'user'. SuperAdmin is console/bootstrap only.
       allow create: if isSelf(uid)
+        && request.resource.data.keys().hasOnly(['uid', 'email', 'displayName', 'appRole', 'activeTeamId', 'createdAt', 'updatedAt'])
         && request.resource.data.uid == uid
         && request.resource.data.appRole == 'user'
-        && request.resource.data.keys().hasAll([
-          'uid', 'email', 'displayName', 'appRole', 'activeTeamId', 'createdAt', 'updatedAt'
-        ]);
-
-      // Self may update profile fields but cannot change appRole.
-      // Super admins may update any user, including appRole promotions.
+        && request.resource.data.activeTeamId == null
+        && request.resource.data.displayName is string
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
       allow update: if (
           isSelf(uid)
-          && request.resource.data.appRole == resource.data.appRole
-        )
-        || isSuperAdmin();
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'activeTeamId', 'updatedAt'])
+          && request.resource.data.displayName is string
+          && request.resource.data.updatedAt == request.time
+          && (request.resource.data.activeTeamId == null || isTeamMember(request.resource.data.activeTeamId) || isSuperAdmin())
+        ) || (
+          isSuperAdmin()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['appRole', 'updatedAt'])
+          && request.resource.data.appRole in ['user', 'superAdmin']
+          && request.resource.data.updatedAt == request.time
+        );
 
       allow delete: if false;
     }
 
     match /teams/{teamId} {
-      allow get: if signedIn();
+      allow get: if isTeamMember(teamId) || isSuperAdmin();
       allow list: if isSuperAdmin();
-      allow create: if signedIn()
-        && request.resource.data.createdBy == request.auth.uid
-        && request.resource.data.keys().hasAll(['name', 'inviteCode', 'createdBy', 'createdAt', 'updatedAt']);
-      allow update: if canManageTeam(teamId);
-      allow delete: if false;
+      // Update Team Hangout: team writes now require authenticated callable commands.
+      allow create, update, delete: if false;
     }
 
     match /inviteCodes/{code} {
-      allow get: if signedIn();
-      allow list: if false;
-      allow create: if signedIn()
-        && request.resource.data.createdBy == request.auth.uid
-        && request.resource.data.keys().hasAll(['code', 'teamId', 'createdBy', 'createdAt']);
-      allow update, delete: if signedIn()
-        && (resource.data.createdBy == request.auth.uid || isSuperAdmin());
+      // Joining resolves the supplied code on the server without exposing lookup records.
+      allow read, write: if false;
     }
 
     match /teamMembers/{memberId} {
@@ -89,23 +89,7 @@ service cloud.firestore {
             || isTeamMember(resource.data.teamId)
             || isSuperAdmin());
 
-      allow create: if signedIn()
-        && request.resource.data.userId == request.auth.uid
-        && memberId == request.resource.data.teamId + '_' + request.auth.uid
-        && request.resource.data.role in ['coach', 'player']
-        && (
-          request.resource.data.role == 'coach'
-          || (
-            exists(/databases/$(database)/documents/inviteCodes/$(
-              get(/databases/$(database)/documents/teams/$(request.resource.data.teamId)).data.inviteCode
-            ))
-            && get(/databases/$(database)/documents/inviteCodes/$(
-              get(/databases/$(database)/documents/teams/$(request.resource.data.teamId)).data.inviteCode
-            )).data.teamId == request.resource.data.teamId
-          )
-        );
-
-      allow update: if canManageTeam(resource.data.teamId);
+      allow create, update: if false;
       allow delete: if isSelf(resource.data.userId)
         || canManageTeam(resource.data.teamId);
     }
@@ -115,10 +99,8 @@ service cloud.firestore {
         && resource.data.deletedAt == null;
       allow list: if (isTeamMember(resource.data.teamId) || isSuperAdmin())
         && resource.data.deletedAt == null;
-      allow create: if canManageTeam(request.resource.data.teamId)
-        && request.resource.data.createdBy == request.auth.uid;
-      allow update: if canManageTeam(resource.data.teamId);
-      allow delete: if false;
+      // Update Team Hangout: event writes now require revisioned callable commands.
+      allow create, update, delete: if false;
     }
   }
 }

@@ -81,12 +81,14 @@ export default function CreateEditEventScreen({
   const [notes, setNotes] = useState('');
   const [errors, setErrors] = useState<import('../lib/eventForm').EventFormErrors>({});
   const [loading, setLoading] = useState(false);
+  const [revision, setRevision] = useState<number | null>(null);
 
   useEffect(() => {
     if (!eventId) return;
     (async () => {
       const event = await getEvent(eventId);
       if (!event) return;
+      setRevision(event.revision ?? 0);
       setTitle(event.title);
       setEventType(event.type);
       setDate(event.date.toISOString().slice(0, 10));
@@ -122,6 +124,7 @@ export default function CreateEditEventScreen({
         : null;
 
       if (isEdit && eventId) {
+        if (revision === null) throw new Error('Reload the event before saving.');
         await updateEvent(eventId, {
           title,
           type: eventType,
@@ -129,7 +132,7 @@ export default function CreateEditEventScreen({
           time,
           location,
           notes,
-        });
+        }, revision);
       } else {
         await createEvent({
           teamId,

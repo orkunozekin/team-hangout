@@ -111,8 +111,13 @@ export default function EventDetailScreen({
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
-            await softDeleteEvent(route.params.eventId);
-            navigation.goBack();
+            try {
+              if (!event) throw new Error('Reload the event before deleting.');
+              await softDeleteEvent(route.params.eventId, event.revision ?? 0);
+              navigation.goBack();
+            } catch (error) {
+              Alert.alert('Could not delete event', error instanceof Error ? error.message : 'Please try again');
+            }
           },
         },
       ],

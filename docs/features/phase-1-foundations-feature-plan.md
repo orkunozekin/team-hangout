@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Status | in-progress |
-| Last updated | 2026-10-10 |
+| Last updated | 2026-10-11 |
 | Implementation | Step 1 implemented on `codex/phase-1-security-fixtures`, pending PR review and merge. Steps 2–15 not started. |
 | Related PR | [Step 1 PR #5](https://github.com/orkunozekin/team-hangout/pull/5), open and subscribed; CI passed on Node 22/Java 21; Greptile re-review and Macroscope correctness passed on `fa78eec`. Latest review/check state is tracked on the PR. |
 | Product approval | Phase 1 capabilities approved; technical choices below are implementation defaults, not deployed behavior. |
@@ -362,15 +362,19 @@ Proposed, uncreated locations: `shared/` contracts, `admin/` browser application
 - Validation: `yarn typecheck`, 13 existing suites/93 tests with coverage, and 14 backend tests (5 pure contracts, 7 rules, 2 callable integration) passed locally. The direct rules-test invocation without emulator opt-in was rejected before database access. Local runtime: Node 24.19.0 and Java 26; CI uses Node 22 and Java 21. No production credentials or data used.
 - UI evidence: not applicable; no user-visible behavior changed. Both known rule vulnerabilities are reproduced intentionally, with cutover instructions in `docs/backend-testing.md`.
 
+- Step 1 PR #5 merged on 2026-10-11; the earlier unmerged status is superseded.
+- Step 2 implements server actor lookup, atomic team/player/invite commands, event validation/revisions, request receipts and the restrictive rules cutover. Native mutations use callables and loaded event revisions; legacy timestamp reads remain unchanged. Organization-v2 commands remain refused until Step 3.
+- Initial Step 2 validation: 20 emulator tests and native unit coverage passed under Node 24.19.0. Native iPhone 17 Pro / iOS 26.5 development client loads this checkout via Metro 8081 with demo-only loopback emulators. Captures and final validation/review results are pending.
+
 ### Remaining work
 
-1. Review and merge Step 1 PR #5 separately; implementation is not yet merged. Both CI jobs passed. Greptile identified nullable-division scope and weak preservation assertions; both were fixed with regression coverage and threads resolved. Greptile re-review of `fa78eec` passed with zero new comments. Macroscope correctness passed; its approvability result was neutral while its summary still cited the original findings, so a new top-level re-evaluation request was posted. Check the PR for that result and latest checks before merging.
-2. Next implementation invocation: Step 2 only, server team/event commands plus the atomic legacy rules cutover. Replace the two `KNOWN VULNERABILITY` success assertions with denial assertions when closing those paths.
-3. Steps 3–15 remain incomplete. Do not expose organization-v2 data before the Step 2 cutover.
+1. Finish Step 2 native UI evidence, publish its separate draft PR, subscribe, and follow configured AI review/checks. Do not advance to Step 3 in this invocation.
+2. Step 3 is the next implementation step: organization hierarchy and scoped staff backend.
+3. Steps 3–15 remain incomplete; organization-v2 writes remain gated.
 
 ### Blockers / risks
 
-Existing coach self-assignment and broad team-get rules are source-confirmed risks; do not expose new youth tenant data before Step 2 closes them. Legacy local-time conversion needs reviewed timezone ownership. Email, domain, retention and production migration approvals remain external gates. Browser/ICS/import scale are doc-supported approaches awaiting executable proof.
+Step 2 closes direct coach creation, broad team gets, client event writes, invite reads and reference reassignment. Already-shipped binaries receive Firestore permission-denied errors; custom update-required text cannot be injected into shipped code by rules. Deployment ordering and historical coach-assignment review remain rollout requirements. Legacy local-time conversion needs reviewed timezone ownership. Email, domain, retention and production migration approvals remain external gates. Browser/ICS/import scale are doc-supported approaches awaiting executable proof.
 
 ### Pointers for the next agent
 

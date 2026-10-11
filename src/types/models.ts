@@ -50,6 +50,7 @@ export interface EventLocation {
 
 export interface TeamEvent {
   id: string;
+  revision?: number;
   teamId: string;
   type: EventType;
   title: string;

@@ -1,14 +1,11 @@
+import { runCommand } from './commands';
 import {
   collection,
   doc,
   getDoc,
   getDocs,
   query,
-  setDoc,
-  updateDoc,
   where,
-  serverTimestamp,
-  Timestamp,
 } from 'firebase/firestore';
 
 import {
@@ -47,6 +44,7 @@ export function mapEventDoc(
 
   return {
     id,
+    revision: typeof data.revision === 'number' ? data.revision : 0,
     teamId: String(data.teamId ?? ''),
     type: data.type === 'match' ? 'match' : 'practice',
     title: String(data.title ?? ''),
@@ -102,69 +100,25 @@ export async function listTeamEvents(
   );
 }
 
-export async function createEvent(
-  input: CreateEventInput,
-): Promise<TeamEvent> {
-  const ref = doc(collection(db, 'events'));
-  const payload = {
-    teamId: input.teamId,
-    type: input.type,
-    title: input.title.trim(),
-    date: Timestamp.fromDate(input.date),
-    time: input.time.trim(),
-    location: input.location ?? null,
-    notes: input.notes?.trim() || null,
-    createdBy: input.createdBy,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-    deletedAt: null,
-  };
-
-  await setDoc(ref, payload);
-
-  return {
-    id: ref.id,
-    teamId: input.teamId,
-    type: input.type,
-    title: input.title.trim(),
-    date: input.date,
-    time: input.time.trim(),
-    location: input.location ?? null,
-    notes: input.notes?.trim() || null,
-    createdBy: input.createdBy,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    deletedAt: null,
-  };
+function eventPayload(input: UpdateEventInput) {
+  const payload: Record<string, unknown> = {};
+  for (const field of ['type', 'title', 'time', 'notes'] as const) {
+    if (input[field] !== undefined) payload[field] = typeof input[field] === 'string' ? input[field]?.trim() : input[field];
+  }
+  if (input.date !== undefined) payload.date = input.date.toISOString();
+  if (input.location !== undefined) payload.location = input.location ? { name: input.location.name, ...(input.location.address ? { address: input.location.address } : {}) } : null;
+  return payload;
 }
 
-export async function updateEvent(
-  eventId: string,
-  input: UpdateEventInput,
-): Promise<void> {
-  const patch: Record<string, unknown> = {
-    updatedAt: serverTimestamp(),
-  };
-
-  if (input.type !== undefined) patch.type = input.type;
-  if (input.title !== undefined) patch.title = input.title.trim();
-  if (input.date !== undefined) {
-    patch.date = Timestamp.fromDate(input.date);
-  }
-  if (input.time !== undefined) patch.time = input.time.trim();
-  if (input.location !== undefined) patch.location = input.location;
-  if (input.notes !== undefined) {
-    patch.notes = input.notes?.trim() || null;
-  }
-
-  await updateDoc(doc(db, 'events', eventId), patch);
+export async function createEvent(input: CreateEventInput): Promise<TeamEvent> {
+  const result = await runCommand<Record<string, unknown> & { id: string }>('createEvent', { teamId: input.teamId, event: eventPayload(input) });
+  return mapEventDoc(result.id, result);
 }
 
-export async function softDeleteEvent(
-  eventId: string,
-): Promise<void> {
-  await updateDoc(doc(db, 'events', eventId), {
-    deletedAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
+export async function updateEvent(eventId: string, input: UpdateEventInput, expectedRevision: number): Promise<void> {
+  await runCommand('updateEvent', { eventId, expectedRevision, patch: eventPayload(input) });
+}
+
+export async function softDeleteEvent(eventId: string, expectedRevision: number): Promise<void> {
+  await runCommand('softDeleteEvent', { eventId, expectedRevision });
 }
