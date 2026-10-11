@@ -380,7 +380,7 @@ Proposed, uncreated locations: `shared/` contracts, `admin/` browser application
 
 ### Remaining work
 
-1. Owner review of Step 4 PR #8. Local validation passes; final CI status is recorded below. Greptile hit its 50-credit trial limit, and Macroscope skipped correctness/approvability with “Credit balance exhausted.” No AI code review was available, and no inline feedback was posted. Subscription is verified as `SUBSCRIBED`. Step 4 is implemented, not merged; no live migration has run. Do not treat missing AI review as approval or merge without owner authorization.
+1. Owner review of Step 4 PR #8. Local validation passes; CI results for each head are available on PR #8 and must pass before merge. Bounded resumes count only new target writes, with a regression covering successive partial runs. Greptile hit its 50-credit trial limit, and Macroscope skipped correctness/approvability with “Credit balance exhausted.” No AI code review was available, and no inline feedback was posted. Subscription is verified as `SUBSCRIBED`. Step 4 is implemented, not merged; no live migration has run. Do not treat missing AI review as approval or merge without owner authorization.
 2. Next implementation invocation is Step 5 only: participant, roster and guardian command boundaries. Steps 5–15 remain incomplete.
 
 ### Blockers / risks
