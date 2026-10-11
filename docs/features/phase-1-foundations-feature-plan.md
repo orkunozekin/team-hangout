@@ -5,9 +5,9 @@
 | Field | Value |
 | --- | --- |
 | Status | in-progress |
-| Last updated | 2026-10-10 |
-| Implementation | Step 1 implemented on `codex/phase-1-security-fixtures`, pending PR review and merge. Steps 2–15 not started. |
-| Related PR | [Step 1 PR #5](https://github.com/orkunozekin/team-hangout/pull/5), open and subscribed; CI passed on Node 22/Java 21; Greptile re-review and Macroscope correctness passed on `fa78eec`. Latest review/check state is tracked on the PR. |
+| Last updated | 2026-10-11 |
+| Implementation | Step 1 merged. Step 2 implemented on `codex/phase-1-server-commands` in draft PR #6. Steps 3–15 not started. |
+| Related PR | [Step 2 PR #6](https://github.com/orkunozekin/team-hangout/pull/6), draft and subscribed. CI and Greptile re-review pass on code commit `6b00e32`; Macroscope only supplied a summary while draft. Step 1 PR #5 merged. |
 | Product approval | Phase 1 capabilities approved; technical choices below are implementation defaults, not deployed behavior. |
 | Commercial approval | **Business model selection pending.** No prices, fees, ads, or entitlement restrictions are enabled by this plan. |
 
@@ -358,19 +358,24 @@ Proposed, uncreated locations: `shared/` contracts, `admin/` browser application
 - Inspected current models, rules, adapters, UI anchors, deployment configuration and account deletion.
 - Read exact SDK 54 references and official backend/browser/calendar/accessibility documentation.
 - Defined PR-sized work, migration contracts, security boundaries and required proof.
-- Step 1 implemented: `firebase.emulators.json`, `scripts/test-backend.mjs`, `tests/backend/`, `shared/contracts.ts`, and the backend CI job. Live rules/adapters/Functions behavior is unchanged.
-- Validation: `yarn typecheck`, 13 existing suites/93 tests with coverage, and 14 backend tests (5 pure contracts, 7 rules, 2 callable integration) passed locally. The direct rules-test invocation without emulator opt-in was rejected before database access. Local runtime: Node 24.19.0 and Java 26; CI uses Node 22 and Java 21. No production credentials or data used.
-- UI evidence: not applicable; no user-visible behavior changed. Both known rule vulnerabilities are reproduced intentionally, with cutover instructions in `docs/backend-testing.md`.
+- Step 1 implemented: `firebase.emulators.json`, `scripts/test-backend.mjs`, `tests/backend/`, `shared/contracts.ts`, and the backend CI job. At Step 1, live rules/adapters/Functions behavior was unchanged.
+- Step 1 validation: `yarn typecheck`, 13 existing suites/93 tests with coverage, and 14 backend tests (5 pure contracts, 7 rules, 2 callable integration) passed locally. The direct rules-test invocation without emulator opt-in was rejected before database access. Local runtime: Node 24.19.0 and Java 26; CI uses Node 22 and Java 21. No production credentials or data used.
+- Step 1 UI evidence: not applicable; no user-visible behavior changed. Both known rule vulnerabilities are reproduced intentionally, with cutover instructions in `docs/backend-testing.md`.
+
+- Step 1 PR #5 merged on 2026-10-11; the earlier unmerged status is superseded.
+- Step 2 implements server actor lookup, atomic team/player/invite commands, event validation/revisions, request receipts and the restrictive rules cutover. Native mutations use callables and loaded event revisions; legacy timestamp reads remain unchanged. Organization-v2 commands remain refused until Step 3.
+- Step 2 validation: typecheck, 91 native tests with coverage and 23 emulator tests pass under Node 24.19.0 / Java 26; CI uses Node 22 / Java 21. No production data or deployment. Native iPhone 17 Pro / iOS 26.5 used this checkout’s Metro 8081 bundle with demo-only loopback emulators. Nine inspected screenshots are attached under PR #6 **UI evidence**, covering create/rotation, inactive-code error, player join, stale edit, successful reload/save deletion conflict, profile save after removal and final invite rotation on `6b00e32`. Existing native development client reused because native dependencies did not change.
+- Greptile’s three findings (profile preference, denial-test isolation and retry action identity) were fixed with regression tests in two fix rounds. Re-review on `6b00e32` completed with zero new comments and all bot threads resolved. Macroscope provided a summary but no correctness check on this draft. PR subscription is verified through the REST notification-thread API. The GraphQL subscription endpoint requires a scope unavailable to this token. Local evidence is retained under `/Users/orkunozekin/.codex/visualizations/2026/10/11/01a12b56-57cd-7e73-9953-7f86c4e281ef/step-2-evidence/`.
 
 ### Remaining work
 
-1. Review and merge Step 1 PR #5 separately; implementation is not yet merged. Both CI jobs passed. Greptile identified nullable-division scope and weak preservation assertions; both were fixed with regression coverage and threads resolved. Greptile re-review of `fa78eec` passed with zero new comments. Macroscope correctness passed; its approvability result was neutral while its summary still cited the original findings, so a new top-level re-evaluation request was posted. Check the PR for that result and latest checks before merging.
-2. Next implementation invocation: Step 2 only, server team/event commands plus the atomic legacy rules cutover. Replace the two `KNOWN VULNERABILITY` success assertions with denial assertions when closing those paths.
-3. Steps 3–15 remain incomplete. Do not expose organization-v2 data before the Step 2 cutover.
+1. Owner review of draft PR #6 and acceptance of the shipped-old-binary messaging limitation. Available AI feedback is addressed and code CI passes; keep draft and do not mark ready or merge without authorization. Step 2 is implemented, not merged.
+2. Step 3 is the next implementation step: organization hierarchy and scoped staff backend.
+3. Steps 3–15 remain incomplete; organization-v2 writes remain gated.
 
 ### Blockers / risks
 
-Existing coach self-assignment and broad team-get rules are source-confirmed risks; do not expose new youth tenant data before Step 2 closes them. Legacy local-time conversion needs reviewed timezone ownership. Email, domain, retention and production migration approvals remain external gates. Browser/ICS/import scale are doc-supported approaches awaiting executable proof.
+Step 2 closes direct coach creation, broad team gets, client event writes, invite reads and reference reassignment. Already-shipped binaries receive Firestore permission-denied errors; custom update-required text cannot be injected into shipped code by rules. Deployment ordering and historical coach-assignment review remain rollout requirements. Native captures confirm the existing UTC-date/local-label offset remains; its reviewed conversion belongs to Step 4. Legacy local-time conversion needs reviewed timezone ownership. Email, domain, retention and production migration approvals remain external gates. Browser/ICS/import scale are doc-supported approaches awaiting executable proof.
 
 ### Pointers for the next agent
 

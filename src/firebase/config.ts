@@ -5,6 +5,7 @@ import {
 
 import {
   getAuth,
+  connectAuthEmulator,
   initializeAuth,
   // getReactNativePersistence ships in Firebase's React Native bundle but is
   // not present in the default (web) type declarations, so we pull it in via
@@ -13,12 +14,14 @@ import {
 
 import {
   getFunctions,
+  connectFunctionsEmulator,
 } from 'firebase/functions';
 
 import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
 
 import {
   getFirestore,
+  connectFirestoreEmulator,
 } from 'firebase/firestore';
 
 const { getReactNativePersistence } =
@@ -51,3 +54,17 @@ export const auth = isFirstInit
 export const db = getFirestore(app);
 
 export const functions = getFunctions(app);
+
+// Explicit local-only opt-in. A demo project cannot fall through to production.
+if (process.env.EXPO_PUBLIC_USE_EMULATORS === '1') {
+  if (!__DEV__ || firebaseConfig.projectId !== 'demo-team-hangout') {
+    throw new Error('Emulators require a development build and demo-team-hangout.');
+  }
+  if (isFirstInit) {
+  connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+  connectFirestoreEmulator(db, '127.0.0.1', 8080);
+  connectFunctionsEmulator(functions, '127.0.0.1', 5001);
+  }
+} else if (firebaseConfig.projectId?.startsWith('demo-')) {
+  throw new Error('Demo projects require EXPO_PUBLIC_USE_EMULATORS=1.');
+}

@@ -117,8 +117,9 @@ yarn test:coverage
 
 ## Architecture notes
 
-- Reads and writes go through the Firebase JS SDK; account deletion uses a Callable Cloud Function (`functions/`).
-- Invite join uses `inviteCodes/{code}` lookup docs so security rules can validate without collection scans.
+- Scoped reads go through the Firebase JS SDK; team/event mutations and account deletion use authenticated Callable Cloud Functions (`functions/`).
+- Invite join resolves server-only `inviteCodes/{code}` lookup docs through a callable; clients cannot read or enumerate lookups.
+- Deploy team/event commands before the restrictive rules cutover. See [`docs/backend-testing.md`](docs/backend-testing.md) for validation, event revisions, and old-client limitations.
 - Google Sign-In uses `@react-native-google-signin/google-signin` and Firebase `signInWithCredential`.
 - Sign in with Apple uses `expo-apple-authentication` and Firebase `OAuthProvider('apple.com')`.
 - See [`QUESTIONS.md`](QUESTIONS.md) for product decisions and [`docs/APP_STORE_FITTING.md`](docs/APP_STORE_FITTING.md) for App Store readiness.

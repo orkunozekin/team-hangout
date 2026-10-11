@@ -1,3 +1,5 @@
+const mockRunCommand = jest.fn();
+jest.mock('../commands', () => ({ runCommand: (...args: unknown[]) => mockRunCommand(...args) }));
 const mockGetDoc = jest.fn();
 const mockGetDocs = jest.fn();
 const mockSetDoc = jest.fn();
@@ -141,49 +143,19 @@ describe('firebase/events', () => {
     expect(mockWhere).toHaveBeenCalledWith('teamId', '==', 't1');
   });
 
-  it('creates, updates, and soft-deletes events', async () => {
-    mockSetDoc.mockResolvedValue(undefined);
-    mockUpdateDoc.mockResolvedValue(undefined);
-    mockDoc.mockReturnValue({ id: 'event-1', path: 'events/event-1' });
-
-    const created = await createEvent({
-      teamId: 't1',
-      type: 'practice',
-      title: '  Drill  ',
-      date: new Date('2026-08-20T00:00:00.000Z'),
-      time: '18:00',
-      createdBy: 'u1',
-      notes: '  note ',
-    });
-    expect(created.id).toBe('event-1');
-    expect(created.title).toBe('Drill');
-
-    const createdBare = await createEvent({
-      teamId: 't1',
-      type: 'match',
-      title: 'Game',
-      date: new Date('2026-08-21T00:00:00.000Z'),
-      time: '19:00',
-      createdBy: 'u1',
-    });
-    expect(createdBare.notes).toBeNull();
-    expect(createdBare.location).toBeNull();
-
-    await updateEvent('event-1', {
-      title: ' Updated ',
-      type: 'match',
-      date: new Date('2026-08-21T00:00:00.000Z'),
-      time: '19:00',
-      location: { name: 'Gym' },
-      notes: 'x',
-    });
-    await updateEvent('event-1', {
-      notes: '   ',
-      location: null,
-    });
-    expect(mockUpdateDoc).toHaveBeenCalled();
-
-    await softDeleteEvent('event-1');
-    expect(mockUpdateDoc).toHaveBeenCalledTimes(3);
+  it('sends only editable fields and the loaded revision to commands', async () => {
+    mockRunCommand.mockResolvedValueOnce({ id: 'event-1', title: 'Drill', revision: 1, createdBy: 'actor' });
+    const date = new Date('2026-08-20T00:00:00.000Z');
+    const created = await createEvent({ teamId: 't1', type: 'practice', title: ' Drill ', date, time: '18:00', createdBy: 'forged' });
+    expect(created.createdBy).toBe('actor');
+    expect(created.revision).toBe(1);
+    expect(mockRunCommand).toHaveBeenLastCalledWith('createEvent', { teamId: 't1', event: { title: 'Drill', type: 'practice', date: date.toISOString(), time: '18:00' } });
+    await updateEvent('event-1', { title: ' Updated ', location: { name: 'Gym', address: undefined }, notes: null }, 1);
+    expect(mockRunCommand).toHaveBeenLastCalledWith('updateEvent', { eventId: 'event-1', expectedRevision: 1, patch: { title: 'Updated', location: { name: 'Gym' }, notes: null } });
+    await updateEvent('event-1', { location: null }, 2);
+    await softDeleteEvent('event-1', 3);
+    expect(mockRunCommand).toHaveBeenLastCalledWith('softDeleteEvent', { eventId: 'event-1', expectedRevision: 3 });
+    expect(mockSetDoc).not.toHaveBeenCalled();
+    expect(mockUpdateDoc).not.toHaveBeenCalled();
   });
 });

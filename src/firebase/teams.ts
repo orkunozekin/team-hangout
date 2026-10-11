@@ -4,11 +4,7 @@ import {
   getDoc,
   getDocs,
   query,
-  setDoc,
-  updateDoc,
   where,
-  writeBatch,
-  serverTimestamp,
 } from 'firebase/firestore';
 
 import {
@@ -17,7 +13,6 @@ import {
 
 import {
   buildInviteDeepLink,
-  generateInviteCode,
   isValidInviteCodeFormat,
   memberDocId,
   normalizeInviteCode,
@@ -33,9 +28,7 @@ import {
   TeamRole,
 } from '../types/models';
 
-import {
-  setActiveTeamId,
-} from './users';
+import { runCommand } from './commands';
 
 function toDate(value: unknown): Date {
   if (
@@ -137,180 +130,30 @@ export async function listTeamMembers(
     });
 }
 
-async function allocateUniqueInviteCode(): Promise<string> {
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    const code = generateInviteCode();
-    const existing = await getDoc(doc(db, 'inviteCodes', code));
-    if (!existing.exists()) {
-      return code;
-    }
-  }
-  throw new Error('Could not allocate a unique invite code');
-}
-
 export async function createTeam(params: {
-  name: string;
-  sport?: string | null;
-  userId: string;
-  displayName: string;
+  name: string; sport?: string | null; userId: string; displayName: string;
 }): Promise<{ team: Team; membership: TeamMember; inviteDeepLink: string }> {
-  const teamRef = doc(collection(db, 'teams'));
-  const inviteCode = await allocateUniqueInviteCode();
-  const memberId = memberDocId(teamRef.id, params.userId);
-  const batch = writeBatch(db);
-
-  batch.set(teamRef, {
-    name: params.name.trim(),
-    sport: params.sport?.trim() || null,
-    inviteCode,
-    createdBy: params.userId,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
+  const result = await runCommand<{ team: Record<string, unknown> & { id: string }; membership: Record<string, unknown> & { id: string } }>('createTeam', {
+    name: params.name.trim(), sport: params.sport?.trim() || null,
   });
-
-  batch.set(doc(db, 'inviteCodes', inviteCode), {
-    code: inviteCode,
-    teamId: teamRef.id,
-    createdBy: params.userId,
-    createdAt: serverTimestamp(),
-  });
-
-  batch.set(doc(db, 'teamMembers', memberId), {
-    teamId: teamRef.id,
-    userId: params.userId,
-    role: 'coach',
-    displayName: params.displayName.trim(),
-    joinedAt: serverTimestamp(),
-  });
-
-  await batch.commit();
-  await setActiveTeamId(params.userId, teamRef.id);
-
-  const team: Team = {
-    id: teamRef.id,
-    name: params.name.trim(),
-    sport: params.sport?.trim() || null,
-    inviteCode,
-    createdBy: params.userId,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  };
-
-  const membership: TeamMember = {
-    id: memberId,
-    teamId: teamRef.id,
-    userId: params.userId,
-    role: 'coach',
-    displayName: params.displayName.trim(),
-    joinedAt: new Date(),
-  };
-
-  return {
-    team,
-    membership,
-    inviteDeepLink: buildInviteDeepLink(inviteCode),
-  };
+  const team = mapTeamDoc(result.team.id, result.team);
+  return { team, membership: mapMemberDoc(result.membership.id, result.membership), inviteDeepLink: buildInviteDeepLink(team.inviteCode) };
 }
 
 export async function joinTeamWithInviteCode(params: {
-  code: string;
-  userId: string;
-  displayName: string;
+  code: string; userId: string; displayName: string;
 }): Promise<{ team: Team; membership: TeamMember }> {
   const code = normalizeInviteCode(params.code);
-  if (!isValidInviteCodeFormat(code)) {
-    throw new Error('Invalid invite code format');
-  }
-
-  const inviteSnap = await getDoc(doc(db, 'inviteCodes', code));
-  if (!inviteSnap.exists()) {
-    throw new Error('Invite code not found');
-  }
-
-  const inviteData = inviteSnap.data() as Record<string, unknown>;
-  const teamId = String(inviteData.teamId ?? '');
-  if (!teamId) {
-    throw new Error('Invite code is invalid');
-  }
-
-  const team = await getTeam(teamId);
-  if (!team) {
-    throw new Error('Team not found');
-  }
-
-  if (team.inviteCode !== code) {
-    throw new Error('Invite code is no longer active');
-  }
-
-  const existing = await getMembership(teamId, params.userId);
-  if (existing) {
-    await setActiveTeamId(params.userId, teamId);
-    return { team, membership: existing };
-  }
-
-  const memberId = memberDocId(teamId, params.userId);
-  await setDoc(doc(db, 'teamMembers', memberId), {
-    teamId,
-    userId: params.userId,
-    role: 'player',
-    displayName: params.displayName.trim(),
-    joinedAt: serverTimestamp(),
-  });
-
-  await setActiveTeamId(params.userId, teamId);
-
-  return {
-    team,
-    membership: {
-      id: memberId,
-      teamId,
-      userId: params.userId,
-      role: 'player',
-      displayName: params.displayName.trim(),
-      joinedAt: new Date(),
-    },
-  };
+  if (!isValidInviteCodeFormat(code)) throw new Error('Invalid invite code format');
+  const result = await runCommand<{ team: Record<string, unknown> & { id: string }; membership: Record<string, unknown> & { id: string } }>('joinTeamWithInvite', { code });
+  return { team: mapTeamDoc(result.team.id, result.team), membership: mapMemberDoc(result.membership.id, result.membership) };
 }
 
 export async function regenerateInviteCode(params: {
-  teamId: string;
-  userId: string;
-  isSuperAdmin?: boolean;
+  teamId: string; userId: string; isSuperAdmin?: boolean;
 }): Promise<{ inviteCode: string; inviteDeepLink: string }> {
-  const membership = await getMembership(params.teamId, params.userId);
-  const allowed =
-    params.isSuperAdmin === true ||
-    (membership != null && membership.role === 'coach');
-  if (!allowed) {
-    throw new Error('Only coaches or super admins can regenerate invite codes');
-  }
-
-  const team = await getTeam(params.teamId);
-  if (!team) {
-    throw new Error('Team not found');
-  }
-
-  const newCode = await allocateUniqueInviteCode();
-  const batch = writeBatch(db);
-
-  batch.delete(doc(db, 'inviteCodes', team.inviteCode));
-  batch.set(doc(db, 'inviteCodes', newCode), {
-    code: newCode,
-    teamId: params.teamId,
-    createdBy: params.userId,
-    createdAt: serverTimestamp(),
-  });
-  batch.update(doc(db, 'teams', params.teamId), {
-    inviteCode: newCode,
-    updatedAt: serverTimestamp(),
-  });
-
-  await batch.commit();
-
-  return {
-    inviteCode: newCode,
-    inviteDeepLink: buildInviteDeepLink(newCode),
-  };
+  const result = await runCommand<{ inviteCode: string }>('regenerateInvite', { teamId: params.teamId });
+  return { ...result, inviteDeepLink: buildInviteDeepLink(result.inviteCode) };
 }
 
 export async function listAllTeams(): Promise<Team[]> {
@@ -388,8 +231,5 @@ export async function updateTeamName(
   teamId: string,
   name: string,
 ): Promise<void> {
-  await updateDoc(doc(db, 'teams', teamId), {
-    name: name.trim(),
-    updatedAt: serverTimestamp(),
-  });
+  await runCommand('renameTeam', { teamId, name: name.trim() });
 }

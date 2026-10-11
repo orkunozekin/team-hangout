@@ -1,3 +1,5 @@
+const mockRunCommand = jest.fn();
+jest.mock('../commands', () => ({ runCommand: (...args: unknown[]) => mockRunCommand(...args) }));
 const mockGetDoc = jest.fn();
 const mockGetDocs = jest.fn();
 const mockSetDoc = jest.fn();
@@ -83,71 +85,9 @@ describe('firebase/teams', () => {
     await expect(getMembership('t1', 'u1')).resolves.toBeNull();
   });
 
-  it('creates a team with invite code and coach membership', async () => {
-    mockGetDoc.mockResolvedValue({ exists: () => false });
-    const batch = {
-      set: jest.fn(),
-      commit: jest.fn().mockResolvedValue(undefined),
-    };
-    mockWriteBatch.mockReturnValue(batch);
-    mockDoc.mockImplementation((...args: unknown[]) => {
-      if (args.length === 1) {
-        return { id: 'team-1', path: 'teams/team-1' };
-      }
-      if (args[1] === 'teams' && args.length === 2) {
-        return { id: 'team-1', path: 'teams/team-1' };
-      }
-      return {
-        id: String(args[2] ?? 'x'),
-        path: args.join('/'),
-      };
-    });
-    mockSetActiveTeamId.mockResolvedValue(undefined);
 
-    const result = await createTeam({
-      name: 'Tigers',
-      userId: 'u1',
-      displayName: 'Alex',
-    });
 
-    expect(result.team.id).toBe('team-1');
-    expect(result.membership.role).toBe('coach');
-    expect(result.inviteDeepLink).toContain('teamhangout://join?code=');
-    expect(batch.commit).toHaveBeenCalled();
-    expect(mockSetActiveTeamId).toHaveBeenCalledWith('u1', 'team-1');
-  });
 
-  it('joins with invite code as player', async () => {
-    mockGetDoc
-      .mockResolvedValueOnce({
-        exists: () => true,
-        data: () => ({ teamId: 't1', code: 'ABCD2345' }),
-      })
-      .mockResolvedValueOnce({
-        exists: () => true,
-        data: () => ({
-          name: 'Tigers',
-          inviteCode: 'ABCD2345',
-          createdBy: 'coach',
-          sport: null,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        }),
-      })
-      .mockResolvedValueOnce({ exists: () => false });
-
-    mockSetDoc.mockResolvedValue(undefined);
-    mockSetActiveTeamId.mockResolvedValue(undefined);
-
-    const result = await joinTeamWithInviteCode({
-      code: 'abcd2345',
-      userId: 'u2',
-      displayName: 'Pat',
-    });
-
-    expect(result.membership.role).toBe('player');
-    expect(result.team.name).toBe('Tigers');
-  });
 
   it('rejects invalid invite format', async () => {
     await expect(
@@ -189,46 +129,7 @@ describe('firebase/teams', () => {
     expect(members.map((m) => m.userId)).toEqual(['u1', 'u2']);
   });
 
-  it('regenerates invite codes for coaches only', async () => {
-    mockGetDoc
-      .mockResolvedValueOnce({
-        exists: () => true,
-        data: () => ({
-          teamId: 't1',
-          userId: 'u1',
-          role: 'coach',
-          displayName: 'Alex',
-          joinedAt: new Date(),
-        }),
-      })
-      .mockResolvedValueOnce({
-        exists: () => true,
-        data: () => ({
-          name: 'Tigers',
-          inviteCode: 'OLDCODE1',
-          createdBy: 'u1',
-          sport: null,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        }),
-      })
-      .mockResolvedValue({ exists: () => false });
 
-    const batch = {
-      delete: jest.fn(),
-      set: jest.fn(),
-      update: jest.fn(),
-      commit: jest.fn().mockResolvedValue(undefined),
-    };
-    mockWriteBatch.mockReturnValue(batch);
-
-    const result = await regenerateInviteCode({
-      teamId: 't1',
-      userId: 'u1',
-    });
-    expect(result.inviteCode).toHaveLength(8);
-    expect(batch.commit).toHaveBeenCalled();
-  });
 
   it('resolves active membership', async () => {
     mockGetDocs.mockResolvedValue({
@@ -262,133 +163,9 @@ describe('firebase/teams', () => {
   });
 });
 
-  it('handles join error paths and existing membership', async () => {
-    mockGetDoc.mockResolvedValueOnce({ exists: () => false });
-    await expect(
-      joinTeamWithInviteCode({
-        code: 'ABCD2345',
-        userId: 'u2',
-        displayName: 'Pat',
-      }),
-    ).rejects.toThrow('Invite code not found');
 
-    mockGetDoc
-      .mockResolvedValueOnce({
-        exists: () => true,
-        data: () => ({ teamId: '', code: 'ABCD2345' }),
-      });
-    await expect(
-      joinTeamWithInviteCode({
-        code: 'ABCD2345',
-        userId: 'u2',
-        displayName: 'Pat',
-      }),
-    ).rejects.toThrow('Invite code is invalid');
 
-    mockGetDoc
-      .mockResolvedValueOnce({
-        exists: () => true,
-        data: () => ({ teamId: 't1', code: 'ABCD2345' }),
-      })
-      .mockResolvedValueOnce({ exists: () => false });
-    await expect(
-      joinTeamWithInviteCode({
-        code: 'ABCD2345',
-        userId: 'u2',
-        displayName: 'Pat',
-      }),
-    ).rejects.toThrow('Team not found');
 
-    mockGetDoc
-      .mockResolvedValueOnce({
-        exists: () => true,
-        data: () => ({ teamId: 't1', code: 'ABCD2345' }),
-      })
-      .mockResolvedValueOnce({
-        exists: () => true,
-        data: () => ({
-          name: 'Tigers',
-          inviteCode: 'OTHER123',
-          createdBy: 'coach',
-          sport: null,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        }),
-      });
-    await expect(
-      joinTeamWithInviteCode({
-        code: 'ABCD2345',
-        userId: 'u2',
-        displayName: 'Pat',
-      }),
-    ).rejects.toThrow('Invite code is no longer active');
-
-    mockGetDoc
-      .mockResolvedValueOnce({
-        exists: () => true,
-        data: () => ({ teamId: 't1', code: 'ABCD2345' }),
-      })
-      .mockResolvedValueOnce({
-        exists: () => true,
-        data: () => ({
-          name: 'Tigers',
-          inviteCode: 'ABCD2345',
-          createdBy: 'coach',
-          sport: null,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        }),
-      })
-      .mockResolvedValueOnce({
-        exists: () => true,
-        data: () => ({
-          teamId: 't1',
-          userId: 'u2',
-          role: 'player',
-          displayName: 'Pat',
-          joinedAt: new Date(),
-        }),
-      });
-    mockSetActiveTeamId.mockResolvedValue(undefined);
-    const existing = await joinTeamWithInviteCode({
-      code: 'ABCD2345',
-      userId: 'u2',
-      displayName: 'Pat',
-    });
-    expect(existing.membership.role).toBe('player');
-  });
-
-  it('blocks non-coach invite regeneration and missing team', async () => {
-    mockGetDoc.mockResolvedValueOnce({
-      exists: () => true,
-      data: () => ({
-        teamId: 't1',
-        userId: 'u2',
-        role: 'player',
-        displayName: 'Pat',
-        joinedAt: new Date(),
-      }),
-    });
-    await expect(
-      regenerateInviteCode({ teamId: 't1', userId: 'u2' }),
-    ).rejects.toThrow('Only coaches or super admins can regenerate invite codes');
-
-    mockGetDoc
-      .mockResolvedValueOnce({
-        exists: () => true,
-        data: () => ({
-          teamId: 't1',
-          userId: 'u1',
-          role: 'coach',
-          displayName: 'Alex',
-          joinedAt: new Date(),
-        }),
-      })
-      .mockResolvedValueOnce({ exists: () => false });
-    await expect(
-      regenerateInviteCode({ teamId: 't1', userId: 'u1' }),
-    ).rejects.toThrow('Team not found');
-  });
 
   it('returns null when user has no memberships', async () => {
     mockGetDocs.mockResolvedValue({ docs: [] });
@@ -425,23 +202,10 @@ describe('firebase/teams', () => {
     expect(resolved?.team.name).toBe('Wolves');
   });
 
-  it('throws when unique invite allocation fails', async () => {
-    mockGetDoc.mockResolvedValue({ exists: () => true });
-    await expect(
-      createTeam({
-        name: 'Tigers',
-        userId: 'u1',
-        displayName: 'Alex',
-      }),
-    ).rejects.toThrow('Could not allocate a unique invite code');
-  });
 
 
-  it('updates team name', async () => {
-    mockUpdateDoc.mockResolvedValue(undefined);
-    await updateTeamName('t1', '  New Name ');
-    expect(mockUpdateDoc).toHaveBeenCalled();
-  });
+
+
 
   it('returns null when preferred membership team is missing', async () => {
     mockGetDocs.mockResolvedValue({
@@ -463,37 +227,7 @@ describe('firebase/teams', () => {
   });
 
 
-  it('allows super admin to regenerate without coach membership', async () => {
-    mockGetDoc
-      .mockResolvedValueOnce({ exists: () => false })
-      .mockResolvedValueOnce({
-        exists: () => true,
-        data: () => ({
-          name: 'Tigers',
-          inviteCode: 'OLDCODE1',
-          createdBy: 'u9',
-          sport: null,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        }),
-      })
-      .mockResolvedValue({ exists: () => false });
 
-    const batch = {
-      delete: jest.fn(),
-      set: jest.fn(),
-      update: jest.fn(),
-      commit: jest.fn().mockResolvedValue(undefined),
-    };
-    mockWriteBatch.mockReturnValue(batch);
-
-    const result = await regenerateInviteCode({
-      teamId: 't1',
-      userId: 'super1',
-      isSuperAdmin: true,
-    });
-    expect(result.inviteCode).toHaveLength(8);
-  });
 
   it('lists all teams for super admin', async () => {
     mockGetDocs.mockResolvedValue({
@@ -546,4 +280,28 @@ describe('firebase/teams', () => {
     });
     expect(resolved?.membership.id).toBe('super_t1_super1');
     expect(resolved?.membership.role).toBe('coach');
+  });
+
+  it('routes mutations through server commands without trusting client identity or privileges', async () => {
+    const team = { id: 't1', name: 'Tigers', inviteCode: 'ABCD2345' };
+    const membership = { id: 't1_actor', role: 'coach', userId: 'actor', teamId: 't1' };
+    mockRunCommand.mockResolvedValueOnce({ team, membership });
+    const created = await createTeam({ name: ' Tigers ', userId: 'forged', displayName: 'Ignored' });
+    expect(created.team.id).toBe('t1');
+    expect(created.membership.userId).toBe('actor');
+    expect(created.inviteDeepLink).toContain('ABCD2345');
+    expect(mockRunCommand).toHaveBeenLastCalledWith('createTeam', { name: 'Tigers', sport: null });
+    mockRunCommand.mockResolvedValueOnce({ team, membership: { ...membership, role: 'player' } });
+    expect((await joinTeamWithInviteCode({ code: 'abcd2345', userId: 'forged', displayName: 'Ignored' })).membership.role).toBe('player');
+    expect(mockRunCommand).toHaveBeenLastCalledWith('joinTeamWithInvite', { code: 'ABCD2345' });
+    mockRunCommand.mockResolvedValueOnce({ inviteCode: 'ABCDEFGH' });
+    expect((await regenerateInviteCode({ teamId: 't1', userId: 'forged', isSuperAdmin: true })).inviteCode).toBe('ABCDEFGH');
+    expect(mockRunCommand).toHaveBeenLastCalledWith('regenerateInvite', { teamId: 't1' });
+    await updateTeamName('t1', ' New ');
+    expect(mockRunCommand).toHaveBeenLastCalledWith('renameTeam', { teamId: 't1', name: 'New' });
+    mockRunCommand.mockRejectedValueOnce(new Error('Invite code is invalid or no longer active.'));
+    await expect(joinTeamWithInviteCode({ code: 'AAAAAAAA', userId: 'u', displayName: 'u' })).rejects.toThrow('no longer active');
+    expect(mockSetDoc).not.toHaveBeenCalled();
+    expect(mockUpdateDoc).not.toHaveBeenCalled();
+    expect(mockWriteBatch).not.toHaveBeenCalled();
   });
