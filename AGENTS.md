@@ -4,6 +4,7 @@ This project uses Expo SDK 54. Read the exact versioned docs at https://docs.exp
 
 # Pull requests
 
+- Create regular pull requests, not drafts, unless the user explicitly requests a draft.
 - Deliver repository changes through a pull request targeting `main`. Use a `codex/` branch unless the user specifies another branch. Open the PR as part of completing the work; do not stop at a local commit or branch push. A direct push to `main` requires an explicit user instruction for that change.
 - Keep PR titles and descriptions short and simple. No em dashes or hard-wrapped paragraphs.
 - Include what changed, why, and relevant validation. Do not merge or enable auto-merge unless the user explicitly requests it.
@@ -13,7 +14,7 @@ This project uses Expo SDK 54. Read the exact versioned docs at https://docs.exp
 - For every change to screens, components, layout, styling, or user-visible interactions, run the affected UI and capture screenshots of the changed states. Use a simulator or device for native UI and an appropriate browser capture tool for web UI. Verify that the running app belongs to the PR's checkout and includes its latest changes.
 - Inspect the screenshots, fix visible problems, and recapture after changes affecting the captured UI. Cover the relevant interaction results and changed loading, empty, or error states where applicable. Use non-sensitive development data.
 - Include the screenshots in the PR description under **UI evidence**, with brief captions explaining the state and behavior shown. Upload attachments or use a repository-approved location accessible to reviewers and embed the images. Local filesystem paths alone do not count as PR evidence. Keep scratch captures out of source commits unless the repository adopts a committed-artifact convention.
-- If the app cannot run, a state cannot be reached, or images cannot be attached, describe the exact blocker in the PR and final handoff, retain any local captures, and keep the PR in draft until the evidence is supplied or the user explicitly accepts the limitation. Do not claim visual verification without inspecting real captures.
+- If the app cannot run, a state cannot be reached, or images cannot be attached, describe the exact blocker in the PR and final handoff and retain any local captures. Keep the PR open for review and clearly report the missing evidence. Do not claim visual verification without inspecting real captures.
 - Documentation-only and other changes without a user-visible UI effect do not require screenshots; state that UI evidence is not applicable in the PR.
 
 # AI review feedback loop
