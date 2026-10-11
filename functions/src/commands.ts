@@ -1,28 +1,10 @@
-import { createHash, randomInt } from 'node:crypto';
+import { eventScope } from './organizations/policy';
+import { v2Fields, teamIds, validateStoredEvent, storageFields, eventAudit } from './organizations/events';
+import { Data, invalid, object, keys, text, id, optional, revision, command } from './commandSupport';
+import { randomInt } from 'node:crypto';
 import { getFirestore, Timestamp, Transaction, DocumentData } from 'firebase-admin/firestore';
-import { HttpsError, onCall } from 'firebase-functions/v2/https';
+import { HttpsError } from 'firebase-functions/v2/https';
 
-type Data = Record<string, any>;
-const invalid = (message: string): never => { throw new HttpsError('invalid-argument', message); };
-function object(value: unknown): Data {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) invalid('Expected an object.');
-  return value as Data;
-}
-function keys(data: Data, allowed: string[]) {
-  if (Object.keys(data).some(key => !allowed.includes(key))) invalid('Unsupported fields. Update the app and try again.');
-}
-function text(value: unknown, field: string, max = 200): string {
-  if (typeof value !== 'string' || !value.trim() || value.trim().length > max) invalid(`Invalid ${field}.`);
-  return (value as string).trim();
-}
-function id(value: unknown, field: string): string {
-  const result = text(value, field, 128);
-  if (!/^[A-Za-z0-9_-]+$/.test(result)) invalid(`Invalid ${field}.`);
-  return result;
-}
-function optional(value: unknown, field: string, max: number): string | null {
-  return value == null || value === '' ? null : text(value, field, max);
-}
 function eventFields(value: unknown, partial = false): Data {
   const data = object(value);
   keys(data, ['title', 'type', 'date', 'time', 'location', 'notes']);
@@ -56,23 +38,6 @@ function eventFields(value: unknown, partial = false): Data {
   if (partial && !Object.keys(out).length) invalid('No event changes supplied.');
   return out;
 }
-function revision(value: unknown): number {
-  if (!Number.isSafeInteger(value) || (value as number) < 0) invalid('Reload the event before saving.');
-  return value as number;
-}
-function wire(value: any): any {
-  if (value instanceof Timestamp) return value.toDate().toISOString();
-  if (Array.isArray(value)) return value.map(wire);
-  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, wire(v)]));
-  return value;
-}
-function stable(value: any): string {
-  if (value && typeof value === 'object') {
-    return `{${Object.keys(value).sort().map(k => `${JSON.stringify(k)}:${stable(value[k])}`).join(',')}}`;
-  }
-  return JSON.stringify(value);
-}
-const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 function inviteCode() { return Array.from({ length: 8 }, () => alphabet[randomInt(alphabet.length)]).join(''); }
 function legacy(data: Data) {
@@ -86,30 +51,6 @@ async function managedTeam(tx: Transaction, teamId: string, uid: string, admin: 
   }
   legacy(team.data()!);
   return team;
-}
-// Every command rechecks current authority before replaying a stored response.
-function command(name: string, normalize: (data: Data) => Data,
-  execute: (tx: Transaction, payload: Data, uid: string, actor: Data, replay: Data | null) => Promise<Data>) {
-  return onCall(async request => {
-    const uid = request.auth?.uid;
-    if (!uid) throw new HttpsError('unauthenticated', 'Sign in to continue.');
-    const data = object(request.data);
-    const requestId = id(data.requestId, 'requestId');
-    const payload = normalize(data);
-    const fingerprint = hash(stable(payload));
-    const db = getFirestore();
-    const receipt = db.doc(`commandRequests/${hash(`${uid}:${name}:${requestId}`)}`);
-    return db.runTransaction(async tx => {
-      const [user, previous] = await tx.getAll(db.doc(`users/${uid}`), receipt);
-      if (!user.exists || user.data()?.accountState === 'deleting') throw new HttpsError('permission-denied', 'Account is unavailable.');
-      if (previous.exists && previous.data()?.fingerprint !== fingerprint) {
-        throw new HttpsError('already-exists', 'This request ID was used for another change.', { domainCode: 'REQUEST_ID_REUSED' });
-      }
-      const result = wire(await execute(tx, payload, uid, user.data()!, previous.data()?.result ?? null));
-      if (!previous.exists) tx.create(receipt, { uid, operation: name, fingerprint, result, createdAt: Timestamp.now() });
-      return result;
-    });
-  });
 }
 export const createTeam = command('createTeam', data => {
   keys(data, ['requestId', 'name', 'sport']);
@@ -182,31 +123,65 @@ export const renameTeam = command('renameTeam', data => {
   tx.update(team.ref, { name: payload.name, updatedAt: Timestamp.now() }); return { ok: true };
 });
 export const createEvent = command('createEvent', data => {
-  keys(data, ['requestId', 'teamId', 'event']); return { teamId: id(data.teamId, 'teamId'), event: eventFields(data.event) };
+  keys(data, ['requestId', 'teamId', 'event']);
+  const fields = object(data.event);
+  return { teamId: id(data.teamId, 'teamId'), event: fields.startsAt !== undefined ? v2Fields(fields) : eventFields(fields) };
 }, async (tx, payload, uid, actor, replay) => {
-  await managedTeam(tx, payload.teamId, uid, actor.appRole === 'superAdmin');
+  const team = await tx.get(getFirestore().doc(`teams/${payload.teamId}`));
+  if (!team.exists) throw new HttpsError('permission-denied', 'Team is unavailable.');
+  let event: Data; const now = Timestamp.now();
+  if (team.data()?.schemaVersion === 2 || team.data()?.orgId != null) {
+    if (payload.event.startsAt === undefined) throw new HttpsError('failed-precondition', 'Organization event times are required.');
+    const ids = teamIds(payload.event.teamIds);
+    if (ids[0] !== payload.teamId) invalid('teamId must match the first teamIds entry.');
+    const scope = await eventScope(tx, ids, uid);
+    event = { ...storageFields(payload.event), orgId: scope.orgId, programId: scope.programId, seasonId: scope.seasonId,
+      divisionId: scope.teams.every(team => team.divisionId === scope.teams[0].divisionId) ? scope.teams[0].divisionId : null,
+      schemaVersion: 2, publicationOperationId: null, teamId: ids[0] };
+    validateStoredEvent(event, scope);
+  } else {
+    await managedTeam(tx, payload.teamId, uid, actor.appRole === 'superAdmin');
+    eventFields(payload.event);
+    event = { ...payload.event, date: Timestamp.fromDate(new Date(payload.event.date)), teamId: payload.teamId };
+  }
   if (replay) return replay;
-  const ref = getFirestore().collection('events').doc(); const now = Timestamp.now();
-  const event = { ...payload.event, date: Timestamp.fromDate(new Date(payload.event.date)), teamId: payload.teamId,
-    revision: 1, createdBy: uid, updatedBy: uid, createdAt: now, updatedAt: now, deletedAt: null };
-  tx.create(ref, event); return { id: ref.id, ...event };
+  const ref = getFirestore().collection('events').doc();
+  event = { ...event, revision: 1, createdBy: uid, updatedBy: uid, createdAt: now, updatedAt: now, deletedAt: null };
+  tx.create(ref, event);
+  if (event.schemaVersion === 2) eventAudit(tx, event, uid, 'createEvent', ref.id, 1);
+  return { id: ref.id, ...event };
 });
 function changeEvent(deleting: boolean) {
   return command(deleting ? 'softDeleteEvent' : 'updateEvent', data => {
     keys(data, deleting ? ['requestId', 'eventId', 'expectedRevision'] : ['requestId', 'eventId', 'expectedRevision', 'patch']);
-    return { eventId: id(data.eventId, 'eventId'), expectedRevision: revision(data.expectedRevision), ...(deleting ? {} : { patch: eventFields(data.patch, true) }) };
+    return { eventId: id(data.eventId, 'eventId'), expectedRevision: revision(data.expectedRevision), ...(deleting ? {} : { patch: object(data.patch) }) };
   }, async (tx, payload, uid, actor, replay) => {
     const ref = getFirestore().doc(`events/${payload.eventId}`); const snap = await tx.get(ref);
     if (!snap.exists) throw new HttpsError('permission-denied', 'Event is unavailable.');
-    const event = snap.data()!; legacy(event);
-    await managedTeam(tx, id(event.teamId, 'stored teamId'), uid, actor.appRole === 'superAdmin');
+    const event = snap.data()!;
+    const v2 = event.schemaVersion === 2 || event.orgId != null;
+    let changes: Data = {};
+    if (v2) {
+      const scope = await eventScope(tx, teamIds(event.teamIds), uid);
+      validateStoredEvent(event, scope);
+      if (!deleting) {
+        changes = v2Fields(payload.patch, true);
+        // Lifecycle controls and fenced publication are reserved for Phase 2.
+        if (event.status !== 'scheduled') throw new HttpsError('failed-precondition', 'This lifecycle is not editable yet.');
+        changes = storageFields({ ...event, ...changes });
+      }
+    } else {
+      await managedTeam(tx, id(event.teamId, 'stored teamId'), uid, actor.appRole === 'superAdmin');
+      if (!deleting) changes = eventFields(payload.patch, true);
+    }
     if (replay) return replay;
     const currentRevision = event.revision ?? 0;
     if (currentRevision !== payload.expectedRevision) throw new HttpsError('aborted', 'This event changed. Reload it before saving.', { domainCode: 'STALE_REVISION', currentRevision });
     if (event.deletedAt != null) throw new HttpsError('failed-precondition', 'This event was deleted. Reload the schedule.');
-    const now = Timestamp.now(); const patch: DocumentData = deleting ? { deletedAt: now } : { ...payload.patch };
+    const now = Timestamp.now(); const patch: DocumentData = deleting ? { deletedAt: now } : changes;
     if (patch.date) patch.date = Timestamp.fromDate(new Date(patch.date));
     tx.update(ref, { ...patch, revision: currentRevision + 1, updatedAt: now, updatedBy: uid });
+    if (v2) eventAudit(tx, event, uid, deleting ? 'softDeleteEvent' : 'updateEvent', ref.id, currentRevision + 1);
     return { ok: true, revision: currentRevision + 1 };
   });
 }

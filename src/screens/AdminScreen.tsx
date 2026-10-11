@@ -111,7 +111,7 @@ export default function AdminScreen({
       <View style={styles.header}>
         <Title>Super Admin</Title>
         <Subtitle>
-          Browse all teams and enter any of them with coach-level access.
+          Browse legacy teams with coach access. Organization teams use scoped administration.
         </Subtitle>
         {onGoToOnboarding ? (
           <LinkButton

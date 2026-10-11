@@ -70,7 +70,7 @@ export function decodeTeam(data: Data, canonical: Parents) {
   requireValue(parents.divisionId !== null, 'divisionId');
   return { ...common(data), ...parents, name: text(data.name, 'name'),
     sport: data.sport === null ? null : text(data.sport, 'sport'),
-    inviteCode: text(data.inviteCode, 'inviteCode'),
+    inviteCode: data.inviteCode === null ? null : text(data.inviteCode, 'inviteCode'),
     status: choice(data.status, ['active', 'archived'], 'status') };
 }
 export function decodeStaff(data: Data, orgId: string) {
@@ -118,3 +118,22 @@ export function decodeEvent(data: Data, canonical: Parents, teams: Record<string
 export function decodeLegacyDates(data: Data, fields: string[]): Record<string, string> {
   return Object.fromEntries(fields.map((field) => [field, timestampToIso(data[field])]));
 }
+
+/** Hierarchy command inputs. Authority and parent references are independently checked by the server. */
+export type HierarchyKind = 'organization' | 'program' | 'season' | 'division';
+export type OrganizationKind = 'municipal' | 'communityCenter' | 'club';
+export type SportCode = 'soccer' | 'basketball' | 'football' | 'other';
+export type SeasonStatus = 'draft' | 'active' | 'archived';
+export type HierarchyFields = {
+  organization: { name: string; kind: OrganizationKind; timeZone: string; status: 'active' | 'archived' };
+  program: { name: string; sportCode: SportCode; sportLabel?: string | null; status: 'active' | 'archived' };
+  season: { name: string; programId: string; startsOn: string; endsOn: string; status: 'draft' | 'active' };
+  division: { name: string; programId: string; seasonId: string; ageBandLabel?: string | null; status: 'active' | 'archived' };
+};
+export type SaveHierarchyEntityInput<K extends HierarchyKind> = {
+  requestId: string; orgId: string; kind: K; entityId?: string; expectedRevision: number; fields: HierarchyFields[K];
+};
+export type HierarchyPageInput = {
+  orgId: string; kind?: 'program' | 'season' | 'division' | 'team'; programId?: string;
+  seasonStatus?: SeasonStatus; pageSize?: number; cursor?: string;
+};

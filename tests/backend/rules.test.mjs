@@ -83,7 +83,8 @@ test('profile field allowlists preserve server-owned authority and immutable ide
 });
 test('platform admin support remains separate from tenant data access', async () => {
   const db = dbFor('admin');
-  assert.equal((await assertSucceeds(getDocs(collection(db, 'teams')))).size, 2);
+  await assertFails(getDocs(collection(db, 'teams')));
+  await assertSucceeds(getDoc(doc(db, 'teams/team-b')));
   await assertSucceeds(getDoc(doc(db, 'users/coach-a')));
   await assertFails(updateDoc(doc(db, 'teams/team-b'), { name: 'Support rename' }));
   await assertSucceeds(getDoc(doc(db, 'events/event-b')));
@@ -122,4 +123,26 @@ test('removed membership does not block unrelated profile edits or clearing stal
   await assertFails(updateDoc(doc(db, 'users/player-a'), { activeTeamId: 'team-b', updatedAt: serverTimestamp() }));
   await assertSucceeds(updateDoc(doc(db, 'users/player-a'), { activeTeamId: null, updatedAt: serverTimestamp() }));
   await assertFails(updateDoc(doc(db, 'users/player-a'), { activeTeamId: 'team-a', updatedAt: serverTimestamp() }));
+});
+
+test('v2 hierarchy, teams, events and audit data cannot leak through legacy reads or support', async () => {
+  await env.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'teams/v2-team'), { ...team('coach-a', 'V2V2V2V2'), orgId: 'org-a', schemaVersion: 2 });
+    await setDoc(doc(db, 'teamMembers/v2-team_coach-a'), { ...member('v2-team', 'coach-a', 'coach'), orgId: 'org-a', status: 'active', roles: ['coach'], schemaVersion: 2 });
+    await setDoc(doc(db, 'events/v2-event'), { ...event('v2-team', 'coach-a'), orgId: 'org-a', schemaVersion: 2, publicationState: 'staged' });
+    await setDoc(doc(db, 'organizations/org-a/members/coach-a'), { roles: ['orgAdmin'], status: 'active' });
+  });
+  for (const uid of ['coach-a', 'player-a', 'outsider', 'admin']) {
+    const db = dbFor(uid);
+    for (const path of ['teams/v2-team', 'events/v2-event', 'organizations/org-a', 'organizations/org-a/members/coach-a', 'organizations/org-a/programs/p', 'organizations/org-a/audit/a', 'organizationOwners/outsider']) {
+      await assertFails(getDoc(doc(db, path)));
+      await assertFails(setDoc(doc(db, path), { orgId: 'org-a' }));
+    }
+    await assertFails(getDocs(query(collection(db, 'events'), where('teamId', '==', 'v2-team'), where('deletedAt', '==', null))));
+    await assertFails(deleteDoc(doc(db, 'teamMembers/v2-team_coach-a')));
+  }
+  // A caller may inspect their own non-sensitive grant, but cannot mutate it or read another grant.
+  await assertSucceeds(getDoc(doc(dbFor('coach-a'), 'teamMembers/v2-team_coach-a')));
+  await assertFails(getDoc(doc(dbFor('admin'), 'teamMembers/v2-team_coach-a')));
 });

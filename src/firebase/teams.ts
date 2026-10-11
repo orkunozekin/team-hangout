@@ -157,10 +157,15 @@ export async function regenerateInviteCode(params: {
 }
 
 export async function listAllTeams(): Promise<Team[]> {
-  const snap = await getDocs(collection(db, 'teams'));
-  return snap.docs
-    .map((d) => mapTeamDoc(d.id, d.data() as Record<string, unknown>))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const teams: Team[] = [];
+  let cursor: string | null = null;
+  do {
+    const result: { items: (Record<string, unknown> & { id: string })[]; nextCursor: string | null } =
+      await runCommand('listLegacyTeams', { pageSize: 50, cursor });
+    teams.push(...result.items.map(team => mapTeamDoc(team.id, team)));
+    cursor = result.nextCursor;
+  } while (cursor);
+  return teams.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function resolveActiveMembership(

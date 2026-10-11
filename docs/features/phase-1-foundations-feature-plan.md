@@ -367,11 +367,16 @@ Proposed, uncreated locations: `shared/` contracts, `admin/` browser application
 - Step 2 validation: typecheck, 91 native tests with coverage and 23 emulator tests pass under Node 24.19.0 / Java 26; CI uses Node 22 / Java 21. No production data or deployment. Native iPhone 17 Pro / iOS 26.5 used this checkout’s Metro 8081 bundle with demo-only loopback emulators. Nine inspected screenshots are attached under PR #6 **UI evidence**, covering create/rotation, inactive-code error, player join, stale edit, successful reload/save deletion conflict, profile save after removal and final invite rotation on `6b00e32`. Existing native development client reused because native dependencies did not change.
 - Greptile’s three findings (profile preference, denial-test isolation and retry action identity) were fixed with regression tests in two fix rounds. Re-review on `6b00e32` completed with zero new comments and all bot threads resolved. Macroscope provided a summary but no correctness check on this draft. PR subscription is verified through the REST notification-thread API. The GraphQL subscription endpoint requires a scope unavailable to this token. Local evidence is retained under `/Users/orkunozekin/.codex/visualizations/2026/10/11/01a12b56-57cd-7e73-9953-7f86c4e281ef/step-2-evidence/`.
 
+- Step 2 PR #6 merged on 2026-10-11. The earlier unmerged/draft status above is superseded.
+- Step 3 adds `functions/src/organizations/{commands,policy,events}.ts` and reusable command support: owner-gated atomic organization bootstrap, canonical staff scope, revisioned hierarchy/team/staff mutations, private audit records, filtered/paginated hierarchy and organization discovery reads, reversible season archive, and v2 event parent/team/lifecycle/publication checks. Tenant references are immutable. Legacy invitation/mutation behavior stays separate.
+- V2 hierarchy/team/events remain client-denied and use scoped callables. The existing native support directory now uses a paginated legacy-only callable and updated scope copy to prevent a broad query leaking v2 teams. Legacy support entry still works; production callable deployment must precede adapter/rules cutover.
+- Step 3 local validation: Functions build, client typecheck, 14 native suites/91 tests with coverage, and 35 emulator/contract/callable tests passed using Node 26.3.0 and Java 26. CI remains Node 22/Java 21. Fixtures prove two-organization and same-org program isolation, stale revisions/concurrency, replay/revocation, archive preservation/restoration, canonical multi-team events, direct-read denial and legacy support filtering. No production data, owner grants or deployments were used.
+- UI evidence inspected on iPhone 17 Pro / iOS 26.5 with this checkout's Metro 8081 and explicit `demo-team-hangout` loopback emulators. Verified legacy team entry and retained success/empty/denied screenshots under `/Users/orkunozekin/.codex/visualizations/2026/10/11/01a12c09-2381-7091-9a64-99b3c9c832d9/step-3-evidence/`. Attachments and review pending.
+
 ### Remaining work
 
-1. Owner review of draft PR #6 and acceptance of the shipped-old-binary messaging limitation. Available AI feedback is addressed and code CI passes; keep draft and do not mark ready or merge without authorization. Step 2 is implemented, not merged.
-2. Step 3 is the next implementation step: organization hierarchy and scoped staff backend.
-3. Steps 3–15 remain incomplete; organization-v2 writes remain gated.
+1. Open and review the Step 3 PR, attach current native evidence, verify subscription and complete the AI review loop. Do not merge or mark draft ready without owner authorization.
+2. Next implementation invocation is Step 4 only: reviewed legacy migration tooling. Steps 4–15 remain incomplete; no migrations or household rollout have run.
 
 ### Blockers / risks
 
