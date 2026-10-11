@@ -52,7 +52,7 @@ function eventFields(value: unknown, partial = false): Data {
       out.location = { name: text(location.name, 'location name'), ...(location.address ? { address: text(location.address, 'address', 500) } : {}) };
     }
   }
-  if (!partial || data.notes !== undefined) out.notes = optional(data.notes?.trim?.() ?? data.notes, 'notes', 5000);
+  if (!partial || data.notes !== undefined) out.notes = optional(typeof data.notes === 'string' ? data.notes.trim() : data.notes, 'notes', 5000);
   if (partial && !Object.keys(out).length) invalid('No event changes supplied.');
   return out;
 }

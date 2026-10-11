@@ -364,17 +364,18 @@ Proposed, uncreated locations: `shared/` contracts, `admin/` browser application
 
 - Step 1 PR #5 merged on 2026-10-11; the earlier unmerged status is superseded.
 - Step 2 implements server actor lookup, atomic team/player/invite commands, event validation/revisions, request receipts and the restrictive rules cutover. Native mutations use callables and loaded event revisions; legacy timestamp reads remain unchanged. Organization-v2 commands remain refused until Step 3.
-- Initial Step 2 validation: 20 emulator tests and native unit coverage passed under Node 24.19.0. Native iPhone 17 Pro / iOS 26.5 development client loads this checkout via Metro 8081 with demo-only loopback emulators. Captures and final validation/review results are pending.
+- Step 2 validation: typecheck, 91 native tests with coverage and 23 emulator tests pass under Node 24.19.0 / Java 26; CI uses Node 22 / Java 21. No production data or deployment. Native iPhone 17 Pro / iOS 26.5 used this checkout’s Metro 8081 bundle with demo-only loopback emulators. Seven inspected screenshots are attached under PR #6 **UI evidence**, covering create/rotation, inactive-code error, player join, stale edit, successful reload/save and deletion conflict. Existing native development client reused because native dependencies did not change.
+- Greptile’s initial profile-preference and negative-test findings were fixed with explicit regression tests; re-review pending. PR subscription is verified through the REST notification-thread API. The GraphQL subscription endpoint requires a scope unavailable to this token. Local evidence is retained under `/Users/orkunozekin/.codex/visualizations/2026/10/11/01a12b56-57cd-7e73-9953-7f86c4e281ef/step-2-evidence/`.
 
 ### Remaining work
 
-1. Finish Step 2 native UI evidence, publish its separate draft PR, subscribe, and follow configured AI review/checks. Do not advance to Step 3 in this invocation.
+1. Finish PR #6 AI re-review and latest CI. Keep draft pending owner acceptance of the shipped-old-binary messaging limitation; do not mark ready or merge without authorization. Step 2 is implemented, not merged.
 2. Step 3 is the next implementation step: organization hierarchy and scoped staff backend.
 3. Steps 3–15 remain incomplete; organization-v2 writes remain gated.
 
 ### Blockers / risks
 
-Step 2 closes direct coach creation, broad team gets, client event writes, invite reads and reference reassignment. Already-shipped binaries receive Firestore permission-denied errors; custom update-required text cannot be injected into shipped code by rules. Deployment ordering and historical coach-assignment review remain rollout requirements. Legacy local-time conversion needs reviewed timezone ownership. Email, domain, retention and production migration approvals remain external gates. Browser/ICS/import scale are doc-supported approaches awaiting executable proof.
+Step 2 closes direct coach creation, broad team gets, client event writes, invite reads and reference reassignment. Already-shipped binaries receive Firestore permission-denied errors; custom update-required text cannot be injected into shipped code by rules. Deployment ordering and historical coach-assignment review remain rollout requirements. Native captures confirm the existing UTC-date/local-label offset remains; its reviewed conversion belongs to Step 4. Legacy local-time conversion needs reviewed timezone ownership. Email, domain, retention and production migration approvals remain external gates. Browser/ICS/import scale are doc-supported approaches awaiting executable proof.
 
 ### Pointers for the next agent
 

@@ -15,3 +15,10 @@
 - **Gap:** Generic parent equality rejected valid events without a division; deletion assertions checked surviving document existence without detecting overwritten fields.
 - **Going forward:** Test nullable scope with valid mixed-division fixtures as well as cross-org denials. For preservation guarantees, compare complete seeded data after the operation and retries.
 - **Pointers:** `shared/contracts.ts`, `tests/backend/contracts.test.mjs`, `tests/backend/functions.test.mjs`.
+
+### 2026-10-11 — Validate changed preferences and isolate rule denial causes
+
+- **Source:** PR #6 · Greptile
+- **Gap:** A saved team preference was reauthorized during unrelated profile saves, blocking profiles after membership revocation. Negative preference tests omitted the now-required server timestamp, so they could pass for the wrong reason.
+- **Going forward:** Gate preference authorization on that field changing. Pair each denied rules update with an otherwise-valid payload and a successful authorized counterpart, including required timestamps.
+- **Pointers:** `firestore.rules`, `tests/backend/rules.test.mjs`

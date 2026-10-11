@@ -2,7 +2,7 @@ import { before, after, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
-import { doc, setDoc, getDoc, getDocs, collection, query, where, writeBatch, updateDoc, deleteDoc, Timestamp } from 'firebase/firestore';
+import { doc, setDoc, getDoc, getDocs, collection, query, where, writeBatch, updateDoc, deleteDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { projectId, requireEmulators } from './fixtures.mjs';
 requireEmulators();
 let env;
@@ -78,7 +78,7 @@ test('client mutations cannot change authority or references, including for coac
 test('profile field allowlists preserve server-owned authority and immutable identity', async () => {
   const db = dbFor('player-a');
   for (const patch of [{ appRole: 'superAdmin' }, { uid: 'coach-a' }, { email: 'other@example.test' }, { accountState: 'active' }, { orgId: 'org-b' }, { activeTeamId: 'team-b' }]) {
-    await assertFails(updateDoc(doc(db, 'users/player-a'), patch));
+    await assertFails(updateDoc(doc(db, 'users/player-a'), { ...patch, updatedAt: serverTimestamp() }));
   }
 });
 test('platform admin support remains separate from tenant data access', async () => {
@@ -99,4 +99,27 @@ test('v2 tenant records remain denied for all legacy actors, including cross-org
     }
   }
   await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(), 'teams/team-a')));
+});
+
+test('legitimate profile preferences and platform role support survive the allowlists', async () => {
+  await assertSucceeds(updateDoc(doc(dbFor('player-a'), 'users/player-a'), { displayName: 'Updated player', activeTeamId: 'team-a', updatedAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(doc(dbFor('admin'), 'users/admin'), { activeTeamId: 'team-b', updatedAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(doc(dbFor('admin'), 'users/outsider'), { appRole: 'superAdmin', updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(doc(dbFor('admin'), 'users/player-a'), { uid: 'forged', updatedAt: serverTimestamp() }));
+  const db = env.authenticatedContext('new-user', { email: 'new-user@example.test' }).firestore();
+  const profile = { ...user('new-user'), createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+  await assertFails(setDoc(doc(db, 'users/new-user'), { ...profile, accountState: 'active' }));
+  await assertSucceeds(setDoc(doc(db, 'users/new-user'), profile));
+});
+
+test('removed membership does not block unrelated profile edits or clearing stale preference', async () => {
+  await env.withSecurityRulesDisabled(async context => {
+    await updateDoc(doc(context.firestore(), 'users/player-a'), { activeTeamId: 'team-a' });
+    await deleteDoc(doc(context.firestore(), 'teamMembers/team-a_player-a'));
+  });
+  const db = dbFor('player-a');
+  await assertSucceeds(updateDoc(doc(db, 'users/player-a'), { displayName: 'Former player', updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(doc(db, 'users/player-a'), { activeTeamId: 'team-b', updatedAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(doc(db, 'users/player-a'), { activeTeamId: null, updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(doc(db, 'users/player-a'), { activeTeamId: 'team-a', updatedAt: serverTimestamp() }));
 });

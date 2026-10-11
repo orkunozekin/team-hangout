@@ -72,7 +72,7 @@ test('event commands enforce canonical coach, immutable references, validation a
   for (const uid of ['player', 'outsider']) {
     await assert.rejects(call(uid, 'createEvent', request({ teamId: team.id, event: fields })), { code: 'functions/permission-denied' });
   }
-  for (const patch of [{ title: '' }, { type: 'other' }, { date: '2026-02-30T00:00:00.000Z' }, { time: '24:00' }, { location: { address: 'Missing name' } }, { notes: 45 }, { createdBy: 'outsider' }]) {
+  for (const patch of [{ title: '' }, { type: 'other' }, { date: '2026-02-30T00:00:00.000Z' }, { time: '24:00' }, { location: { address: 'Missing name' } }, { notes: 45 }, { notes: { trim: 'invalid' } }, { createdBy: 'outsider' }]) {
     await assert.rejects(call('owner', 'createEvent', request({ teamId: team.id, event: { ...fields, ...patch } })), { code: 'functions/invalid-argument' });
   }
   const payload = request({ teamId: team.id, event: fields });
@@ -112,4 +112,17 @@ test('organization-v2 writes are gated until hierarchy authorization exists', as
   await db.doc(`teams/${team.id}`).update({ orgId: 'org-a', schemaVersion: 2 });
   await assert.rejects(call('owner', 'createEvent', request({ teamId: team.id, event: fields })), { code: 'functions/failed-precondition' });
   await assert.rejects(call('support', 'regenerateInvite', request({ teamId: team.id })), { code: 'functions/failed-precondition' });
+});
+
+test('successful command receipts do not bypass revoked authority or account state', async () => {
+  const payload = request({ name: 'Revocation fixture' });
+  const { team } = await call('owner', 'createTeam', payload);
+  const eventPayload = request({ teamId: team.id, event: fields });
+  await call('owner', 'createEvent', eventPayload);
+  await db.doc(`teamMembers/${team.id}_owner`).delete();
+  await assert.rejects(call('owner', 'createTeam', payload), { code: 'functions/permission-denied' });
+  await assert.rejects(call('owner', 'createEvent', eventPayload), { code: 'functions/permission-denied' });
+  await db.doc('users/outsider').update({ accountState: 'deleting' });
+  await assert.rejects(call('outsider', 'createTeam', request({ name: 'Unavailable' })), { code: 'functions/permission-denied' });
+  await db.doc('users/outsider').update({ accountState: 'active' });
 });

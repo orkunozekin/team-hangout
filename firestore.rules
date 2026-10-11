@@ -56,7 +56,10 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'activeTeamId', 'updatedAt'])
           && request.resource.data.displayName is string
           && request.resource.data.updatedAt == request.time
-          && (request.resource.data.activeTeamId == null || isTeamMember(request.resource.data.activeTeamId) || isSuperAdmin())
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['activeTeamId'])
+              || request.resource.data.activeTeamId == null
+              || isTeamMember(request.resource.data.activeTeamId)
+              || isSuperAdmin())
         ) || (
           isSuperAdmin()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['appRole', 'updatedAt'])
