@@ -7,7 +7,7 @@
 | Status | in-progress |
 | Last updated | 2026-10-10 |
 | Implementation | Step 1 implemented on `codex/phase-1-security-fixtures`, pending PR review and merge. Steps 2–15 not started. |
-| Related PR | [Step 1 PR #5](https://github.com/orkunozekin/team-hangout/pull/5), open and subscribed; CI and AI review pending. |
+| Related PR | [Step 1 PR #5](https://github.com/orkunozekin/team-hangout/pull/5), open and subscribed; CI passed on Node 22/Java 21 and Macroscope approved `e97c9f8`. Latest review/check state is tracked on the PR. |
 | Product approval | Phase 1 capabilities approved; technical choices below are implementation defaults, not deployed behavior. |
 | Commercial approval | **Business model selection pending.** No prices, fees, ads, or entitlement restrictions are enabled by this plan. |
 
@@ -364,7 +364,7 @@ Proposed, uncreated locations: `shared/` contracts, `admin/` browser application
 
 ### Remaining work
 
-1. Finish Step 1 PR review and merge separately; implementation is not yet merged.
+1. Review and merge Step 1 PR #5 separately; implementation is not yet merged. Both CI jobs passed and Macroscope approved the implementation. Greptile was still running its initial review at handoff; check the PR for its result and any later feedback before merging.
 2. Next implementation invocation: Step 2 only, server team/event commands plus the atomic legacy rules cutover. Replace the two `KNOWN VULNERABILITY` success assertions with denial assertions when closing those paths.
 3. Steps 3–15 remain incomplete. Do not expose organization-v2 data before the Step 2 cutover.
 
