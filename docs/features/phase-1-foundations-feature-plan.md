@@ -7,7 +7,7 @@
 | Status | in-progress |
 | Last updated | 2026-10-10 |
 | Implementation | Step 1 implemented on `codex/phase-1-security-fixtures`, pending PR review and merge. Steps 2–15 not started. |
-| Related PR | Step 1 PR pending publication. |
+| Related PR | [Step 1 PR #5](https://github.com/orkunozekin/team-hangout/pull/5), open and subscribed; CI and AI review pending. |
 | Product approval | Phase 1 capabilities approved; technical choices below are implementation defaults, not deployed behavior. |
 | Commercial approval | **Business model selection pending.** No prices, fees, ads, or entitlement restrictions are enabled by this plan. |
 
