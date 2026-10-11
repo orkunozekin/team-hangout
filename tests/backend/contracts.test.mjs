@@ -39,3 +39,16 @@ test('event parents, canonical team set, lifecycle and instants are independentl
     assert.throws(() => decodeEvent({ ...eventV2, ...patch }, parentsA, teams));
   }
 });
+
+test('null-division events can span divisions within one canonical program and season', () => {
+  const otherDivision = { ...parentsA, divisionId: 'division-a2' };
+  const teams = { 'team-a': parentsA, 'team-a2': otherDivision, 'team-b': parentsB };
+  const sharedEvent = { ...eventV2, divisionId: null, teamIds: ['team-a', 'team-a2'] };
+  assert.deepEqual(decodeEvent(sharedEvent, parentsA, teams).teamIds, ['team-a', 'team-a2']);
+  assert.equal(decodeEvent(sharedEvent, { ...parentsA, divisionId: null }, teams).divisionId, null);
+  assert.throws(() => decodeEvent({ ...sharedEvent, divisionId: 'division-a' }, parentsA, teams));
+  assert.throws(() => decodeEvent({ ...sharedEvent, teamIds: ['team-a', 'team-b'] }, parentsA, teams));
+  for (const field of ['orgId', 'programId', 'seasonId']) {
+    assert.throws(() => decodeEvent(sharedEvent, parentsA, { ...teams, 'team-a2': { ...otherDivision, [field]: parentsB[field] } }));
+  }
+});

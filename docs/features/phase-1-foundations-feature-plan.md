@@ -359,12 +359,12 @@ Proposed, uncreated locations: `shared/` contracts, `admin/` browser application
 - Read exact SDK 54 references and official backend/browser/calendar/accessibility documentation.
 - Defined PR-sized work, migration contracts, security boundaries and required proof.
 - Step 1 implemented: `firebase.emulators.json`, `scripts/test-backend.mjs`, `tests/backend/`, `shared/contracts.ts`, and the backend CI job. Live rules/adapters/Functions behavior is unchanged.
-- Validation: `yarn typecheck`, 13 existing suites/93 tests with coverage, and 13 backend tests (4 pure contracts, 7 rules, 2 callable integration) passed locally. The direct rules-test invocation without emulator opt-in was rejected before database access. Local runtime: Node 24.19.0 and Java 26; CI uses Node 22 and Java 21. No production credentials or data used.
+- Validation: `yarn typecheck`, 13 existing suites/93 tests with coverage, and 14 backend tests (5 pure contracts, 7 rules, 2 callable integration) passed locally. The direct rules-test invocation without emulator opt-in was rejected before database access. Local runtime: Node 24.19.0 and Java 26; CI uses Node 22 and Java 21. No production credentials or data used.
 - UI evidence: not applicable; no user-visible behavior changed. Both known rule vulnerabilities are reproduced intentionally, with cutover instructions in `docs/backend-testing.md`.
 
 ### Remaining work
 
-1. Review and merge Step 1 PR #5 separately; implementation is not yet merged. Both CI jobs passed and Macroscope approved the implementation. Greptile was still running its initial review at handoff; check the PR for its result and any later feedback before merging.
+1. Review and merge Step 1 PR #5 separately; implementation is not yet merged. Both CI jobs passed and Macroscope approved the implementation. Greptile identified nullable-division scope and weak preservation assertions; both were fixed with regression coverage. Check the PR for requested re-review and latest checks before merging.
 2. Next implementation invocation: Step 2 only, server team/event commands plus the atomic legacy rules cutover. Replace the two `KNOWN VULNERABILITY` success assertions with denial assertions when closing those paths.
 3. Steps 3–15 remain incomplete. Do not expose organization-v2 data before the Step 2 cutover.
 

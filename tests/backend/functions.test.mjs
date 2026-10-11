@@ -37,13 +37,17 @@ test('deleteAccount removes caller Auth/profile/memberships while preserving oth
     db.doc('teams/delete-team').set({ createdBy: uid }),
     db.doc('events/delete-event').set({ teamId: 'delete-team', createdBy: uid }),
   ]);
+  const preservedPaths = ['users/survivor', 'teamMembers/delete-team_survivor', 'teams/delete-team', 'events/delete-event'];
+  const preserved = await Promise.all(preservedPaths.map(async (path) => [path, (await db.doc(path).get()).data()]));
+  async function assertPreserved() {
+    for (const [path, data] of preserved) assert.deepEqual((await db.doc(path).get()).data(), data, path);
+  }
   const { data } = await callable();
   assert.deepEqual(data, { ok: true, membershipsRemoved: 2 });
   assert.equal((await db.doc(`users/${uid}`).get()).exists, false);
   assert.equal((await db.collection('teamMembers').where('userId', '==', uid).get()).size, 0);
   await assert.rejects(auth.getUser(uid), { code: 'auth/user-not-found' });
+  await assertPreserved();
   assert.deepEqual((await callable()).data, { ok: true, membershipsRemoved: 0 });
-  for (const path of ['users/survivor', 'teamMembers/delete-team_survivor', 'teams/delete-team', 'events/delete-event']) {
-    assert.equal((await db.doc(path).get()).exists, true);
-  }
+  await assertPreserved();
 });

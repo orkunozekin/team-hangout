@@ -85,15 +85,22 @@ export function decodeStaff(data: Data, orgId: string) {
   return { ...common(data), orgId, roles, programIds,
     status: choice(data.status, ['active', 'revoked'], 'status') };
 }
+/** Events may span divisions; an explicit event division still restricts every team. */
+function assertEventParents(event: Parents, canonical: Parents): void {
+  for (const field of ['orgId', 'programId', 'seasonId'] as const) {
+    requireValue(event[field] === canonical[field], field);
+  }
+  if (event.divisionId !== null) requireValue(event.divisionId === canonical.divisionId, 'divisionId');
+}
 export function decodeEvent(data: Data, canonical: Parents, teams: Record<string, Parents>) {
   const parents = decodeParents(data);
-  assertParents(parents, canonical);
+  assertEventParents(parents, canonical);
   requireValue(Array.isArray(data.teamIds) && data.teamIds.length > 0, 'teamIds');
   const teamIds = data.teamIds.map((id) => opaqueId(id, 'teamIds'));
   requireValue(new Set(teamIds).size === teamIds.length && data.teamId === teamIds[0], 'teamId');
   teamIds.forEach((id) => {
     requireValue(Object.hasOwn(teams, id), 'teamIds');
-    assertParents(teams[id], parents);
+    assertEventParents(parents, teams[id]);
   });
   const startsAt = timestampToIso(data.startsAt);
   const endsAt = timestampToIso(data.endsAt);
