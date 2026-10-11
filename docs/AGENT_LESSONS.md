@@ -22,3 +22,10 @@
 - **Gap:** A saved team preference was reauthorized during unrelated profile saves, blocking profiles after membership revocation. Negative preference tests omitted the now-required server timestamp, so they could pass for the wrong reason.
 - **Going forward:** Gate preference authorization on that field changing. Pair each denied rules update with an otherwise-valid payload and a successful authorized counterpart, including required timestamps.
 - **Pointers:** `firestore.rules`, `tests/backend/rules.test.mjs`
+
+### 2026-10-11 — Idempotency belongs to an action, not matching payloads
+
+- **Source:** PR #6 · Greptile re-review
+- **Gap:** Keeping uncertain request IDs by payload made a later invite rotation replay an earlier result after another coach had rotated again.
+- **Going forward:** Generate an ID per action and preserve it only for that action’s automatic or explicitly identified retries. Identical payloads do not establish intent to retry.
+- **Pointers:** `src/firebase/commands.ts`, `src/firebase/__tests__/commands-test.ts`

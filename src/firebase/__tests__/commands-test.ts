@@ -29,13 +29,14 @@ it('preserves domain not-found messages such as expired invitation codes', async
   await expect(runCommand('joinTeamWithInvite', {})).rejects.toEqual(error);
 });
 
-it('reuses uncertain request IDs when the user retries, then releases them on success', async () => {
+it('gives a later action a fresh ID after an uncertain response, allowing explicit original retries', async () => {
   mockCall.mockRejectedValue({ code: 'functions/unavailable' });
-  await expect(runCommand('createTeam', { name: 'Retry team' })).rejects.toEqual({ code: 'functions/unavailable' });
+  await expect(runCommand('regenerateInvite', { teamId: 't1' })).rejects.toEqual({ code: 'functions/unavailable' });
   const originalId = mockCall.mock.calls[0][0].requestId;
-  mockCall.mockResolvedValue({ data: { ok: true } });
-  await runCommand('createTeam', { name: 'Retry team' });
-  expect(mockCall.mock.calls[2][0].requestId).toBe(originalId);
-  await runCommand('createTeam', { name: 'Retry team' });
-  expect(mockCall.mock.calls[3][0].requestId).not.toBe(originalId);
+  expect(mockCall.mock.calls[1][0].requestId).toBe(originalId);
+  mockCall.mockResolvedValue({ data: { inviteCode: 'NEWCODE2' } });
+  await runCommand('regenerateInvite', { teamId: 't1' });
+  expect(mockCall.mock.calls[2][0].requestId).not.toBe(originalId);
+  await runCommand('regenerateInvite', { teamId: 't1' }, originalId);
+  expect(mockCall.mock.calls[3][0].requestId).toBe(originalId);
 });
