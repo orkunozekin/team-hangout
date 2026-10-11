@@ -56,7 +56,7 @@ export const approveSelfLink = command('approveSelfLink', data => {
   keys(data, ['requestId', 'orgId', 'participantId', 'userId', 'expectedRevision']);
   return { ...identity(data), userId: data.userId == null ? null : id(data.userId, 'userId'), expectedRevision: revision(data.expectedRevision) };
 }, async (tx, payload, uid, _actor, replay) => {
-  await adminScope(tx, payload.orgId, uid, !!payload.userId && !replay);
+  await adminScope(tx, payload.orgId, uid, !!payload.userId && !replay, !!payload.userId);
   const row = await participant(tx, payload.orgId, payload.participantId);
   if (payload.userId) await availableUser(tx, payload.userId);
   if (replay) return replay;
@@ -88,7 +88,7 @@ function grantPayload(data: Data, approving: boolean): Data {
 function guardianCommand(approving: boolean) {
   const name = approving ? 'approveGuardian' : 'revokeGuardian';
   return command(name, data => grantPayload(data, approving), async (tx, payload, uid, _actor, replay) => {
-    const scope = await adminScope(tx, payload.orgId, uid, approving && !replay);
+    const scope = await adminScope(tx, payload.orgId, uid, approving && !replay, approving);
     const row = await participant(tx, payload.orgId, payload.participantId);
     // Revocation must remain possible for archived participants/organizations and unavailable targets.
     if (approving) await availableUser(tx, payload.userId);

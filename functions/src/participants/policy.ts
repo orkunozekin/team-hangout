@@ -21,10 +21,10 @@ export async function participant(tx: Transaction, orgId: string, participantId:
   if (!row || row.schemaVersion !== 2 || (row.orgId != null && row.orgId !== orgId)) denied();
   return row!;
 }
-export async function adminScope(tx: Transaction, orgId: string, uid: string, writing = false) {
+export async function adminScope(tx: Transaction, orgId: string, uid: string, writing = false, requireEnabled = true) {
   const scope = await staffScope(tx, orgId, uid);
   if (!scope.admin) denied();
-  if (scope.organization.features?.organizationV2 !== true) denied();
+  if (requireEnabled && scope.organization.features?.organizationV2 !== true) denied();
   if (writing && scope.organization.status !== 'active') inactive();
   return scope;
 }

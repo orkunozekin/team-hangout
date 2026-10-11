@@ -194,9 +194,9 @@ test('household rollout flag and deleting actors fail closed; archival still per
   await deny(profile('house-parent1', p.id)); await deny(own('house-parent1'));
   await assert.rejects(guardian(p.id, 'house-parent1'), { code: 'functions/permission-denied' });
   await db.doc('users/house-parent1').update({ accountState: 'active' });
-  await db.doc(`organizations/${a.orgId}`).update({ status: 'archived' });
+  await db.doc(`organizations/${a.orgId}`).update({ status: 'archived', 'features.organizationV2': false });
   await guardian(p.id, 'house-parent1', 'revokeGuardian'); await deny(profile('house-parent1', p.id));
-  await db.doc(`organizations/${a.orgId}`).update({ status: 'active' });
+  await db.doc(`organizations/${a.orgId}`).update({ status: 'active', 'features.organizationV2': true });
 });
 test('same-organization program boundary and revoked coach assignments protect roster reads and enrollment', async () => {
   const program = await entity(a.orgId, 'program', { name: 'Other program', sportCode: 'other', status: 'active' });
