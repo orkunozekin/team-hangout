@@ -35,6 +35,8 @@ Use one shared multi-tenant application with organization identity inside it. Pr
 
 ## Delivery phases and acceptance criteria
 
+Detailed implementation plans, their shared dependencies, and the feasibility evidence register are indexed in [phase implementation plans](phase-plans.md). Each numbered implementation step is intended to produce one scoped PR; approving the roadmap does not claim the proposed capabilities already work.
+
 ### Phase 1: Organization, household, and season foundations
 
 Approved capabilities:
