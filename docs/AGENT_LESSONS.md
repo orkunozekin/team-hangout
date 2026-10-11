@@ -36,3 +36,10 @@
 - **Gap:** Keeping uncertain request IDs by payload made a later invite rotation replay an earlier result after another coach had rotated again.
 - **Going forward:** Generate an ID per action and preserve it only for that action’s automatic or explicitly identified retries. Identical payloads do not establish intent to retry.
 - **Pointers:** `src/firebase/commands.ts`, `src/firebase/__tests__/commands-test.ts`
+
+### 2026-10-11 — Preserve omitted fields in partial updates
+
+- **Source:** PR #9 · Greptile
+- **Gap:** Contact-edit normalization converted omitted fields to null, so a phone-only edit erased the saved email and an email-only edit erased the phone.
+- **Going forward:** Preserve key presence when normalizing patches. Distinguish omitted fields from explicit clearing, and test edits against fully populated records, including preservation of private fields and retry payload identity.
+- **Pointers:** `functions/src/participants/commands.ts`, `tests/backend/participants.test.mjs`.

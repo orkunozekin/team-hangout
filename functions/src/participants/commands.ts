@@ -194,7 +194,8 @@ export const editParticipantProfile = command('editParticipantProfile', data => 
   keys(data, ['requestId', 'orgId', 'participantId', 'expectedRevision', 'fields']);
   const fields = object(data.fields); keys(fields, ['contactEmail', 'contactPhone']);
   return { ...identity(data), expectedRevision: revision(data.expectedRevision), fields: {
-    contactEmail: optional(fields.contactEmail, 'contactEmail', 254), contactPhone: optional(fields.contactPhone, 'contactPhone', 40),
+    ...(Object.prototype.hasOwnProperty.call(fields, 'contactEmail') ? { contactEmail: optional(fields.contactEmail, 'contactEmail', 254) } : {}),
+    ...(Object.prototype.hasOwnProperty.call(fields, 'contactPhone') ? { contactPhone: optional(fields.contactPhone, 'contactPhone', 40) } : {}),
   } };
 }, async (tx, payload, uid, _actor, replay) => {
   const access = await householdAccess(tx, payload.orgId, payload.participantId, uid, 'editProfile');

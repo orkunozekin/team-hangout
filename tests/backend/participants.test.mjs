@@ -251,3 +251,31 @@ test('participant archive/restoration removes and restores only live sources; ar
   await enroll(p.id, { status: 'removed', expectedRevision: 1 });
   await db.doc(`organizations/${a.orgId}`).update({ status: 'active' });
 });
+
+test('partial contact edits preserve omitted contacts and private fields while explicit null clears only its field', async () => {
+  const p = await create();
+  await call('house-owner', 'saveParticipantPrivateProfile', req({ orgId: a.orgId, participantId: p.id, expectedRevision: 0,
+    fields: { birthDate: '2016-02-29', contactEmail: 'original@example.test', contactPhone: '555-0100', guardianContactDetails: 'Private contact', operationalNotes: 'Staff note' } }));
+  await db.doc(`organizations/${a.orgId}`).update({ 'features.guardianProfileEditing': true });
+  await guardian(p.id, 'house-parent2', 'approveGuardian', { permissions: { ...permissions, editProfile: true } });
+  const ref = db.doc(`${path(p.id)}/private/profile`);
+  const original = (await ref.get()).data();
+  const phoneEdit = req({ orgId: a.orgId, participantId: p.id, expectedRevision: 1, fields: { contactPhone: '555-0200' } });
+  const changes = [
+    [phoneEdit, { contactEmail: 'original@example.test', contactPhone: '555-0200' }],
+    [req({ orgId: a.orgId, participantId: p.id, expectedRevision: 2, fields: { contactEmail: 'new@example.test' } }), { contactEmail: 'new@example.test', contactPhone: '555-0200' }],
+    [req({ orgId: a.orgId, participantId: p.id, expectedRevision: 3, fields: { contactPhone: null } }), { contactEmail: 'new@example.test', contactPhone: null }],
+    [req({ orgId: a.orgId, participantId: p.id, expectedRevision: 4, fields: { contactEmail: null } }), { contactEmail: null, contactPhone: null }],
+  ];
+  for (const [payload, expected] of changes) {
+    const saved = await call('house-parent2', 'editParticipantProfile', payload);
+    const stored = (await ref.get()).data();
+    assert.equal(saved.revision, payload.expectedRevision + 1);
+    assert.equal(stored.contactEmail, expected.contactEmail); assert.equal(stored.contactPhone, expected.contactPhone);
+    for (const field of ['birthDate', 'guardianContactDetails', 'operationalNotes', 'createdAt', 'createdBy']) assert.deepEqual(stored[field], original[field]);
+  }
+  const final = (await ref.get()).data();
+  assert.equal((await call('house-parent2', 'editParticipantProfile', phoneEdit)).revision, 2);
+  assert.deepEqual((await ref.get()).data(), final);
+  await assert.rejects(call('house-parent2', 'editParticipantProfile', { ...phoneEdit, fields: { ...phoneEdit.fields, contactEmail: null } }), error => error.details.domainCode === 'REQUEST_ID_REUSED');
+});
