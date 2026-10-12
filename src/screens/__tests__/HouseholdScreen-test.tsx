@@ -1,5 +1,5 @@
 import React from "react";
-import { Alert, AppState } from "react-native";
+import { Alert, AppState, type AppStateStatus } from "react-native";
 import {
   act,
   fireEvent,
@@ -116,7 +116,7 @@ test("save confirms account and participant, passes loaded revision and removes 
 });
 
 test("foregrounding while on Teams does not reload the hidden household", async () => {
-  let change: ((state: string) => void) | undefined;
+  let change: ((state: AppStateStatus) => void) | undefined;
   const listener = jest
     .spyOn(AppState, "addEventListener")
     .mockImplementation((_event, handler) => {
