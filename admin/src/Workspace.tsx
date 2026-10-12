@@ -320,12 +320,16 @@ export function Workspace({
           <h2>{context.organization.name}</h2>
           <button
             className="navigation-toggle"
+            aria-label={navigationOpen ? "Close menu" : "Open menu"}
             aria-expanded={navigationOpen}
             aria-controls="organization-navigation"
             onClick={() => setNavigationOpen((open) => !open)}
           >
-            {navigationOpen ? "Close menu" : "Menu"}
-            <span aria-hidden="true">{navigationOpen ? "−" : "＋"}</span>
+            <span className="menu-icon" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </span>
           </button>
         </div>
         <p className="small muted">

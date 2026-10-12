@@ -25,7 +25,13 @@ const orgId = "browser-demo-club";
 const evidence = process.env.ADMIN_EVIDENCE_DIR;
 async function capture(page: Page, name: string) {
   if (evidence) {
-    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.evaluate(async () => {
+      window.scrollTo(0, 0);
+      await document.fonts.ready;
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+    });
     await mkdir(evidence, { recursive: true });
     await page.screenshot({
       path: path.join(evidence, `${name}.png`),
@@ -338,7 +344,7 @@ test("program staff direct URLs reauthorize on reload and never load unrelated p
       ),
     )
     .toBeLessThanOrEqual(0);
-  const menu = page.getByRole("button", { name: "Menu", exact: true });
+  const menu = page.getByRole("button", { name: "Open menu", exact: true });
   const navigation = page.getByRole("navigation", { name: "Organization" });
   await expect(menu).toHaveAttribute("aria-expanded", "false");
   await expect(navigation).toBeHidden();
@@ -352,7 +358,24 @@ test("program staff direct URLs reauthorize on reload and never load unrelated p
   await expect(
     page.getByRole("button", { name: "Close menu" }),
   ).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator(".menu-icon > span").nth(1)).toHaveCSS(
+    "opacity",
+    "0",
+  );
   await capture(page, "12-mobile-navigation");
+  await page.getByRole("button", { name: "Close menu" }).press("Enter");
+  await expect(navigation).toBeHidden();
+  await expect(page.locator(".menu-icon > span").nth(1)).toHaveCSS(
+    "opacity",
+    "1",
+  );
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await menu.click();
+  await expect(navigation).toBeVisible();
+  await expect(page.locator(".menu-icon > span").first()).toHaveCSS(
+    "transition-duration",
+    "0s",
+  );
   await navigation.getByRole("link", { name: "Seasons", exact: true }).click();
   await expect(navigation).toBeHidden();
   await expect(page.locator("td strong")).toHaveText("Fall 2026");
