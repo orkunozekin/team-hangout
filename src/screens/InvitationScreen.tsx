@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { ScrollView, Text } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import { sendEmailVerification, User } from "firebase/auth";
 import { httpsCallable } from "firebase/functions";
 import { auth, functions } from "../firebase/config";
@@ -94,8 +94,8 @@ export default function InvitationScreen({
     }
   }
   return (
-    <Screen>
-      <ScrollView>
+    <Screen edges={["top", "bottom"]}>
+      <ScrollView contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }}>
         <Title>Review invitation</Title>
         <Subtitle>Signed in as {user.email}</Subtitle>
         {error ? <Text accessibilityRole="alert">{error}</Text> : null}
@@ -140,11 +140,13 @@ export default function InvitationScreen({
           onPress={onClose}
           disabled={busy}
         />
-        <Subtitle>
-          Need help? Contact the organization that invited you. To switch
-          accounts, close this invitation, sign out, then reopen the original
-          link.
-        </Subtitle>
+        <View style={{ marginTop: "auto", paddingTop: 32 }}>
+          <Subtitle>
+            Need help? Contact the organization that invited you. To switch
+            accounts, close this invitation, sign out, then reopen the original
+            link.
+          </Subtitle>
+        </View>
       </ScrollView>
     </Screen>
   );

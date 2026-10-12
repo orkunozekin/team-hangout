@@ -64,3 +64,10 @@
 - **Gap:** Resend retained a former approver, inspection omitted acceptance eligibility checks, and delayed invitation reads could restore data after denial.
 - **Going forward:** Bind each invitation generation to its current approving actor while preserving creator history, share eligibility checks between preview and acceptance, and invalidate in-flight reads when authority is denied.
 - **Pointers:** `functions/src/invitations/commands.ts`, `admin/src/Invitations.tsx`, invitation backend/browser regressions.
+
+### 2026-10-12 — Keep popover menus reachable during async work
+
+- **Source:** PR #15 · Greptile
+- **Gap:** Reopening a menu focused a disabled action, and fixed popover coordinates outlived their viewport size.
+- **Going forward:** Focus the first enabled action on open, close or reposition menus on viewport changes, and exercise reopen-during-request behavior alongside safe retry.
+- **Pointers:** `admin/src/InvitationActions.tsx`, `admin/tests/invitations.spec.ts`.

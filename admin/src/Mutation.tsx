@@ -8,12 +8,14 @@ export function Mutation({
   onSaved,
   onDenied,
   label = "Save changes",
+  buttonRole,
 }: {
   children?: ReactNode;
   action: () => () => Promise<unknown>;
   onSaved: () => void;
   onDenied: () => void;
   label?: string;
+  buttonRole?: "menuitem";
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -60,7 +62,7 @@ export function Mutation({
           {error}
         </p>
       )}
-      <button className="primary" disabled={busy} type="submit">
+      <button role={buttonRole} className="primary" disabled={busy} type="submit">
         {busy ? "Saving…" : retry ? "Retry same action" : label}
       </button>
     </form>

@@ -1,3 +1,5 @@
+import { InvitationActions } from "./InvitationActions";
+import { formatDateTime } from "../../shared/dates";
 import { useEffect, useRef, useState } from "react";
 import { sendEmailVerification } from "firebase/auth";
 import type { Invitation, InvitationView } from "../../shared/invitations";
@@ -142,7 +144,7 @@ export function Invitations({
               key={version}
               onSaved={saved}
               onDenied={denied}
-              label="Queue invitation"
+              label="Send invitation"
               action={() => {
                 const payload = {
                   requestId: crypto.randomUUID(),
@@ -230,11 +232,12 @@ export function Invitations({
                         <td>{row.relationship}</td>
                         <td>{row.status}</td>
                         <td>{row.deliveryStatus}</td>
-                        <td>{new Date(row.expiresAt).toLocaleString()}</td>
+                        <td>{formatDateTime(row.expiresAt)}</td>
                         <td>
                           {["pending", "expired"].includes(row.status) && (
-                            <>
+                            <InvitationActions label={`Actions for ${row.recipientEmail}`}>
                               <Mutation
+                                buttonRole="menuitem"
                                 label="Resend with new link"
                                 onSaved={saved}
                                 onDenied={denied}
@@ -250,6 +253,7 @@ export function Invitations({
                                 }}
                               />
                               <Mutation
+                                buttonRole="menuitem"
                                 label="Revoke invitation"
                                 onSaved={saved}
                                 onDenied={denied}
@@ -264,7 +268,7 @@ export function Invitations({
                                     services.call("revokeInvitation", p);
                                 }}
                               />
-                            </>
+                            </InvitationActions>
                           )}
                         </td>
                       </tr>
@@ -331,7 +335,7 @@ export function InvitationAcceptance({
     }
   };
   return (
-    <main className="auth-card">
+    <main className="auth-card invitation-acceptance">
       <p className="eyebrow">Household invitation</p>
       <h1>Review your invitation</h1>
       <p>Signed in as {services.auth.currentUser?.email}</p>
@@ -384,7 +388,7 @@ export function InvitationAcceptance({
         </button>
       )}
       <button onClick={onClose}>Close invitation</button>
-      <p className="small muted">
+      <p className="small muted invitation-help">
         Need help? Contact the organization that invited you and request a new
         invitation. To switch accounts, sign out and reopen the original link.
       </p>

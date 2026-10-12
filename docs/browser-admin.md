@@ -43,3 +43,5 @@ After the owner approves the intended staging project/site, configure the target
 Roster/household UI (Step 8), scoped invitation UI (Step 9), imports and calendars remain outside this step.
 
 Step 9 adds administrator-only Invitations from workspace navigation and Participants. The invitation-only recipient route also supports household account creation, verified-email recovery and explicit acceptance without staff access. See [scoped invitations](invitations.md) for encrypted queued delivery and live domain/secret gates. Mail transport remains Step 14.
+
+Invitation row actions use a keyboard-accessible kebab menu. The send button retains queued delivery status until email transport is configured. Display dates share Story Turn’s `Monday, Oct 12` format across browser and native screens; calendar-only values stay on their stored day, while invitation expiry timestamps display local time. Date input values retain their explicit ISO format.

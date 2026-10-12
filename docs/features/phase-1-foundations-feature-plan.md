@@ -6,8 +6,8 @@
 | --- | --- |
 | Status | in-progress |
 | Last updated | 2026-10-12 |
-| Implementation | Steps 1–8 merged, verified against remote main at `7fbf211` on 2026-10-12. Step 9 invitation lifecycle, browser fallback and native recovery implemented and validated; PR #14 is open for AI review. Steps 10–15 remain incomplete. |
-| Related PR | Step 8 [PR #13](https://github.com/orkunozekin/team-hangout/pull/13) merged. Step 9 [PR #14](https://github.com/orkunozekin/team-hangout/pull/14) open. |
+| Implementation | Steps 1–9 merged, verified against remote main at `84ebee5` on 2026-10-12. Invitation UI refinements are implemented and validated; their follow-up PR #15 is open for review. Steps 10–15 remain incomplete. |
+| Related PR | Step 8 [PR #13](https://github.com/orkunozekin/team-hangout/pull/13) merged. Step 9 [PR #14](https://github.com/orkunozekin/team-hangout/pull/14) merged. Invitation UI refinement [PR #15](https://github.com/orkunozekin/team-hangout/pull/15) open. |
 | Product approval | Phase 1 capabilities approved; technical choices below are implementation defaults, not deployed behavior. |
 | Commercial approval | **Business model selection pending.** No prices, fees, ads, or entitlement restrictions are enabled by this plan. |
 
@@ -411,10 +411,12 @@ Proposed, uncreated locations: `shared/` contracts, `admin/` browser application
 - Step 9 adds scoped admin create/resend/revoke/list commands, hash-only token lookup, encrypted queued delivery payloads, verified-email recipient confirmation and atomic guardian/adult-self acceptance. Browser and native routes recover from wrong email, unverified email, expiry, revocation and stale authority without automatic acceptance. Account deletion cleans nested invitation records. See `docs/invitations.md` for lifecycle and deployment contracts; actual mail delivery remains Step 14.
 - Step 9 validation: Functions build, client typecheck, browser build, 71 backend tests, 17 native suites/99 tests and nine real browser/emulator scenarios pass on Node 26.3.0 / Java 26. CI uses Node 22 / Java 21. Sixteen inspected browser/iPhone 17 Pro iOS 26.5 captures are retained outside source under the current chat's `step9/` evidence folder. Native Metro 8089 and browser 4177 ran this checkout with synthetic loopback data. A native race regression also proves a late acceptance cannot replace a newly opened invitation. All sixteen screenshots are attached under PR #14 **UI evidence**, and notification subscription is verified. Greptile initial confidence was 4/5. Its three findings are fixed with regressions: resend transfers approval while preserving creator history, inspection shares acceptance eligibility and returns reviewed-resend guidance, and denial invalidates delayed browser reads. Two browser recovery captures and one native recovery capture were inspected and attached. Fresh CI and Greptile re-review are pending; Macroscope is unavailable because credits are exhausted. The user authorized squash merge only after Greptile 5/5 and passing checks. No production data, deployment, live flags, email transport or associated-domain changes.
 
+- Step 9 PR #14 squash-merged as `84ebee5` after Greptile 5/5 on `86bb731` and all three CI jobs passed. Three bot threads resolved; Macroscope skipped because credits were exhausted. Earlier open/re-review-pending notes are superseded. Requested UI refinements are a separate follow-up, with 101 native tests and nine browser scenarios passing and inspected browser/native evidence. Step 10 remains untouched.
+
 ### Remaining work
 
-1. Steps 1–8 are merged; Step 8 PR #13 is confirmed on remote main at `7fbf211`.
-2. Step 9 is implemented and validated, open in PR #14 and awaiting AI review. See `docs/invitations.md` for hash-only lookup, encrypted queued outbox, recipient confirmation and live deployment gates.
+1. Steps 1–9 are merged; Step 9 PR #14 is confirmed on remote main at `84ebee5`.
+2. Step 9 follow-up UI refinements replace action buttons with a kebab menu, use Story Turn date presentation, rename Send invitation and bottom-align help; open in PR #15 for review, with inspected browser/native evidence and subscription verified. Greptile’s initial 4/5 findings are fixed: reopening focuses the first enabled action, and resize closes the menu. Browser regressions also preserve safe retry after a lost resend response and bound error menus within the viewport. Fresh CI and re-review are required before the authorized conditional merge. See `docs/invitations.md` for hash-only lookup, encrypted queued outbox, recipient confirmation and live deployment gates.
 3. Next implementation invocation is Step 10 only: server household agenda and native filters. Steps 10–15 remain incomplete; no live rollout, mail delivery or migration has run.
 
 ### Blockers / risks
