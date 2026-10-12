@@ -71,6 +71,10 @@ export default function HouseholdScreen({
   const [selected, setSelected] = useState<HouseholdParticipant | null>(null);
   const [version, setVersion] = useState(0);
   const [focused, setFocused] = useState(false);
+  const [appActive, setAppActive] = useState(
+    AppState.currentState !== "background" &&
+      AppState.currentState !== "inactive",
+  );
   const [error, setError] = useState("");
   useFocusEffect(
     useCallback(() => {
@@ -87,13 +91,13 @@ export default function HouseholdScreen({
     const sub = AppState.addEventListener("change", (state) => {
       setSelected(null);
       setItems(null);
-      setFocused(state === "active");
+      setAppActive(state === "active");
       if (state === "active") setVersion((n) => n + 1);
     });
     return () => sub.remove();
   }, []);
   useEffect(() => {
-    if (!focused) return;
+    if (!focused || !appActive) return;
     let active = true;
     setItems(null);
     async function load() {
@@ -120,7 +124,7 @@ export default function HouseholdScreen({
     return () => {
       active = false;
     };
-  }, [user.uid, version, focused]);
+  }, [user.uid, version, focused, appActive]);
   function reload() {
     setSelected(null);
     setError("");
@@ -142,7 +146,7 @@ export default function HouseholdScreen({
             {error}
           </Text>
         ) : null}
-        {selected && focused ? (
+        {selected && focused && appActive ? (
           <Profile
             key={`${selected.orgId}:${selected.id}`}
             user={user}

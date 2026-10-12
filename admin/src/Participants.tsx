@@ -39,6 +39,14 @@ export function Participants({
   const [error, setError] = useState("");
   const [version, setVersion] = useState(0);
   const [notice, setNotice] = useState("");
+  const [rosterError, setRosterError] = useState("");
+  const [profileError, setProfileError] = useState("");
+  const [rosterRetry, setRosterRetry] = useState(0);
+  const [profileRetry, setProfileRetry] = useState(0);
+  const accessDenied = (e: unknown) =>
+    ["functions/permission-denied", "functions/unauthenticated"].includes(
+      errorCode(e),
+    );
   const reload = () => {
     setEditing(null);
     setProfile(null);
@@ -102,6 +110,7 @@ export function Participants({
   useEffect(() => {
     let active = true;
     setRoster(null);
+    setRosterError("");
     if (context && teamId)
       void pages((cursor) =>
         services.call("listRoster", {
@@ -114,16 +123,22 @@ export function Participants({
         .then((rows) => {
           if (active) setRoster(rows);
         })
-        .catch(() => {
-          if (active) denied();
+        .catch((e) => {
+          if (!active) return;
+          if (accessDenied(e)) denied();
+          else
+            setRosterError(
+              "Unable to load this roster. Your participant edits are retained. Try again.",
+            );
         });
     return () => {
       active = false;
     };
-  }, [services, context, teamId, orgId]);
+  }, [services, context, teamId, orgId, rosterRetry]);
   useEffect(() => {
     let active = true;
     setProfile(null);
+    setProfileError("");
     if (editing && editing !== "new")
       void services
         .call("getParticipantProfile", {
@@ -134,13 +149,18 @@ export function Participants({
         .then((p) => {
           if (active) setProfile(p);
         })
-        .catch(() => {
-          if (active) denied();
+        .catch((e) => {
+          if (!active) return;
+          if (accessDenied(e)) denied();
+          else
+            setProfileError(
+              "Unable to load this profile. Your participant edits are retained. Try again.",
+            );
         });
     return () => {
       active = false;
     };
-  }, [editing, services, orgId]);
+  }, [editing, services, orgId, profileRetry]);
   useEffect(() => {
     if (!context) return;
     let active = true;
@@ -195,8 +215,10 @@ export function Participants({
         <p role="alert" className="error">
           {error}
         </p>
-        <button onClick={() => setVersion((n) => n + 1)}>Reload</button>
-        <a href="/">All organizations</a>
+        <div className="toolbar">
+          <button onClick={() => setVersion((n) => n + 1)}>Reload</button>
+          <a href="/">All organizations</a>
+        </div>
       </main>
     );
   if (!context)
@@ -298,6 +320,15 @@ export function Participants({
                 {...callbacks}
               />
             </>
+          ) : rosterError ? (
+            <div>
+              <p role="alert" className="error">
+                {rosterError}
+              </p>
+              <button onClick={() => setRosterRetry((n) => n + 1)}>
+                Retry roster read
+              </button>
+            </div>
           ) : (
             <p role="status">Loading roster…</p>
           ))}
@@ -392,6 +423,15 @@ export function Participants({
                   {...callbacks}
                 />
               </>
+            ) : profileError ? (
+              <div>
+                <p role="alert" className="error">
+                  {profileError}
+                </p>
+                <button onClick={() => setProfileRetry((n) => n + 1)}>
+                  Retry profile read
+                </button>
+              </div>
             ) : (
               <p role="status">Loading private profile…</p>
             ))}

@@ -1,5 +1,5 @@
 import React from "react";
-import { Alert } from "react-native";
+import { Alert, AppState } from "react-native";
 import {
   act,
   fireEvent,
@@ -10,9 +10,14 @@ import {
 import HouseholdScreen from "../HouseholdScreen";
 import { httpsCallable } from "firebase/functions";
 import { runCommand } from "../../firebase/commands";
+let mockBlur: (() => void) | undefined;
 jest.mock("@react-navigation/native", () => ({
   useFocusEffect: (effect: () => () => void) =>
-    require("react").useEffect(effect, []),
+    require("react").useEffect(() => {
+      const cleanup = effect();
+      mockBlur = cleanup;
+      return cleanup;
+    }, []),
 }));
 jest.mock("../../firebase/config", () => ({ db: {}, functions: {} }));
 jest.mock("firebase/functions", () => ({ httpsCallable: jest.fn() }));
@@ -108,4 +113,27 @@ test("save confirms account and participant, passes loaded revision and removes 
   await screen.findByText("Casey");
   expect(screen.queryByText("Jamie")).toBeNull();
   alert.mockRestore();
+});
+
+test("foregrounding while on Teams does not reload the hidden household", async () => {
+  let change: ((state: string) => void) | undefined;
+  const listener = jest
+    .spyOn(AppState, "addEventListener")
+    .mockImplementation((_event, handler) => {
+      change = handler;
+      return { remove: jest.fn() };
+    });
+  await render(<HouseholdScreen user={user} onTeams={jest.fn()} />);
+  await screen.findByText("Jamie");
+  await act(async () => {
+    mockBlur?.();
+  });
+  const before = (httpsCallable as jest.Mock).mock.calls.length;
+  await act(async () => {
+    change?.("background");
+    change?.("active");
+  });
+  expect((httpsCallable as jest.Mock).mock.calls.length).toBe(before);
+  expect(screen.queryByText("Jamie")).toBeNull();
+  listener.mockRestore();
 });

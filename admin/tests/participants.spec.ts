@@ -108,6 +108,66 @@ test("administrator creates participant, edits private profile, removes and rest
     page.getByRole("heading", { name: "Jordan Demo", exact: true }),
   ).toBeVisible();
 });
+test("temporary roster and profile read failures preserve participant edits and can retry", async ({
+  page,
+}) => {
+  await open(page);
+  let profileFailure = true;
+  await page.route("**/getParticipantProfile", async (route) => {
+    if (route.request().method() === "POST" && profileFailure) {
+      await route.abort("failed");
+      return;
+    }
+    await route.continue();
+  });
+  await page
+    .getByRole("button", { name: "Manage Jamie Rivera", exact: true })
+    .click();
+  await page
+    .getByLabel("Participant name", { exact: true })
+    .fill("Unsaved participant name");
+  await expect(
+    page.getByRole("button", { name: "Retry profile read" }),
+  ).toBeVisible();
+  await expect(
+    page.getByLabel("Participant name", { exact: true }),
+  ).toHaveValue("Unsaved participant name");
+  profileFailure = false;
+  await page.getByRole("button", { name: "Retry profile read" }).click();
+  await expect(page.getByLabel("Staff notes")).toHaveValue(
+    "STAFF PRIVATE DEMO NOTE",
+  );
+  await page.getByLabel("Participant phone").fill("Unsaved phone");
+  let rosterFailure = true;
+  await page.route("**/listRoster", async (route) => {
+    if (route.request().method() === "POST" && rosterFailure) {
+      await route.abort("failed");
+      return;
+    }
+    await route.continue();
+  });
+  await page
+    .getByRole("combobox", { name: "Team", exact: true })
+    .selectOption("ui-team");
+  await expect(
+    page.getByRole("button", { name: "Retry roster read" }),
+  ).toBeVisible();
+  await expect(
+    page.getByLabel("Participant name", { exact: true }),
+  ).toHaveValue("Unsaved participant name");
+  await expect(page.getByLabel("Participant phone")).toHaveValue(
+    "Unsaved phone",
+  );
+  await capture(page, "step8-browser-temporary-error");
+  rosterFailure = false;
+  await page.getByRole("button", { name: "Retry roster read" }).click();
+  await expect(
+    page.getByRole("cell", { name: "Jamie Rivera", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Participant phone")).toHaveValue(
+    "Unsaved phone",
+  );
+});
 test("program staff sees roster display fields and revoked scope discards editor and roster", async ({
   page,
 }) => {
