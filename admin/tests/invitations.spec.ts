@@ -88,22 +88,35 @@ test("admin queues, rotates and revokes an invitation with clear delivery status
     .selectOption("child-a");
   await page.getByLabel("Recipient email").fill("ui-outsider@example.test");
   await page
-    .getByRole("button", { name: "Queue invitation", exact: true })
+    .getByRole("button", { name: "Send invitation", exact: true })
     .click();
   await expect(
     page.getByRole("cell", { name: "queued", exact: true }),
   ).toBeVisible();
+  await expect(page.locator("tbody")).toContainText(/(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday), [A-Z][a-z]{2} \d{1,2}/);
   const old = await token("ui-outsider@example.test");
-  await page
-    .getByRole("button", { name: "Resend with new link", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Actions for ui-outsider@example.test", exact: true }).click();
+  await expect(page.getByRole("menuitem", {name:"Resend with new link",exact:true})).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByRole("menuitem", {name:"Revoke invitation",exact:true})).toBeFocused();
+  await capture(page,"refinement-desktop-menu");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menuitem", {name:"Resend with new link",exact:true})).toBeHidden();
+  await page.setViewportSize({width:390,height:844});
+  await page.getByRole("button", {name:"Actions for ui-outsider@example.test",exact:true}).click();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  const bounds = await page.getByRole("menu").boundingBox();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
+  await capture(page,"refinement-mobile-menu");
+  await page.getByRole("menuitem", {name:"Resend with new link",exact:true}).click();
+  await page.setViewportSize({width:1440,height:1000});
   await expect(
-    page.getByRole("button", { name: "Resend with new link", exact: true }),
+    page.getByRole("button", { name: "Actions for ui-outsider@example.test", exact: true }),
   ).toBeEnabled();
   await expect.poll(() => token("ui-outsider@example.test")).not.toBe(old);
-  await page
-    .getByRole("button", { name: "Revoke invitation", exact: true })
-    .click();
+  await page.getByRole("button", {name:"Actions for ui-outsider@example.test",exact:true}).click();
+  await page.getByRole("menuitem", {name:"Revoke invitation",exact:true}).click();
   await expect(
     page.getByRole("cell", { name: "revoked", exact: true }),
   ).toBeVisible();
@@ -113,7 +126,7 @@ test("admin queues, rotates and revokes an invitation with clear delivery status
     .selectOption("child-b");
   await page.getByLabel("Recipient email").fill("ui-outsider@example.test");
   await page
-    .getByRole("button", { name: "Queue invitation", exact: true })
+    .getByRole("button", { name: "Send invitation", exact: true })
     .click();
   await expect(
     page.getByRole("cell", { name: "pending", exact: true }),
@@ -152,6 +165,9 @@ test("link survives login, requires confirmation, clears on logout and accepts o
   await expect(
     page.getByRole("button", { name: "Confirm and accept invitation" }),
   ).toBeVisible();
+  const card = await page.locator(".invitation-acceptance").boundingBox();
+  const help = await page.locator(".invitation-help").boundingBox();
+  expect(card!.y + card!.height - (help!.y + help!.height)).toBeLessThan(45);
   await capture(page, "step9-browser-confirm");
   await page
     .getByRole("button", { name: "Confirm and accept invitation" })
@@ -178,7 +194,7 @@ test("new household account verifies email before confirmation and uses no nativ
     .selectOption("child-a");
   await page.getByLabel("Recipient email").fill(email);
   await page
-    .getByRole("button", { name: "Queue invitation", exact: true })
+    .getByRole("button", { name: "Send invitation", exact: true })
     .click();
   await expect(
     page.getByRole("cell", { name: email, exact: true }),

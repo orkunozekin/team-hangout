@@ -51,7 +51,7 @@ describe('eventForm', () => {
   it('parses and formats dates', () => {
     const date = parseEventDate('2026-08-20');
     expect(date.toISOString().startsWith('2026-08-20')).toBe(true);
-    expect(formatEventDateLabel(date)).toContain('2026');
+    expect(formatEventDateLabel(date)).toBe('Thursday, Aug 20');
   });
 
   it('validates team names', () => {

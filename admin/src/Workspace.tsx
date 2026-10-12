@@ -1,3 +1,4 @@
+import { formatCalendarDate } from "../../shared/dates";
 import { useEffect, useState } from "react";
 import type {
   AdminEntity,
@@ -480,9 +481,9 @@ export function Workspace({
                         item.programIds.map(name).join(", ") || "All programs"
                       ) : item.startsOn ? (
                         <span className="date-range">
-                          <time dateTime={item.startsOn}>{item.startsOn}</time>
+                          <time dateTime={item.startsOn}>{formatCalendarDate(item.startsOn)}</time>
                           <span>
-                            to <time dateTime={item.endsOn}>{item.endsOn}</time>
+                            to <time dateTime={item.endsOn}>{formatCalendarDate(item.endsOn!)}</time>
                           </span>
                         </span>
                       ) : item.programId ? (

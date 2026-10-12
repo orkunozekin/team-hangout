@@ -218,6 +218,9 @@ test("real browser sign-in, hierarchy creation, archive/restore, conflict and st
   await page.getByLabel("Starts on").fill("2026-09-01");
   await page.getByLabel("Ends on").fill("2026-12-01");
   await saved(page, "Fall 2026");
+  await expect(page.locator("tbody")).toContainText("Tuesday, Sep 1");
+  await expect(page.locator("tbody")).toContainText("Tuesday, Dec 1");
+  await capture(page,"refinement-season-dates");
   await page.getByRole("link", { name: "Divisions", exact: true }).click();
   await newRecord(page, "division", "Under 12");
   const editor = page.getByRole("region", { name: "Record editor" });
@@ -349,8 +352,8 @@ test("program staff direct URLs reauthorize on reload and never load unrelated p
   await expect(menu).toHaveAttribute("aria-expanded", "false");
   await expect(navigation).toBeHidden();
   await expect(page.locator(".date-range time")).toHaveText([
-    "2026-09-01",
-    "2026-12-01",
+    "Tuesday, Sep 1",
+    "Tuesday, Dec 1",
   ]);
   await capture(page, "10-small-browser");
   await menu.click();
