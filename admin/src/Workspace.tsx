@@ -146,6 +146,7 @@ export function Workspace({
   const [archived, setArchived] = useState(false);
   const [generation, setGeneration] = useState(0);
   const [notice, setNotice] = useState("");
+  const [navigationOpen, setNavigationOpen] = useState(false);
   const { orgId, section, programId } = route;
   useEffect(() => {
     let active = true;
@@ -315,11 +316,26 @@ export function Workspace({
         >
           ← All organizations
         </a>
-        <h2>{context.organization.name}</h2>
+        <div className="navigation-heading">
+          <h2>{context.organization.name}</h2>
+          <button
+            className="navigation-toggle"
+            aria-expanded={navigationOpen}
+            aria-controls="organization-navigation"
+            onClick={() => setNavigationOpen((open) => !open)}
+          >
+            {navigationOpen ? "Close menu" : "Menu"}
+            <span aria-hidden="true">{navigationOpen ? "−" : "＋"}</span>
+          </button>
+        </div>
         <p className="small muted">
           {context.admin ? "Organization administrator" : "Program staff"}
         </p>
-        <nav aria-label="Organization">
+        <nav
+          id="organization-navigation"
+          aria-label="Organization"
+          className={navigationOpen ? "navigation-open" : ""}
+        >
           {sections
             .filter(
               (item) =>
@@ -332,6 +348,7 @@ export function Workspace({
                 href={routeUrl(orgId, item, programId)}
                 onClick={(e) => {
                   e.preventDefault();
+                  setNavigationOpen(false);
                   go(routeUrl(orgId, item, programId));
                 }}
               >
@@ -455,21 +472,26 @@ export function Workspace({
                       )}
                     </td>
                     <td className="muted">
-                      {"roles" in item
-                        ? item.programIds.map(name).join(", ") || "All programs"
-                        : item.startsOn
-                          ? `${item.startsOn} to ${item.endsOn}`
-                          : item.programId
-                            ? [
-                                name(item.programId),
-                                name(item.seasonId),
-                                name(item.divisionId),
-                              ]
-                                .filter(Boolean)
-                                .join(" / ")
-                            : item.timeZone ||
-                              item.sportCode ||
-                              "Organization-wide"}
+                      {"roles" in item ? (
+                        item.programIds.map(name).join(", ") || "All programs"
+                      ) : item.startsOn ? (
+                        <span className="date-range">
+                          <time dateTime={item.startsOn}>{item.startsOn}</time>
+                          <span>
+                            to <time dateTime={item.endsOn}>{item.endsOn}</time>
+                          </span>
+                        </span>
+                      ) : item.programId ? (
+                        [
+                          name(item.programId),
+                          name(item.seasonId),
+                          name(item.divisionId),
+                        ]
+                          .filter(Boolean)
+                          .join(" / ")
+                      ) : (
+                        item.timeZone || item.sportCode || "Organization-wide"
+                      )}
                     </td>
                     <td>
                       <span

@@ -234,6 +234,19 @@ aside h2 {
 aside p {
   margin: 0 0 30px;
 }
+.navigation-toggle {
+  display: none;
+}
+.date-range {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.date-range time,
+.date-range > span {
+  white-space: nowrap;
+}
 nav {
   display: flex;
   flex-direction: column;
@@ -422,16 +435,34 @@ td strong {
     border-right: 0;
     border-bottom: 1px solid #dfe7df;
   }
+  .navigation-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-top: 12px;
+  }
   aside h2 {
-    margin: 14px 0 4px;
+    margin: 0;
+    font-size: 1.1rem;
+  }
+  .navigation-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
   }
   aside p {
-    margin-bottom: 14px;
+    margin: 4px 0 0;
   }
   nav {
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 0;
+    display: none;
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid #dfe7df;
+  }
+  nav.navigation-open {
+    display: flex;
   }
   nav a {
     padding: 9px;
@@ -440,7 +471,7 @@ td strong {
     display: none;
   }
   .workspace-main {
-  min-width: 0;
+    min-width: 0;
     padding: 28px 20px;
   }
   .toolbar {
@@ -474,5 +505,37 @@ td strong {
   }
   .toolbar label {
     min-width: 0;
+  }
+}
+
+@media (max-width: 600px) {
+  button {
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+  th,
+  td {
+    padding: 12px 8px;
+  }
+  table {
+    font-size: 12px;
+  }
+  th {
+    font-size: 10px;
+    letter-spacing: 0.03em;
+  }
+  td:last-child {
+    text-align: right;
+  }
+  td button {
+    padding: 3px 8px;
+    font-size: 12px;
+  }
+  .badge {
+    padding: 3px 8px;
+  }
+  .date-range {
+    flex-direction: column;
+    gap: 2px;
   }
 }

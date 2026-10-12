@@ -338,7 +338,24 @@ test("program staff direct URLs reauthorize on reload and never load unrelated p
       ),
     )
     .toBeLessThanOrEqual(0);
+  const menu = page.getByRole("button", { name: "Menu", exact: true });
+  const navigation = page.getByRole("navigation", { name: "Organization" });
+  await expect(menu).toHaveAttribute("aria-expanded", "false");
+  await expect(navigation).toBeHidden();
+  await expect(page.locator(".date-range time")).toHaveText([
+    "2026-09-01",
+    "2026-12-01",
+  ]);
   await capture(page, "10-small-browser");
+  await menu.click();
+  await expect(navigation).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Close menu" }),
+  ).toHaveAttribute("aria-expanded", "true");
+  await capture(page, "12-mobile-navigation");
+  await navigation.getByRole("link", { name: "Seasons", exact: true }).click();
+  await expect(navigation).toBeHidden();
+  await expect(page.locator("td strong")).toHaveText("Fall 2026");
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.reload();
   await expect(page.locator("td strong")).toHaveText("Fall 2026");
