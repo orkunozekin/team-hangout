@@ -6,8 +6,8 @@
 | --- | --- |
 | Status | in-progress |
 | Last updated | 2026-10-12 |
-| Implementation | Steps 1–5 merged. Step 6 implemented on `codex/phase-1-account-deletion`; validation and PR evidence/review are in progress. Steps 7–15 not started. |
-| Related PR | Step 6 PR pending; branch `codex/phase-1-account-deletion`. Steps 1–5 merged. |
+| Implementation | Steps 1–5 merged. Step 6 implemented on `codex/phase-1-account-deletion`; 60 backend tests, 91 native tests, typecheck and both CI jobs pass. Native evidence is attached to PR #10; AI review is in progress. Steps 7–15 not started. |
+| Related PR | [Step 6 PR #10](https://github.com/orkunozekin/team-hangout/pull/10), subscribed; branch `codex/phase-1-account-deletion`. Steps 1–5 merged. |
 | Product approval | Phase 1 capabilities approved; technical choices below are implementation defaults, not deployed behavior. |
 | Commercial approval | **Business model selection pending.** No prices, fees, ads, or entitlement restrictions are enabled by this plan. |
 
@@ -389,12 +389,12 @@ Proposed, uncreated locations: `shared/` contracts, `admin/` browser application
 
 - Step 5 PR #9 merged on 2026-10-11; earlier unmerged statuses are superseded.
 - Step 6 adds `functions/src/accounts/deletion.ts`, durable account tombstones, shared callable/assignment gates and rules denial. Bounded atomic cleanup pages remove grants and hooks, unlink self participants and preserve organization/child history and other guardians. Auth failure remains denied and resumes under the scheduled service worker without a caller token. Last-admin and only-guardian recovery flags do not block deletion or confer replacement authority. Initial deletion requires recent sign-in; legacy response fields remain compatible.
-- Step 6 validation: Functions build, client typecheck, 14 native suites/91 tests and 60 backend tests pass on Node 26.3.0 / Java 26. New tests cover 520 memberships, interrupted/concurrent workers, cached tokens, recreation denial, hook cleanup, preserved guardian reads, recent auth, and Auth failure/provider-success recovery. No production data or deployment used. Runtime native evidence/review status is being completed.
+- Step 6 validation: Functions build, client typecheck, 14 native suites/91 tests and 60 backend tests pass on Node 26.3.0 / Java 26. New tests cover 520 memberships, interrupted/concurrent workers, cached tokens, recreation denial, hook cleanup, preserved guardian reads, recent auth, and Auth failure/provider-success recovery. No production data or deployment used. Both CI jobs pass using Node 22 / Java 21. Native iPhone 17 Pro / iOS 26.5 ran this checkout’s Metro 8086 with explicit demo-only loopback emulators. Inspected warning and signed-out result screenshots are attached in PR #10 **UI evidence**; the native call completed deletion, preserved the legacy team and flagged last-admin recovery. Local captures are retained under `/Users/orkunozekin/.codex/visualizations/2026/10/11/01a12d06-e770-7450-8e00-d4ee23ced16f/step-6-evidence/`.
 - Step 6 operational and future collection ownership contracts: `docs/account-deletion.md`. Retention/pseudonymization policy remains a live rollout gate; unstructured organization-owned notes cannot be safely attributed to one account.
 
 ### Remaining work
 
-1. Finish Step 6 PR publication, native UI evidence and available AI review. Do not merge without owner authorization.
+1. Wait for Step 6 PR #10 AI review. Native UI evidence is attached, subscription is verified as `SUBSCRIBED` and both CI jobs pass on `388f1c1`. Greptile is running; Macroscope skipped correctness/approvability because its credit balance is exhausted. Do not merge without owner authorization.
 2. Next implementation invocation is Step 7 only: browser admin shell and hierarchy management. Steps 7–15 remain incomplete; no household rollout or live migration has run.
 
 ### Blockers / risks
