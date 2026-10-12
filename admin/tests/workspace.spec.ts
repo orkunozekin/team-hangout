@@ -142,11 +142,67 @@ test("real browser sign-in, hierarchy creation, archive/restore, conflict and st
   ).toBeVisible();
   await capture(page, "02-empty-teams");
   await page.getByRole("link", { name: "Programs", exact: true }).click();
+  const hierarchyReads: string[] = [];
+  page.on("request", (request) => {
+    if (
+      request.url().endsWith("/listOrganizationHierarchy") &&
+      request.method() === "POST"
+    )
+      hierarchyReads.push(request.postDataJSON().data.kind);
+  });
   await newRecord(page, "program", "Community basketball");
+  const reauthorized = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/getAdminWorkspace") &&
+      response.request().method() === "POST",
+  );
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await reauthorized;
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue(
+    "Community basketball",
+  );
+  expect(hierarchyReads.filter((kind) => kind !== "program")).toEqual([]);
   await page
     .getByRole("combobox", { name: "Sport", exact: true })
     .selectOption("basketball");
-  await saved(page, "Community basketball");
+  let intercepted = false;
+  await page.route("**/saveHierarchyEntity", async (route) => {
+    if (intercepted || route.request().method() !== "POST") {
+      await route.continue();
+      return;
+    }
+    intercepted = true;
+    await route.fetch(); // The real server commits; only the response is lost.
+    await route.abort("failed");
+  });
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Retry same action" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Name", { exact: true })).toBeDisabled();
+  const retryFocus = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/getAdminWorkspace") &&
+      response.request().method() === "POST",
+  );
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await retryFocus;
+  await expect(
+    page.getByRole("button", { name: "Retry same action" }),
+  ).toBeVisible();
+  await capture(page, "11-retained-retry");
+  await page.getByRole("button", { name: "Retry same action" }).click();
+  await expect(
+    page.locator("td strong").filter({ hasText: "Community basketball" }),
+  ).toHaveCount(1);
+  expect(
+    (
+      await db
+        .collection(`organizations/${orgId}/programs`)
+        .where("name", "==", "Community basketball")
+        .get()
+    ).size,
+  ).toBe(1);
   await page.getByRole("link", { name: "Seasons", exact: true }).click();
   await newRecord(page, "season", "Fall 2026");
   await page
@@ -214,6 +270,7 @@ test("real browser sign-in, hierarchy creation, archive/restore, conflict and st
   await page.getByRole("button", { name: "Edit Fall 2026" }).click();
   await page.getByRole("button", { name: "Restore season to active" }).click();
   await expect(page.locator("tbody .badge")).toHaveText("active");
+  hierarchyReads.length = 0;
   await page.getByRole("link", { name: "Staff access", exact: true }).click();
   await page
     .getByRole("button", { name: "Edit browser-staff", exact: true })
@@ -274,7 +331,13 @@ test("program staff direct URLs reauthorize on reload and never load unrelated p
   ).toHaveCount(0);
   await capture(page, "09-program-staff");
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => document.documentElement.scrollWidth - window.innerWidth,
+      ),
+    )
+    .toBeLessThanOrEqual(0);
   await capture(page, "10-small-browser");
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.reload();
@@ -283,10 +346,14 @@ test("program staff direct URLs reauthorize on reload and never load unrelated p
   await expect(page.getByRole("alert")).toContainText("Access unavailable");
   await page.goto(`/organizations/${orgId}/staff`);
   await expect(page.getByRole("alert")).toContainText("Access unavailable");
+  await page.goto(`/organizations/${orgId}/season?program=soccer`);
+  await expect(page.locator("td strong")).toHaveText("Fall 2026");
+  await page.getByRole("button", { name: "Edit Fall 2026" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Unsaved staff edit");
   await db
     .doc(`organizations/${orgId}/members/browser-staff`)
     .update({ status: "revoked" });
-  await page.goto(`/organizations/${orgId}/season?program=soccer`);
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect(page.getByRole("alert")).toContainText("Access unavailable");
   await expect(page.getByText("Fall 2026")).toHaveCount(0);
 });

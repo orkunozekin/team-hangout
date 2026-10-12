@@ -8,7 +8,7 @@ import type {
   StaffAssignment,
 } from "../../shared/admin";
 import type { BrowserServices } from "./firebase";
-import { message } from "./errors";
+import { errorCode, message } from "./errors";
 import { go, labels, routeUrl, sections } from "./route";
 import { EntityEditor, OrganizationCreator, StaffEditor } from "./editors";
 
@@ -156,17 +156,21 @@ export function Workspace({
       const context = await services.call("getAdminWorkspace", { orgId });
       if ((section === "staff" || section === "organization") && !context.admin)
         throw { code: "functions/permission-denied" };
-      const programs = await allPages((cursor) =>
-        services.call("listOrganizationHierarchy", {
-          orgId,
-          kind: "program",
-          ...(cursor ? { cursor } : {}),
-        }),
-      );
+      const needsPrograms = section !== "organization";
+      const programs = needsPrograms
+        ? await allPages((cursor) =>
+            services.call("listOrganizationHierarchy", {
+              orgId,
+              kind: "program",
+              ...(cursor ? { cursor } : {}),
+            }),
+          )
+        : [];
       const selected = programId
         ? programs.find((program) => program.id === programId)
         : undefined;
-      if (programId && !selected) throw { code: "functions/permission-denied" };
+      if (programId && needsPrograms && !selected)
+        throw { code: "functions/permission-denied" };
       const scoped = context.admin || selected;
       const list = (kind: "season" | "division" | "team") =>
         scoped
@@ -180,8 +184,8 @@ export function Workspace({
             )
           : Promise.resolve([]);
       const [seasons, divisions, teams, staff] = await Promise.all([
-        list("season"),
-        list("division"),
+        ["season", "division", "team"].includes(section) ? list("season") : [],
+        ["division", "team"].includes(section) ? list("division") : [],
         section === "team" ? list("team") : [],
         section === "staff"
           ? allPages((cursor) =>
@@ -213,6 +217,53 @@ export function Workspace({
       active = false;
     };
   }, [services, orgId, section, programId, generation]);
+  const currentContext = data?.context;
+  useEffect(() => {
+    if (!currentContext) return;
+    let active = true;
+    let checking = false;
+    const scope = (context: AdminWorkspace) =>
+      JSON.stringify([
+        context.admin,
+        [...context.programIds].sort(),
+        context.organization.status,
+      ]);
+    async function reauthorize() {
+      if (checking) return;
+      checking = true;
+      try {
+        const next = await services.call("getAdminWorkspace", { orgId });
+        if (active && scope(next) !== scope(currentContext!)) {
+          setData(null);
+          setEditing(null);
+          setGeneration((n) => n + 1);
+        }
+      } catch (e) {
+        if (!active) return;
+        if (
+          [
+            "functions/permission-denied",
+            "functions/unauthenticated",
+            "functions/failed-precondition",
+          ].includes(errorCode(e))
+        ) {
+          setData(null);
+          setEditing(null);
+          setError(message(e));
+        } else
+          setNotice(
+            "Unable to recheck access. Your edits are retained; the server will check access when you save.",
+          );
+      } finally {
+        checking = false;
+      }
+    }
+    window.addEventListener("focus", reauthorize);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", reauthorize);
+    };
+  }, [services, orgId, currentContext]);
   const reload = () => {
     setData(null);
     setEditing(null);

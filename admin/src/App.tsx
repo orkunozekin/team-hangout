@@ -37,12 +37,9 @@ export function App({ services }: { services: BrowserServices }) {
       setPath(location.pathname + location.search);
       setRefresh((n) => n + 1);
     };
-    const focus = () => setRefresh((n) => n + 1);
     window.addEventListener("popstate", navigate);
-    window.addEventListener("focus", focus);
     return () => {
       window.removeEventListener("popstate", navigate);
-      window.removeEventListener("focus", focus);
     };
   }, []);
   async function logout() {
