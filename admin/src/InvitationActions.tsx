@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 export function InvitationActions({
   label,
@@ -10,6 +10,13 @@ export function InvitationActions({
   const menuId = useId();
   const menu = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ top: 0, left: 0 });
+  useEffect(() => {
+    const close = () => {
+      if (menu.current?.matches(":popover-open")) menu.current.hidePopover();
+    };
+    window.addEventListener("resize", close);
+    return () => window.removeEventListener("resize", close);
+  }, []);
   return (
     <>
       <button
@@ -41,10 +48,15 @@ export function InvitationActions({
         role="menu"
         aria-label={label}
         className="invitation-actions-menu"
-        style={position}
+        style={{
+          ...position,
+          maxHeight: `calc(100dvh - ${position.top + 16}px)`,
+        }}
         onToggle={(event) => {
           if (event.newState === "open")
-            menu.current?.querySelector<HTMLButtonElement>("button")?.focus();
+            menu.current
+              ?.querySelector<HTMLButtonElement>("button:not(:disabled)")
+              ?.focus();
         }}
         onKeyDown={(event) => {
           const buttons = Array.from(

@@ -17,12 +17,12 @@ const { getAuth } = require("firebase-admin/auth");
 if (process.env.ADMIN_EMULATOR_TESTS !== "1")
   throw new Error("Run through test:admin.");
 test.describe.configure({ mode: "serial" });
-async function capture(page: Page, name: string) {
+async function capture(page: Page, name: string, fullPage = true) {
   if (!process.env.ADMIN_EVIDENCE_DIR) return;
   await mkdir(process.env.ADMIN_EVIDENCE_DIR, { recursive: true });
   await page.screenshot({
     path: `${process.env.ADMIN_EVIDENCE_DIR}/${name}.png`,
-    fullPage: true,
+    fullPage,
   });
 }
 async function signIn(page: Page, uid: string) {
@@ -99,17 +99,55 @@ test("admin queues, rotates and revokes an invitation with clear delivery status
   await expect(page.getByRole("menuitem", {name:"Resend with new link",exact:true})).toBeFocused();
   await page.keyboard.press("ArrowDown");
   await expect(page.getByRole("menuitem", {name:"Revoke invitation",exact:true})).toBeFocused();
-  await capture(page,"refinement-desktop-menu");
+  await capture(page,"refinement-desktop-menu",false);
   await page.keyboard.press("Escape");
   await expect(page.getByRole("menuitem", {name:"Resend with new link",exact:true})).toBeHidden();
+  await page.getByRole("button", {name:"Actions for ui-outsider@example.test",exact:true}).click();
+  await expect(page.getByRole("menu")).toBeVisible();
   await page.setViewportSize({width:390,height:844});
+  await expect(page.getByRole("menu")).toBeHidden();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(null)))));
   await page.getByRole("button", {name:"Actions for ui-outsider@example.test",exact:true}).click();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   const bounds = await page.getByRole("menu").boundingBox();
   expect(bounds!.x).toBeGreaterThanOrEqual(0);
   expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
-  await capture(page,"refinement-mobile-menu");
+  await capture(page,"refinement-mobile-menu",false);
+  let lost = false;
+  let release!: () => void;
+  let committed!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const savedOnServer = new Promise<void>(resolve => { committed = resolve; });
+  await page.route("**/resendInvitation", async route => {
+    if (lost) return route.continue();
+    lost = true;
+    await route.fetch(); // Commit the real operation, then lose only its response.
+    committed();
+    await held;
+    await route.abort("failed");
+  });
   await page.getByRole("menuitem", {name:"Resend with new link",exact:true}).click();
+  await savedOnServer;
+  try {
+    await expect(page.getByRole("menuitem", {name:"Saving…",exact:true})).toBeDisabled();
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", {name:"Actions for ui-outsider@example.test",exact:true}).click();
+    await expect(page.getByRole("menuitem", {name:"Revoke invitation",exact:true})).toBeFocused();
+    await page.keyboard.press("Home");
+    await expect(page.getByRole("menuitem", {name:"Revoke invitation",exact:true})).toBeFocused();
+    await capture(page,"refinement-menu-busy",false);
+  } finally { release(); }
+  await expect(page.getByRole("menuitem", {name:"Retry same action",exact:true})).toBeVisible();
+  const retryBounds = await page.getByRole("menu").boundingBox();
+  expect(retryBounds!.y + retryBounds!.height).toBeLessThanOrEqual(844);
+  await capture(page,"refinement-mobile-retry",false);
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", {name:"Actions for ui-outsider@example.test",exact:true}).click();
+  await expect(page.getByRole("menuitem", {name:"Retry same action",exact:true})).toBeVisible();
+  const once = await token("ui-outsider@example.test");
+  await page.getByRole("menuitem", {name:"Retry same action",exact:true}).click();
+  await expect(page.getByRole("menu")).toBeHidden();
+  expect(await token("ui-outsider@example.test")).toBe(once);
   await page.setViewportSize({width:1440,height:1000});
   await expect(
     page.getByRole("button", { name: "Actions for ui-outsider@example.test", exact: true }),

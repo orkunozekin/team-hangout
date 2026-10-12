@@ -416,7 +416,7 @@ Proposed, uncreated locations: `shared/` contracts, `admin/` browser application
 ### Remaining work
 
 1. Steps 1–9 are merged; Step 9 PR #14 is confirmed on remote main at `84ebee5`.
-2. Step 9 follow-up UI refinements replace action buttons with a kebab menu, use Story Turn date presentation, rename Send invitation and bottom-align help; open in PR #15 for review, with nine inspected browser/native captures attached and subscription verified. See `docs/invitations.md` for hash-only lookup, encrypted queued outbox, recipient confirmation and live deployment gates.
+2. Step 9 follow-up UI refinements replace action buttons with a kebab menu, use Story Turn date presentation, rename Send invitation and bottom-align help; open in PR #15 for review, with inspected browser/native evidence and subscription verified. Greptile’s initial 4/5 findings are fixed: reopening focuses the first enabled action, and resize closes the menu. Browser regressions also preserve safe retry after a lost resend response and bound error menus within the viewport. Fresh CI and re-review are required before the authorized conditional merge. See `docs/invitations.md` for hash-only lookup, encrypted queued outbox, recipient confirmation and live deployment gates.
 3. Next implementation invocation is Step 10 only: server household agenda and native filters. Steps 10–15 remain incomplete; no live rollout, mail delivery or migration has run.
 
 ### Blockers / risks
