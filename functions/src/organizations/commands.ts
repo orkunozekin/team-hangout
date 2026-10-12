@@ -1,3 +1,4 @@
+import { accountAvailable } from '../accountAccess';
 import { householdOrganization } from '../participants/policy';
 import { FieldPath, getFirestore, Timestamp, Transaction } from 'firebase-admin/firestore';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
@@ -145,8 +146,8 @@ export const setStaffAssignment = command('setStaffAssignment', data => {
   }
   const ref = db.doc(`organizations/${payload.orgId}/members/${payload.userId}`);
   const discovery = db.doc(`users/${payload.userId}/organizationLinks/${payload.orgId}`);
-  const [target, previous, previousDiscovery] = await tx.getAll(db.doc(`users/${payload.userId}`), ref, discovery);
-  if (!target.exists || target.data()?.accountState === 'deleting') denied();
+  const [previous, previousDiscovery] = await tx.getAll(ref, discovery);
+  await accountAvailable(tx, payload.userId);
   for (const programId of payload.programIds) await hierarchy(tx, payload.orgId, programId, undefined, undefined, false);
   if (replay) return replay;
   checkRevision(previous.data(), payload.expectedRevision);
@@ -180,8 +181,7 @@ function readCommand(normalize: (data: Data) => Data, execute: (tx: Transaction,
     const uid = request.auth?.uid; if (!uid) throw new HttpsError('unauthenticated', 'Sign in to continue.');
     const payload = normalize(object(request.data));
     return getFirestore().runTransaction(async tx => {
-      const actor = (await tx.get(getFirestore().doc(`users/${uid}`))).data();
-      if (!actor || actor.accountState === 'deleting') denied();
+      await accountAvailable(tx, uid);
       return wire(await execute(tx, payload, uid));
     });
   });

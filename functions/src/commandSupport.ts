@@ -1,3 +1,4 @@
+import { accountAvailable } from './accountAccess';
 import { createHash } from 'node:crypto';
 import { getFirestore, Timestamp, Transaction } from 'firebase-admin/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
@@ -54,12 +55,12 @@ export function command(name: string, normalize: (data: Data) => Data,
     const scope = payload.orgId ? `${payload.orgId}:` : "";
     const receipt = db.doc(`commandRequests/${hash(`${uid}:${name}:${scope}${requestId}`)}`);
     return db.runTransaction(async tx => {
-      const [user, previous] = await tx.getAll(db.doc(`users/${uid}`), receipt);
-      if (!user.exists || user.data()?.accountState === 'deleting') throw new HttpsError('permission-denied', 'Account is unavailable.');
+      const actor = await accountAvailable(tx, uid);
+      const previous = await tx.get(receipt);
       if (previous.exists && previous.data()?.fingerprint !== fingerprint) {
         throw new HttpsError('already-exists', 'This request ID was used for another change.', { domainCode: 'REQUEST_ID_REUSED' });
       }
-      const result = wire(await execute(tx, payload, uid, user.data()!, previous.data()?.result ?? null));
+      const result = wire(await execute(tx, payload, uid, actor, previous.data()?.result ?? null));
       if (!previous.exists) tx.create(receipt, { uid, operation: name, fingerprint, result, createdAt: Timestamp.now() });
       return result;
     });

@@ -85,7 +85,7 @@ cd functions && yarn install && yarn build
 firebase deploy --only functions
 ```
 
-The callable `deleteAccount` removes the Auth user, `users/{uid}`, and that user's `teamMembers` docs. Teams/events they created are left in place.
+The callable `deleteAccount` immediately denies account access and starts resumable cleanup of Auth, profile, grants and private projections. Teams, events, participant identities and other guardians remain. Deploy the scheduled retry worker and indexes before enabling households. See [account deletion](docs/account-deletion.md) for recent sign-in, recovery and cleanup contracts.
 
 ### Run (development build)
 
