@@ -546,7 +546,7 @@ export function Workspace({
                 key={editing === "new" ? "new" : editing.id}
                 services={services}
                 orgId={orgId}
-                kind={section}
+                kind={section as Exclude<AdminSection, "staff" | "participant">}
                 existing={
                   editing === "new" ? undefined : (editing as AdminEntity)
                 }

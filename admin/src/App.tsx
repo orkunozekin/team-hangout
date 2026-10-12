@@ -9,6 +9,7 @@ import {
 import type { BrowserServices } from "./firebase";
 import { message } from "./errors";
 import { go, readRoute } from "./route";
+import { Participants } from "./Participants";
 import { Workspace, OrganizationPicker } from "./Workspace";
 
 export function App({ services }: { services: BrowserServices }) {
@@ -93,7 +94,7 @@ export function App({ services }: { services: BrowserServices }) {
           key={`${session.user.uid}:${session.generation}:${path}:${refresh}`}
         >
           {route ? (
-            <Workspace services={services} route={route} />
+            route.section === "participant" ? <Participants services={services} orgId={route.orgId} programId={route.programId} /> : <Workspace services={services} route={route} />
           ) : location.pathname === "/" ? (
             <OrganizationPicker services={services} />
           ) : (

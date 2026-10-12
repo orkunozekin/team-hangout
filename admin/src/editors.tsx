@@ -70,7 +70,7 @@ export function EntityEditor({
 }: {
   services: BrowserServices;
   orgId: string;
-  kind: Exclude<AdminSection, "staff">;
+  kind: Exclude<AdminSection, "staff" | "participant">;
   existing?: AdminEntity;
   programs: AdminEntity[];
   seasons: AdminEntity[];

@@ -116,7 +116,7 @@ export const listMyParticipants = readCommand(data => {
     const data = link.data();
     try {
       const access = await householdAccess(tx, id(data.orgId, 'orgId'), id(data.participantId, 'participantId'), uid, 'discovery');
-      items.push({ orgId: data.orgId, ...publicParticipant(data.participantId, access.row), relationship: access.self ? 'self' : 'guardian' });
+      items.push({ orgId: data.orgId, organizationName: access.organization.name, ...publicParticipant(data.participantId, access.row), relationship: access.self ? 'self' : 'guardian' });
     } catch (error) { if (!(error instanceof HttpsError) || error.code !== 'permission-denied') throw error; }
   }
   return { items, nextCursor: links.size > payload.pageSize ? links.docs[payload.pageSize - 1].id : null };
