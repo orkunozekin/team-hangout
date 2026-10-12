@@ -213,12 +213,18 @@ test("new household account verifies email before confirmation and uses no nativ
   } finally {
     await deleteApp(app);
   }
-  await page
-    .getByRole("button", { name: "Check invitation again", exact: true })
-    .click();
-  await expect(
-    page.getByRole("heading", { name: "Jamie Rivera", exact: true }),
-  ).toBeVisible();
+  const staleApp = initializeApp({projectId: "demo-team-hangout"}, "invitation-stale-preview");
+  const participant = getFirestore(staleApp).doc(`organizations/${householdOrg}/participants/child-a`);
+  const previous = (await participant.get()).data();
+  await participant.update({accessRevision: (previous.accessRevision ?? 0) + 1});
+  await page.getByRole("button", {name: "Check invitation again", exact: true}).click();
+  await expect(page.getByText("Participant access changed. Ask your organization to review and resend this invitation.")).toBeVisible();
+  await expect(page.getByRole("button", {name: "Confirm and accept invitation"})).toBeHidden();
+  await capture(page, "step9-browser-needs-review");
+  await participant.update({accessRevision: previous.accessRevision ?? 0});
+  await deleteApp(staleApp);
+  await page.getByRole("button", {name: "Check invitation again", exact: true}).click();
+  await expect(page.getByRole("heading", {name: "Jamie Rivera", exact: true})).toBeVisible();
   await page
     .getByRole("button", { name: "Confirm and accept invitation" })
     .click();
@@ -227,4 +233,38 @@ test("new household account verifies email before confirmation and uses no nativ
       "Invitation accepted. Open your household to check current access.",
     ),
   ).toBeVisible();
+});
+
+test("denial invalidates delayed authorized invitation responses", async ({ page }) => {
+  await page.goto(`/organizations/${householdOrg}/invitation`);
+  await signIn(page, "ui-admin");
+  await expect(page.getByRole("cell", {name: "ui-outsider@example.test", exact: true}).first()).toBeVisible();
+  let release!: () => void;
+  let loaded!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const requested = new Promise<void>(resolve => { loaded = resolve; });
+  await page.route("**/listOrganizationParticipants", async route => {
+    const response = await route.fetch();
+    loaded();
+    await held;
+    await route.fulfill({response});
+  });
+  const app = initializeApp({projectId: "demo-team-hangout"}, "invitation-revoke-race");
+  const member = getFirestore(app).doc(`organizations/${householdOrg}/members/ui-admin`);
+  try {
+    await page.getByRole("button", {name: "Reload invitations", exact: true}).click();
+    await requested;
+    await member.update({status: "revoked"});
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(page.getByText("Invitation access unavailable. Reload to recheck your permissions.")).toBeVisible();
+    release();
+    await page.unrouteAll({behavior: "wait"});
+    await expect(page.getByRole("heading", {name: "New invitation", exact: true})).toBeHidden();
+    await expect(page.getByRole("cell", {name: "ui-outsider@example.test", exact: true})).toHaveCount(0);
+    await capture(page, "step9-browser-denied-race");
+  } finally {
+    release();
+    await member.update({status: "active"});
+    await deleteApp(app);
+  }
 });

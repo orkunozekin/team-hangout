@@ -375,7 +375,32 @@ test("adult self acceptance links explicitly; existing guardian rights cannot be
       permissions: { ...permissions, viewProfile: false },
     }),
   );
-  await assert.rejects(accept(ct), { code: "functions/failed-precondition" });
+  assert.equal((await inspect(ct)).status, "needs-review");
+  assert.equal((await accept(ct)).status, "needs-review");
+});
+test("resend transfers approval to the current admin and inspection shares editing gates", async () => {
+  const i = await create();
+  const oldToken = await raw(i);
+  await db.doc(`organizations/${orgId}/members/invite-outsider`).set({orgId, roles: ["orgAdmin"], status: "active", programIds: []});
+  await db.doc(`organizations/${orgId}/members/invite-admin`).update({status: "revoked"});
+  await deny(inspect(oldToken));
+  const payload = req({orgId, invitationId: i.id, expectedRevision: i.revision});
+  const result = await call("invite-outsider", "resendInvitation", payload);
+  const row = (await db.doc(`organizations/${orgId}/invitations/${i.id}`).get()).data();
+  assert.equal(row.invitedBy, "invite-outsider");
+  assert.equal(row.createdBy, "invite-admin");
+  const next = await raw(result.invitation);
+  assert.equal((await inspect(next)).status, "pending");
+  assert.equal((await accept(next)).status, "accepted");
+  assert.deepEqual(await call("invite-outsider", "resendInvitation", payload), result);
+  await db.doc(`organizations/${orgId}/members/invite-admin`).update({status: "active"});
+  await db.doc(`organizations/${orgId}/members/invite-outsider`).delete();
+  const editing = await create({permissions: {...permissions, editProfile: true}});
+  const editingToken = await raw(editing);
+  await db.doc(`organizations/${orgId}`).update({"features.guardianProfileEditing": false});
+  assert.deepEqual(await inspect(editingToken), {status: "needs-review"});
+  assert.deepEqual(await accept(editingToken), {status: "needs-review"});
+  await db.doc(`organizations/${orgId}`).update({"features.guardianProfileEditing": true});
 });
 test("deleting recipient or inviter denies cached-token acceptance; cleanup removes nested invitation tokens", async () => {
   const i = await create();

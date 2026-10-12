@@ -66,6 +66,7 @@ export type InvitationCommands = {
 };
 export function invitationMessage(status: string): string {
   const messages: Record<string, string> = {
+    "needs-review": "Participant access changed. Ask your organization to review and resend this invitation.",
     used: "This invitation has already been used. Contact your organization for help.",
     accepted: "Invitation accepted. Open your household to check current access.",
     expired:

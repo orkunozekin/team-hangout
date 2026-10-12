@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { sendEmailVerification } from "firebase/auth";
 import type { Invitation, InvitationView } from "../../shared/invitations";
 import { invitationMessage } from "../../shared/invitations";
@@ -25,7 +25,9 @@ export function Invitations({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [version, setVersion] = useState(0);
+  const loadGeneration = useRef(0);
   const denied = () => {
+    loadGeneration.current += 1;
     setRows(null);
     setParticipants([]);
     setEmail("");
@@ -35,6 +37,7 @@ export function Invitations({
   };
   useEffect(() => {
     let alive = true;
+    const generation = ++loadGeneration.current;
     setRows(null);
     setParticipants([]);
     setError("");
@@ -60,13 +63,13 @@ export function Invitations({
         ps.push(...page.items);
         cursor = page.nextCursor || undefined;
       } while (cursor);
-      if (alive) {
+      if (alive && generation === loadGeneration.current) {
         setRows(invitations);
         setParticipants(ps.filter((p) => p.status === "active"));
       }
     }
     void load().catch((e) => {
-      if (alive) setError(message(e));
+      if (alive && generation === loadGeneration.current) setError(message(e));
     });
     return () => {
       alive = false;

@@ -65,7 +65,7 @@ test("wrong-account recovery does not offer acceptance and close discards pendin
 
 test("a late acceptance cannot replace a newly opened invitation", async () => {
   let finish!: (value: unknown) => void;
-  (httpsCallable as jest.Mock).mockImplementation((_f, name) => async ({ token }) => {
+  (httpsCallable as jest.Mock).mockImplementation((_f, name) => async ({ token }: { token: string }) => {
     if (name === "acceptInvitation") return new Promise(resolve => { finish = resolve; });
     return { data: { status: "pending", participantName: token.startsWith("a") ? "Jamie" : "Taylor", relationship: "guardian", permissions: { viewProfile: true } } };
   });
@@ -78,4 +78,11 @@ test("a late acceptance cannot replace a newly opened invitation", async () => {
   expect(screen.getByText("Taylor")).toBeTruthy();
   expect(screen.getByText("Confirm and accept invitation")).toBeTruthy();
   expect(screen.queryByText("Invitation accepted. Open your household to check current access.")).toBeNull();
+});
+
+test("stale access offers reviewed resend guidance without acceptance", async () => {
+  status = "needs-review";
+  await render(<InvitationScreen user={user} token={"a".repeat(43)} onClose={jest.fn()} />);
+  await screen.findByText("Participant access changed. Ask your organization to review and resend this invitation.");
+  expect(screen.queryByText("Confirm and accept invitation")).toBeNull();
 });

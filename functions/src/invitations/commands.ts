@@ -123,6 +123,11 @@ async function target(tx: Transaction, row: Data, writing = true) {
   }
   return p;
 }
+function needsReview(row: Data, p: Data, organization: Data) {
+  return (p.accessRevision ?? 0) !== row.participantAccessRevision ||
+    (row.relationship === "guardian" && row.permissions.editProfile &&
+      organization.features?.guardianProfileEditing !== true);
+}
 function seal(raw: string) {
   // A public, synthetic key is allowed ONLY in the explicit demo emulator runtime.
   const demo =
@@ -251,7 +256,7 @@ function issue(resend: boolean) {
             invalid("Create a new invitation for this relationship.");
         }
         const row: Data = resend
-          ? { ...previous! }
+          ? { ...previous!, invitedBy: uid }
           : {
               ...payload,
               recipientUid,
@@ -420,6 +425,7 @@ export const inspectInvitation = onCall(async (request) => {
     await accountAvailable(tx, found.row.invitedBy);
     if (scope.organization.features?.households !== true) denied();
     const p = await target(tx, found.row);
+    if (needsReview(found.row, p, scope.organization)) return { status: "needs-review" };
     return {
       status: "pending",
       participantName: p.displayName,
@@ -455,11 +461,7 @@ export const acceptInvitation = onCall(async (request) => {
     await accountAvailable(tx, row.invitedBy);
     if (scope.organization.features?.households !== true) denied();
     const p = await target(tx, row);
-    if ((p.accessRevision ?? 0) !== row.participantAccessRevision)
-      throw new HttpsError(
-        "failed-precondition",
-        "Participant access changed. Ask the organization to resend this invitation after review.",
-      );
+    if (needsReview(row, p, scope.organization)) return { status: "needs-review" };
     const before = await projectionSources(tx, row.orgId, row.participantId, p);
     let after = { ...before, grants: { ...before.grants } };
     let grant: Data | null = null;
@@ -481,11 +483,6 @@ export const acceptInvitation = onCall(async (request) => {
           "resource-exhausted",
           "This participant requires a reviewed access change.",
         );
-      if (
-        row.relationship === "guardian" && row.permissions.editProfile &&
-        scope.organization.features?.guardianProfileEditing !== true
-      )
-        denied();
       grant = {
         orgId: row.orgId,
         participantId: row.participantId,
