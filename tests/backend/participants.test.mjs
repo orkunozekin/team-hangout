@@ -62,7 +62,7 @@ const own = uid => call(uid, 'listMyParticipants');
 const permissions = { viewSchedule: true, viewProfile: true, editProfile: false, respond: false };
 
 test('participant endpoints require authentication and reject direct client authority/private reads', async () => {
-  for (const name of ['saveParticipant', 'saveParticipantPrivateProfile', 'approveSelfLink', 'approveGuardian', 'revokeGuardian', 'setRosterEnrollment', 'getParticipantProfile', 'editParticipantProfile', 'listMyParticipants', 'listRoster']) {
+  for (const name of ['saveParticipant', 'saveParticipantPrivateProfile', 'approveSelfLink', 'approveGuardian', 'revokeGuardian', 'setRosterEnrollment', 'getParticipantProfile', 'editParticipantProfile', 'listMyParticipants', 'listRoster', 'listOrganizationParticipants']) {
     await assert.rejects(call('house-anonymous', name), { code: 'functions/unauthenticated' });
   }
   const { initializeTestEnvironment, assertFails } = await import('@firebase/rules-unit-testing');
@@ -278,4 +278,30 @@ test('partial contact edits preserve omitted contacts and private fields while e
   assert.equal((await call('house-parent2', 'editParticipantProfile', phoneEdit)).revision, 2);
   assert.deepEqual((await ref.get()).data(), final);
   await assert.rejects(call('house-parent2', 'editParticipantProfile', { ...phoneEdit, fields: { ...phoneEdit.fields, contactEmail: null } }), error => error.details.domainCode === 'REQUEST_ID_REUSED');
+});
+
+test('Step 8 discovery and guardian display retain private boundaries and enrollment revisions', async () => {
+  const p = await create('youth', a.orgId, 'UI child');
+  await guardian(p.id, 'house-parent1'); await guardian(p.id, 'house-parent2');
+  const result = await profile('house-parent1', p.id);
+  assert.equal(result.relationship, 'guardian'); assert.equal(result.canEdit, false);
+  assert.equal(result.guardians.length, 2);
+  for (const g of result.guardians) assert.deepEqual(Object.keys(g).sort(), ['displayName', 'isYou']);
+  assert.equal(result.guardians.filter(g => g.isYou).length, 1);
+  const adminResult = await profile('house-owner', p.id, { staffPrivate: true });
+  assert.ok(adminResult.guardians.every(g => g.userId && g.permissions));
+  for (const uid of ['house-staff', 'house-coach', 'house-parent1', 'house-outsider', 'house-support']) await deny(call(uid, 'listOrganizationParticipants', { orgId: a.orgId }));
+  await deny(call('house-owner', 'listOrganizationParticipants', { orgId: 'unrelated-org' }));
+  const participants = await call('house-owner', 'listOrganizationParticipants', { orgId: a.orgId });
+  assert.ok(participants.items.every(item => Object.keys(item).sort().join(',') === 'displayName,id,kind,revision,status'));
+  assert.ok(participants.nextCursor === null || typeof participants.nextCursor === 'string');
+  await enroll(p.id);
+  await enroll(p.id, { status: 'removed', expectedRevision: 1 });
+  const removed = (await call('house-staff', 'listRoster', { orgId: a.orgId, teamId: a.team.id, includeRemoved: true })).items.find(item => item.participantId === p.id);
+  assert.equal(removed.status, 'removed'); assert.equal(removed.revision, 2);
+  await deny(call('house-coach', 'listRoster', { orgId: a.orgId, teamId: a.team.id, includeRemoved: true }));
+  await enroll(p.id, { expectedRevision: removed.revision });
+  await guardian(p.id, 'house-parent1', 'revokeGuardian');
+  await deny(profile('house-parent1', p.id));
+  assert.equal((await profile('house-parent2', p.id)).guardians.length, 1);
 });

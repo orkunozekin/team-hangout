@@ -50,3 +50,10 @@
 - **Gap:** A window-focus refresh changed the workspace React key, silently discarding unsaved fields and the request ID retained after an uncertain save. Entry also awaited unrelated history on sections that did not use it.
 - **Going forward:** Recheck canonical authority without remounting an unchanged authorized scope. Clear tenant state on actual account/scope loss. Test focus during both an unsaved edit and an accepted write whose response is lost, proving the same request is replayed once. Fetch only the records and parents required by the current section.
 - **Pointers:** `admin/src/App.tsx`, `admin/src/Workspace.tsx`, `admin/src/Mutation.tsx`, `admin/tests/workspace.spec.ts`.
+
+### 2026-10-12 — Separate visibility and transient read failures from authorization
+
+- **Source:** PR #13 · Greptile
+- **Gap:** Returning to the foreground reloaded a hidden household tab, and temporary browser read errors cleared unsaved participant edits as though permission had been revoked.
+- **Going forward:** Require both navigation focus and active app state before loading private household data. Clear editors only for confirmed authorization loss; preserve unsaved fields and provide scoped retries for temporary read failures. Test background transitions while another tab is selected and interrupted reads during active edits.
+- **Pointers:** `src/screens/HouseholdScreen.tsx`, `admin/src/Participants.tsx` and their regression tests.

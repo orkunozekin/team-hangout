@@ -43,6 +43,7 @@ import {
   Ionicons,
 } from '@expo/vector-icons';
 
+import HouseholdScreen from './src/screens/HouseholdScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
 import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen';
@@ -94,6 +95,7 @@ export type AuthStackParamList = {
 };
 
 export type OnboardingStackParamList = {
+  Household: undefined;
   CreateTeam: undefined;
   JoinTeam: { code?: string } | undefined;
   AdminHome: undefined;
@@ -106,6 +108,7 @@ export type RootStackParamList = {
 };
 
 export type MainTabParamList = {
+  Household: undefined;
   Schedule: undefined;
   Team: undefined;
   Admin: undefined;
@@ -152,11 +155,14 @@ function OnboardingNavigator({
           ? 'JoinTeam'
           : isSuperAdmin
             ? 'AdminHome'
-            : 'CreateTeam'
+            : 'Household'
       }
       screenOptions={{ headerShown: false }}
     >
-      <OnboardingStack.Screen name="CreateTeam">
+      <OnboardingStack.Screen name="Household">
+        {({ navigation }) => <HouseholdScreen user={user} onTeams={() => navigation.navigate('CreateTeam')} />}
+      </OnboardingStack.Screen>
+      <OnboardingStack.Screen name="CreateTeam" options={{ headerShown: true, title: 'Teams', headerBackTitle: 'Household' }}>
         {({ navigation }) => (
           <CreateTeamScreen
             user={user}
@@ -166,7 +172,7 @@ function OnboardingNavigator({
           />
         )}
       </OnboardingStack.Screen>
-      <OnboardingStack.Screen name="JoinTeam">
+      <OnboardingStack.Screen name="JoinTeam" options={{ headerShown: true, title: 'Join team' }}>
         {({ navigation }) => (
           <JoinTeamScreen
             user={user}
@@ -220,7 +226,9 @@ function MainTabs({
         },
         tabBarIcon: ({ color, size }) => {
           const iconName =
-            route.name === 'Schedule'
+            route.name === 'Household'
+              ? 'home'
+              : route.name === 'Schedule'
               ? 'calendar'
               : route.name === 'Team'
                 ? 'people'
@@ -231,6 +239,9 @@ function MainTabs({
         },
       })}
     >
+      <Tab.Screen name="Household">
+        {({ navigation }) => <HouseholdScreen user={user} onTeams={() => navigation.navigate('Team')} />}
+      </Tab.Screen>
       <Tab.Screen name="Schedule">
         {({ navigation }) => (
           <ScheduleScreen
@@ -241,7 +252,7 @@ function MainTabs({
           />
         )}
       </Tab.Screen>
-      <Tab.Screen name="Team">
+      <Tab.Screen name="Team" options={{ title: 'Teams' }}>
         {() => (
           <TeamScreen
             teamId={team.id}
@@ -440,7 +451,7 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <NavigationContainer>
+      <NavigationContainer key={user?.uid || 'signed-out'}>
         {!user ? (
           <AuthNavigator />
         ) : !team || !membership ? (

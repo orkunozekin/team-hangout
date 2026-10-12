@@ -156,15 +156,48 @@ export const getParticipantProfile = readCommand(data => {
   if (data.staffPrivate != null && typeof data.staffPrivate !== 'boolean') invalid('Invalid staffPrivate.');
   return { ...identity(data), staffPrivate: data.staffPrivate === true };
 }, async (tx, payload, uid) => {
-  const row = payload.staffPrivate ? (await adminScope(tx, payload.orgId, uid), await participant(tx, payload.orgId, payload.participantId))
-    : (await householdAccess(tx, payload.orgId, payload.participantId, uid, 'viewProfile')).row;
+  const access = payload.staffPrivate ? null : await householdAccess(tx, payload.orgId, payload.participantId, uid, 'viewProfile');
+  const row = access ? access.row : (await adminScope(tx, payload.orgId, uid), await participant(tx, payload.orgId, payload.participantId));
   const profile = (await tx.get(participantRef(payload.orgId, payload.participantId).collection('private').doc('profile'))).data();
-  return { participant: publicParticipant(payload.participantId, row), profile: payload.staffPrivate ? profile ?? null : {
-    birthDate: profile?.birthDate ?? null, contactEmail: profile?.contactEmail ?? null, contactPhone: profile?.contactPhone ?? null, revision: profile?.revision ?? 0,
-  } };
+  const grants = await tx.get(participantRef(payload.orgId, payload.participantId).collection('guardians').where('status', '==', 'active').limit(11));
+  if (grants.size > 10) throw new HttpsError('resource-exhausted', 'This participant requires a reviewed bulk access change.');
+  const guardians: Data[] = [];
+  for (const doc of grants.docs) {
+    const grant = doc.data();
+    if (grant.orgId !== payload.orgId || grant.participantId !== payload.participantId || grant.userId !== doc.id) denied();
+    const account = (await tx.get(getFirestore().doc(`users/${doc.id}`))).data();
+    guardians.push({ displayName: account?.displayName || 'Approved guardian', isYou: doc.id === uid,
+      ...(payload.staffPrivate ? { userId: doc.id, permissions: grant.permissions } : {}) });
+  }
+  return { participant: publicParticipant(payload.participantId, row), guardians,
+    relationship: payload.staffPrivate ? 'staff' : access!.self ? 'self' : 'guardian',
+    canEdit: !!access && access.organization.status === 'active' && (access.self ||
+      (access.guardian?.permissions?.editProfile === true && access.organization.features?.guardianProfileEditing === true)),
+    profile: payload.staffPrivate ? profile ?? null : {
+      birthDate: profile?.birthDate ?? null, contactEmail: profile?.contactEmail ?? null, contactPhone: profile?.contactPhone ?? null, revision: profile?.revision ?? 0,
+    } };
 });
+
+/** Organization-wide identity discovery is admin-only; program staff use scoped roster IDs. */
+export const listOrganizationParticipants = readCommand(data => {
+  keys(data, ['orgId', 'cursor', 'pageSize']); return { orgId: id(data.orgId, 'orgId'), ...page(data) };
+}, async (tx, payload, uid) => {
+  await adminScope(tx, payload.orgId, uid);
+  let query = getFirestore().collection(`organizations/${payload.orgId}/participants`).orderBy(FieldPath.documentId()).limit(payload.pageSize + 1);
+  if (payload.cursor) query = query.startAfter(payload.cursor);
+  const result = await tx.get(query);
+  const items = result.docs.slice(0, payload.pageSize).map(doc => {
+    const row = doc.data();
+    if (row.schemaVersion !== 2 || (row.orgId != null && row.orgId !== payload.orgId)) denied();
+    return publicParticipant(doc.id, row);
+  });
+  return { items, nextCursor: result.size > payload.pageSize ? result.docs[payload.pageSize - 1].id : null };
+});
+
 export const listRoster = readCommand(data => {
-  keys(data, ['orgId', 'teamId', 'pageSize', 'cursor']); return { orgId: id(data.orgId, 'orgId'), teamId: id(data.teamId, 'teamId'), ...page(data) };
+  keys(data, ['orgId', 'teamId', 'pageSize', 'cursor', 'includeRemoved']);
+  if (data.includeRemoved != null && typeof data.includeRemoved !== 'boolean') invalid('Invalid includeRemoved.');
+  return { orgId: id(data.orgId, 'orgId'), teamId: id(data.teamId, 'teamId'), includeRemoved: data.includeRemoved === true, ...page(data) };
 }, async (tx, payload, uid) => {
   const db = getFirestore(); const team = (await tx.get(db.doc(`teams/${payload.teamId}`))).data();
   if (!team || team.orgId !== payload.orgId || team.schemaVersion !== 2) denied();
@@ -175,7 +208,7 @@ export const listRoster = readCommand(data => {
     && (staff.roles?.includes('orgAdmin') || (staff.roles?.includes('programStaff') && staff.programIds?.includes(team.programId)));
   const canCoach = !!assignment && assignment.orgId === payload.orgId && assignment.teamId === payload.teamId && assignment.userId === uid
     && assignment.status === 'active' && assignment.roles?.some((role: string) => ['coach', 'captain'].includes(role));
-  if (!canStaff && !canCoach) denied();
+  if ((!canStaff && !canCoach) || (payload.includeRemoved && !canStaff)) denied();
   await hierarchy(tx, payload.orgId, team.programId, team.seasonId, team.divisionId, false);
   let query = db.collection(`teams/${payload.teamId}/roster`).orderBy(FieldPath.documentId()).limit(payload.pageSize + 1);
   if (payload.cursor) query = query.startAfter(payload.cursor);
@@ -183,8 +216,8 @@ export const listRoster = readCommand(data => {
   for (const doc of result.docs.slice(0, payload.pageSize)) {
     const enrollment = doc.data();
     if (enrollment.orgId !== payload.orgId || enrollment.participantId !== doc.id) denied();
-    if (enrollment.status !== 'active') continue;
-    const row = await participant(tx, payload.orgId, doc.id); if (row.status !== 'active') continue;
+    if (enrollment.status !== 'active' && !payload.includeRemoved) continue;
+    const row = await participant(tx, payload.orgId, doc.id); if (row.status !== 'active' && !payload.includeRemoved) continue;
     items.push({ participantId: doc.id, displayName: row.displayName, jerseyNumber: enrollment.jerseyNumber ?? null, status: enrollment.status, revision: enrollment.revision ?? 0 });
   }
   return { items, nextCursor: result.size > payload.pageSize ? result.docs[payload.pageSize - 1].id : null };

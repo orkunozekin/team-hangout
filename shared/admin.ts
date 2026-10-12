@@ -6,6 +6,7 @@ import type {
 
 /** Callable JSON only. No browser, native or Firebase runtime dependencies. */
 export type AdminSection =
+  | "participant"
   | "program"
   | "season"
   | "division"
@@ -64,7 +65,7 @@ export type TeamInput = {
     status: "active" | "archived";
   };
 };
-export type AdminCommands = {
+export type AdminCommands = import("./participants").ParticipantCommands & {
   listMyOrganizations: {
     input: { cursor?: string; pageSize?: number };
     output: Page<OrganizationLink>;

@@ -4,10 +4,12 @@ export const sections: AdminSection[] = [
   "season",
   "division",
   "team",
+  "participant",
   "staff",
   "organization",
 ];
 export const labels: Record<AdminSection, string> = {
+  participant: "Participants and rosters",
   program: "Programs",
   season: "Seasons",
   division: "Divisions",

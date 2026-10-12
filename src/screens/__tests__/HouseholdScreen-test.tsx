@@ -1,0 +1,139 @@
+import React from "react";
+import { Alert, AppState, type AppStateStatus } from "react-native";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react-native";
+import HouseholdScreen from "../HouseholdScreen";
+import { httpsCallable } from "firebase/functions";
+import { runCommand } from "../../firebase/commands";
+let mockBlur: (() => void) | undefined;
+jest.mock("@react-navigation/native", () => ({
+  useFocusEffect: (effect: () => () => void) =>
+    require("react").useEffect(() => {
+      const cleanup = effect();
+      mockBlur = cleanup;
+      return cleanup;
+    }, []),
+}));
+jest.mock("../../firebase/config", () => ({ db: {}, functions: {} }));
+jest.mock("firebase/functions", () => ({ httpsCallable: jest.fn() }));
+jest.mock("firebase/firestore", () => ({
+  collection: jest.fn(),
+  doc: () => ({ id: "retry-action" }),
+}));
+jest.mock("../../firebase/commands", () => ({ runCommand: jest.fn() }));
+jest.mock("react-native-safe-area-context", () => ({
+  useSafeAreaInsets: () => ({ top: 0, bottom: 0 }),
+}));
+const user = { uid: "parent", email: "parent@example.test" } as any;
+const children = [
+  { id: "a", orgId: "org", displayName: "Jamie", relationship: "guardian" },
+  { id: "b", orgId: "org", displayName: "Casey", relationship: "guardian" },
+];
+let revoked = false;
+beforeEach(() => {
+  jest.clearAllMocks();
+  revoked = false;
+  (httpsCallable as jest.Mock).mockImplementation(
+    (_functions, name) => async (input: any) => {
+      if (name === "listMyParticipants")
+        return {
+          data: { items: revoked ? [children[1]] : children, nextCursor: null },
+        };
+      if (revoked && input.participantId === "a")
+        throw { code: "functions/permission-denied" };
+      return {
+        data: {
+          participant: children.find((c) => c.id === input.participantId),
+          profile: { revision: 4, contactPhone: "555-0100" },
+          guardians: [{ displayName: "Alex", isYou: true }],
+          relationship: "guardian",
+          canEdit: input.participantId === "a",
+        },
+      };
+    },
+  );
+});
+test("two children keep identity, acting label and edit permission when switching to Teams and profiles", async () => {
+  const teams = jest.fn();
+  await render(<HouseholdScreen user={user} onTeams={teams} />);
+  await screen.findByText("Jamie");
+  await fireEvent.press(screen.getByLabelText("View Jamie, guardian access"));
+  await screen.findByText("Acting as parent@example.test for Jamie");
+  expect(screen.getByText("Alex (you)")).toBeTruthy();
+  expect(screen.getByText("Review and save contact details")).toBeTruthy();
+  await fireEvent.press(screen.getByText("Back to participants"));
+  await screen.findByText("Casey");
+  await fireEvent.press(screen.getByLabelText("View Casey, guardian access"));
+  await screen.findByText("Acting as parent@example.test for Casey");
+  expect(screen.queryByText("Review and save contact details")).toBeNull();
+  await fireEvent.press(screen.getByText("Open Teams"));
+  expect(teams).toHaveBeenCalledTimes(1);
+});
+test("save confirms account and participant, passes loaded revision and removes profile after revocation", async () => {
+  const alert = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+  (runCommand as jest.Mock).mockRejectedValue({
+    code: "functions/permission-denied",
+  });
+  await render(<HouseholdScreen user={user} onTeams={jest.fn()} />);
+  await screen.findByText("Jamie");
+  await fireEvent.press(screen.getByLabelText("View Jamie, guardian access"));
+  await screen.findByText("Review and save contact details");
+  await fireEvent.changeText(
+    screen.getByLabelText("Participant phone"),
+    "555-0200",
+  );
+  await fireEvent.press(screen.getByText("Review and save contact details"));
+  expect(alert.mock.calls[0][1]).toContain(
+    "parent@example.test is acting for Jamie",
+  );
+  revoked = true;
+  await act(async () => {
+    (alert.mock.calls[0][2]![1]!.onPress as () => void)();
+  });
+  await waitFor(() =>
+    expect(runCommand).toHaveBeenCalledWith(
+      "editParticipantProfile",
+      expect.objectContaining({
+        participantId: "a",
+        expectedRevision: 4,
+        fields: { contactEmail: null, contactPhone: "555-0200" },
+      }),
+      "retry-action",
+    ),
+  );
+  await screen.findByText(
+    "Permission removed or profile unavailable. Your household has been refreshed.",
+  );
+  expect(screen.queryByLabelText("Participant phone")).toBeNull();
+  await screen.findByText("Casey");
+  expect(screen.queryByText("Jamie")).toBeNull();
+  alert.mockRestore();
+});
+
+test("foregrounding while on Teams does not reload the hidden household", async () => {
+  let change: ((state: AppStateStatus) => void) | undefined;
+  const listener = jest
+    .spyOn(AppState, "addEventListener")
+    .mockImplementation((_event, handler) => {
+      change = handler;
+      return { remove: jest.fn() };
+    });
+  await render(<HouseholdScreen user={user} onTeams={jest.fn()} />);
+  await screen.findByText("Jamie");
+  await act(async () => {
+    mockBlur?.();
+  });
+  const before = (httpsCallable as jest.Mock).mock.calls.length;
+  await act(async () => {
+    change?.("background");
+    change?.("active");
+  });
+  expect((httpsCallable as jest.Mock).mock.calls.length).toBe(before);
+  expect(screen.queryByText("Jamie")).toBeNull();
+  listener.mockRestore();
+});
