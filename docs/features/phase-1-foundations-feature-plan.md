@@ -6,8 +6,8 @@
 | --- | --- |
 | Status | in-progress |
 | Last updated | 2026-10-12 |
-| Implementation | Steps 1–5 merged. Step 6 implemented on `codex/phase-1-account-deletion`; 60 backend tests, 91 native tests, typecheck and both CI jobs pass. Native evidence is attached to PR #10; Greptile base and final-head reviews passed with zero findings. Macroscope is unavailable due to exhausted credits. Steps 7–15 not started. |
-| Related PR | [Step 6 PR #10](https://github.com/orkunozekin/team-hangout/pull/10), subscribed; branch `codex/phase-1-account-deletion`. Steps 1–5 merged. |
+| Implementation | Steps 1–6 merged, confirmed against remote `main` at `a46a725` on 2026-10-12. Step 6 recorded validation: 60 backend tests, 91 native tests, typecheck and both CI jobs pass. Native evidence is attached to PR #10; Greptile base and final-head reviews passed with zero findings. Macroscope is unavailable due to exhausted credits. Steps 7–15 not started. |
+| Related PR | [Step 6 PR #10](https://github.com/orkunozekin/team-hangout/pull/10), merged in `a46a725`. Steps 1–6 merged. |
 | Product approval | Phase 1 capabilities approved; technical choices below are implementation defaults, not deployed behavior. |
 | Commercial approval | **Business model selection pending.** No prices, fees, ads, or entitlement restrictions are enabled by this plan. |
 
@@ -394,12 +394,12 @@ Proposed, uncreated locations: `shared/` contracts, `admin/` browser application
 
 ### Remaining work
 
-1. Owner review of Step 6 PR #10. Both CI jobs pass on `fa61202`; the final documentation-only handoff push requires its own CI check before merge. Native UI evidence matches the unchanged UI, subscription is verified as `SUBSCRIBED`, and the PR has no merge conflicts. Greptile reviewed all 13 files with zero findings on the initial implementation and again on `fa61202` after the final pending-response regression; no unresolved review threads or actionable feedback remain. Macroscope skipped correctness/approvability because its credit balance is exhausted, so that review is unavailable. Step 6 is implemented and reviewed, not merged; no deployment occurred. Leave merging to the owner.
+1. Step 6 PR #10 is merged in remote `main` at `a46a725`, confirmed 2026-10-12. Its recorded validation and reviewer limitations above remain historical evidence; this documentation audit did not rerun application checks or establish production deployment. The [gap audit](../research/team-operations-gap-audit.md) records additional proposals with approval pending.
 2. Next implementation invocation is Step 7 only: browser admin shell and hierarchy management. Steps 7–15 remain incomplete; no household rollout or live migration has run.
 
 ### Blockers / risks
 
-Steps 1–5 are merged. Keep household rollout disabled until Step 6 is reviewed and the later exposure prerequisites are met. Step 2 closes direct coach creation, broad team gets, client event writes, invite reads and reference reassignment. Already-shipped binaries receive Firestore permission-denied errors; custom update-required text cannot be injected into shipped code by rules. Deployment ordering and historical coach-assignment review remain rollout requirements. Legacy native UTC-date/local-label display remains unchanged. Step 4 converts only reviewed date labels in synthetic migration runs; live timezone ownership still needs owner approval. The tool deliberately refuses staging/production, and mapped v2 teams remain denied to legacy clients until scoped readers/UI and participant/invite command boundaries land. Live cutover requires those prerequisites, quiesced writers, expanded readers, rollout gates and separately reviewed execution/retention/rollback policy. Email, domain, retention and production migration approvals remain external gates. Browser/ICS/import scale are doc-supported approaches awaiting executable proof.
+Steps 1–6 are merged. Keep household rollout disabled until the later exposure prerequisites and live rollout gates are met. Step 2 closes direct coach creation, broad team gets, client event writes, invite reads and reference reassignment. Already-shipped binaries receive Firestore permission-denied errors; custom update-required text cannot be injected into shipped code by rules. Deployment ordering and historical coach-assignment review remain rollout requirements. Legacy native UTC-date/local-label display remains unchanged. Step 4 converts only reviewed date labels in synthetic migration runs; live timezone ownership still needs owner approval. The tool deliberately refuses staging/production, and mapped v2 teams remain denied to legacy clients until scoped readers/UI and participant/invite command boundaries land. Live cutover requires those prerequisites, quiesced writers, expanded readers, rollout gates and separately reviewed execution/retention/rollback policy. Email, domain, retention and production migration approvals remain external gates. Browser/ICS/import scale are doc-supported approaches awaiting executable proof.
 
 ### Pointers for the next agent
 
