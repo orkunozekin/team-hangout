@@ -22,7 +22,7 @@ For normal browser development, copy `admin/.env.example` to `admin/.env.local` 
 
 ## Access and behavior
 
-Email/password sign-in uses the existing Firebase account and session-scoped browser persistence. Reset password uses Firebase's normal flow; it never creates an account or merges UIDs based on matching email. Provider-only account setup/linking remains an operator-guided Firebase process. The browser has no user directory or account registration surface.
+Email/password sign-in uses the existing Firebase account and session-scoped browser persistence. Reset password uses Firebase's normal flow; it never creates an account or merges UIDs based on matching email. Provider-only account setup/linking remains an operator-guided Firebase process. The browser has no user directory; normal admin sign-in has no account registration surface. Step 9 adds invitation-only household registration.
 
 The organization picker discovers canonical staff relationships. `/organizations/:orgId/{program,season,division,team,staff,organization}` reauthorizes on entry, reload, navigation and window focus through `getAdminWorkspace`. Focus preserves open edits and uncertain-action retry IDs when the canonical scope is unchanged; actual scope changes or denied access discard tenant state. A temporary focus-check connection failure retains edits, and saves still reauthorize server-side. Optional `?program=:programId` narrows scope; it grants nothing. Program staff must select an assigned program for seasons/divisions/teams. Organization and staff settings are admin-only. The canonical server policy checks every subsequent read and mutation. Platform support roles, guardian links, route state and discovery pointers do not confer staff access.
 
@@ -41,3 +41,5 @@ Forms submit loaded revisions. Conflicts explain that the record changed and off
 After the owner approves the intended staging project/site, configure the target with `firebase target:apply hosting admin-staging <approved-site-id> --project <approved-staging-project>`, add the Hosting domain to Firebase Auth authorized domains, build with that staging project's browser config, and deploy with `firebase deploy --config firebase.admin-staging.json --only hosting:admin-staging --project <approved-staging-project>`. Verify real staging callable reachability, Auth, index readiness and direct URLs before rollout. Do not publish the emulator build. Production deployment is a separate authorized operation.
 
 Roster/household UI (Step 8), scoped invitation UI (Step 9), imports and calendars remain outside this step.
+
+Step 9 adds administrator-only Invitations from workspace navigation and Participants. The invitation-only recipient route also supports household account creation, verified-email recovery and explicit acceptance without staff access. See [scoped invitations](invitations.md) for encrypted queued delivery and live domain/secret gates. Mail transport remains Step 14.

@@ -38,7 +38,7 @@ function queryFor(stage: string, uid: string): Query {
   if (stage.startsWith('user:')) return db.collection(`users/${uid}/${stage.slice(5)}`);
   if (stage === 'teamMembers') return db.collection(stage).where('userId', '==', uid);
   const hook = cleanupHooks.find(([name]) => name === stage)!;
-  return db.collection(hook[0]).where(hook[1], '==', uid);
+  return (stage === 'invitations' ? db.collectionGroup('invitations') : db.collection(hook[0])).where(hook[1], '==', uid);
 }
 const bump = (row: Data) => ({ revision: (row.revision ?? 0) + 1, accessRevision: (row.accessRevision ?? 0) + 1, updatedAt: Timestamp.now() });
 
@@ -83,6 +83,13 @@ async function prepareRemoval(tx: Transaction, uid: string, stage: string, doc: 
     return () => {
       tx.update(doc.ref, { linkedUserId: null, ...bump(row) });
       if (profile.exists) tx.update(profile.ref, { contactEmail: FieldValue.delete(), contactPhone: FieldValue.delete(), ...bump(profile.data()!) });
+    };
+  }
+  if (stage === 'invitations' && row.tokenHash && row.outboxId) {
+    return () => {
+      tx.delete(doc.ref);
+      tx.delete(db.doc(`invitationTokens/${row.tokenHash}`));
+      tx.delete(db.doc(`emailOutbox/${row.outboxId}`));
     };
   }
   return () => { tx.delete(doc.ref); };

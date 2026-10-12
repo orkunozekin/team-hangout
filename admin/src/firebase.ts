@@ -9,6 +9,15 @@ import {
   getFunctions,
   httpsCallable,
 } from "firebase/functions";
+import {
+  getFirestore,
+  connectFirestoreEmulator,
+  doc,
+  getDoc,
+  setDoc,
+  serverTimestamp,
+} from "firebase/firestore";
+import type { User } from "firebase/auth";
 import type { AdminCommands } from "../../shared/admin";
 
 export function initializeBrowserFirebase() {
@@ -37,6 +46,7 @@ export function initializeBrowserFirebase() {
     throw new Error("Demo projects require explicit emulator opt-in.");
   const app = initializeApp(config, "admin-browser");
   const auth = initializeAuth(app, { persistence: browserSessionPersistence });
+  const db = getFirestore(app);
   const functions = getFunctions(
     app,
     env.VITE_FIREBASE_FUNCTIONS_REGION || "us-central1",
@@ -45,6 +55,7 @@ export function initializeBrowserFirebase() {
     connectAuthEmulator(auth, "http://127.0.0.1:9099", {
       disableWarnings: true,
     });
+    connectFirestoreEmulator(db, "127.0.0.1", 8080);
     connectFunctionsEmulator(functions, "127.0.0.1", 5001);
   }
   async function call<K extends keyof AdminCommands>(
@@ -64,6 +75,20 @@ export function initializeBrowserFirebase() {
       throw new Error("Your account changed. Reload the workspace.");
     return result.data;
   }
-  return { auth, call, emulator };
+  async function ensureProfile(user: User) {
+    const ref = doc(db, "users", user.uid);
+    const existing = await getDoc(ref);
+    if (!existing.exists())
+      await setDoc(ref, {
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName || "Household member",
+        appRole: "user",
+        activeTeamId: null,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+  }
+  return { auth, call, emulator, ensureProfile };
 }
 export type BrowserServices = ReturnType<typeof initializeBrowserFirebase>;
