@@ -13,6 +13,7 @@
     "**/*.tsx"
   ],
   "exclude": [
+    "admin",
     "functions",
     "node_modules"
   ]

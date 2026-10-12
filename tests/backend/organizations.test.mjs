@@ -254,3 +254,31 @@ test('same-organization program boundary applies to team edits and all event mut
   await deny(call('org-staff', 'archiveSeason', req({ orgId: a.orgId, seasonId: a.season.id, status: 'archived', expectedRevision: 3 })));
   await db.doc('users/org-staff').update({ accountState: 'active' });
 });
+
+test('browser workspace entry requires rollout and live staff; staff lists are admin-only and paginated', async () => {
+  const fixtureData = await fixture('Browser workspace');
+  const orgId = fixtureData.orgId;
+  await assert.rejects(call('org-owner', 'getAdminWorkspace', { orgId }), error => error.details.domainCode === 'ADMIN_WORKSPACE_DISABLED');
+  await db.doc(`organizations/${orgId}`).update({ 'features.adminWorkspace': true });
+  const context = await call('org-owner', 'getAdminWorkspace', { orgId });
+  assert.equal(context.admin, true); assert.equal(context.organization.revision, 1);
+  assert.deepEqual(Object.keys(context.organization).sort(), ['id', 'kind', 'name', 'revision', 'status', 'timeZone']);
+  assert.equal(context.organization.name, 'Browser workspace');
+  await call('org-owner', 'setStaffAssignment', req({ orgId, userId: 'org-staff', roles: ['programStaff'], programIds: [fixtureData.program.id], status: 'active', expectedRevision: 0 }));
+  assert.deepEqual((await call('org-staff', 'getAdminWorkspace', { orgId })).programIds, [fixtureData.program.id]);
+  await deny(call('org-staff', 'listOrganizationStaff', { orgId }));
+  const first = await call('org-owner', 'listOrganizationStaff', { orgId, pageSize: 1 });
+  const second = await call('org-owner', 'listOrganizationStaff', { orgId, pageSize: 1, cursor: first.nextCursor });
+  assert.equal(first.items.length, 1); assert.equal(second.items.length, 1); assert.notEqual(first.items[0].id, second.items[0].id); assert.equal(second.nextCursor, null);
+  assert.deepEqual(Object.keys(first.items[0]).sort(), ['id', 'programIds', 'revision', 'roles', 'status']);
+  for (const uid of ['org-outsider', 'org-support', 'org-coach']) {
+    await deny(call(uid, 'getAdminWorkspace', { orgId })); await deny(call(uid, 'listOrganizationStaff', { orgId }));
+  }
+  for (const endpoint of ['getAdminWorkspace', 'listOrganizationStaff']) {
+    await assert.rejects(call('org-anonymous', endpoint, { orgId }), { code: 'functions/unauthenticated' });
+  }
+  await db.doc(`organizations/${orgId}/members/org-staff`).update({ status: 'revoked' });
+  await deny(call('org-staff', 'getAdminWorkspace', { orgId }));
+  await db.doc(`organizations/${orgId}`).update({ status: 'archived' });
+  assert.equal((await call('org-owner', 'getAdminWorkspace', { orgId })).organization.status, 'archived');
+});

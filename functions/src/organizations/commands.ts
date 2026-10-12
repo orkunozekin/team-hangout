@@ -191,6 +191,32 @@ function page(data: Data): Data {
   if (!Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 50) invalid('pageSize must be 1 through 50.');
   return { pageSize, cursor: data.cursor == null ? null : id(data.cursor, 'cursor') };
 }
+/** Browser entry reauthorizes direct URLs against canonical membership, never discovery links. */
+export const getAdminWorkspace = readCommand(data => {
+  keys(data, ['orgId']); return { orgId: id(data.orgId, 'orgId') };
+}, async (tx, payload, uid) => {
+  const scope = await staffScope(tx, payload.orgId, uid);
+  if (scope.organization.features?.adminWorkspace !== true) {
+    throw new HttpsError('failed-precondition', 'The admin workspace is not enabled for this organization.', { domainCode: 'ADMIN_WORKSPACE_DISABLED' });
+  }
+  const org = scope.organization;
+  return { organization: { id: payload.orgId, name: org.name, kind: org.kind, timeZone: org.timeZone, status: org.status, revision: org.revision },
+    admin: scope.admin, programIds: scope.admin ? [] : scope.programIds };
+});
+
+export const listOrganizationStaff = readCommand(data => {
+  keys(data, ['orgId', 'pageSize', 'cursor']); return { orgId: id(data.orgId, 'orgId'), ...page(data) };
+}, async (tx, payload, uid) => {
+  const scope = await staffScope(tx, payload.orgId, uid);
+  if (!scope.admin) denied();
+  let query = getFirestore().collection(`organizations/${payload.orgId}/members`).orderBy(FieldPath.documentId()).limit(payload.pageSize + 1);
+  if (payload.cursor) query = query.startAfter(payload.cursor);
+  const result = await tx.get(query);
+  return { items: result.docs.slice(0, payload.pageSize).map(doc => {
+    const member = doc.data();
+    return { id: doc.id, roles: member.roles, programIds: member.programIds, status: member.status, revision: member.revision };
+  }), nextCursor: result.size > payload.pageSize ? result.docs[payload.pageSize - 1].id : null };
+});
 export const listMyOrganizations = readCommand(data => {
   keys(data, ['pageSize', 'cursor']); return page(data);
 }, async (tx, payload, uid) => {

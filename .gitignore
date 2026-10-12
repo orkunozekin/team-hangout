@@ -52,3 +52,7 @@ firebase-service-account.json
 
 # Emulator scratch logs
 *-debug.log
+
+# Browser test artifacts
+admin/test-results/
+admin/playwright-report/
