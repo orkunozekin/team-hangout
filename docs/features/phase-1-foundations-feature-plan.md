@@ -6,7 +6,7 @@
 | --- | --- |
 | Status | in-progress |
 | Last updated | 2026-10-12 |
-| Implementation | Steps 1–5 merged. Step 6 implemented on `codex/phase-1-account-deletion`; 60 backend tests, 91 native tests, typecheck and both CI jobs pass. Native evidence is attached to PR #10; AI review is in progress. Steps 7–15 not started. |
+| Implementation | Steps 1–5 merged. Step 6 implemented on `codex/phase-1-account-deletion`; 60 backend tests, 91 native tests, typecheck and both CI jobs pass. Native evidence is attached to PR #10; Greptile base and final-head reviews passed with zero findings. Macroscope is unavailable due to exhausted credits. Steps 7–15 not started. |
 | Related PR | [Step 6 PR #10](https://github.com/orkunozekin/team-hangout/pull/10), subscribed; branch `codex/phase-1-account-deletion`. Steps 1–5 merged. |
 | Product approval | Phase 1 capabilities approved; technical choices below are implementation defaults, not deployed behavior. |
 | Commercial approval | **Business model selection pending.** No prices, fees, ads, or entitlement restrictions are enabled by this plan. |
@@ -394,7 +394,7 @@ Proposed, uncreated locations: `shared/` contracts, `admin/` browser application
 
 ### Remaining work
 
-1. Wait for Step 6 PR #10 AI review. Native UI evidence is attached, subscription is verified as `SUBSCRIBED` and both CI jobs pass on `388f1c1`. Greptile is running; Macroscope skipped correctness/approvability because its credit balance is exhausted. Do not merge without owner authorization.
+1. Owner review of Step 6 PR #10. Both CI jobs pass on `fa61202`; the final documentation-only handoff push requires its own CI check before merge. Native UI evidence matches the unchanged UI, subscription is verified as `SUBSCRIBED`, and the PR has no merge conflicts. Greptile reviewed all 13 files with zero findings on the initial implementation and again on `fa61202` after the final pending-response regression; no unresolved review threads or actionable feedback remain. Macroscope skipped correctness/approvability because its credit balance is exhausted, so that review is unavailable. Step 6 is implemented and reviewed, not merged; no deployment occurred. Leave merging to the owner.
 2. Next implementation invocation is Step 7 only: browser admin shell and hierarchy management. Steps 7–15 remain incomplete; no household rollout or live migration has run.
 
 ### Blockers / risks
