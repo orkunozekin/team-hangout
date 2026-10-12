@@ -60,7 +60,7 @@ test('deny-first blocks cached-token callables and all legacy rules before clean
   await db.doc(`users/${uid}`).delete();
 });
 test('paged deletion survives interruption and concurrent workers beyond a batch without touching history', async () => {
-  const uid = 'erase-paged'; await actor(uid);
+  const uid = 'erase-paged'; const call = await actor(uid);
   for (let start = 0; start < 520; start += 200) {
     const batch = db.batch();
     for (let i = start; i < Math.min(start + 200, 520); i++) batch.set(db.doc(`teamMembers/erase-paged-${String(i).padStart(4, '0')}`), { userId: uid, teamId: `old-${i}` });
@@ -71,6 +71,9 @@ test('paged deletion survives interruption and concurrent workers beyond a batch
   await db.doc('teamMembers/erase-survivor').set({ userId: 'retained', teamId: 'erase-history' });
   await beginDeletion(uid);
   let state = await resumeDeletion(uid, 1); assert.equal(state.membershipsRemoved, 25); assert.equal(state.status, 'pending');
+  const accepted = (await call('deleteAccount')).data;
+  assert.equal(accepted.ok, true); assert.equal(accepted.jobStatus, 'pending');
+  assert.ok(accepted.membershipsRemoved > 25);
   await Promise.all([resumeDeletion(uid, 2), resumeDeletion(uid, 2)]);
   state = await finish(uid); assert.equal(state.membershipsRemoved, 520);
   assert.ok(state.pages > 20); assert.ok(state.attempts > 1); assert.ok(state.completedAt);
