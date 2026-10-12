@@ -6,8 +6,8 @@
 | --- | --- |
 | Status | in-progress |
 | Last updated | 2026-10-12 |
-| Implementation | Steps 1–6 merged. Step 7 browser admin workspace implemented; production build, 91 native tests, iOS bundle export and 61 backend tests pass. Browser flows pass; final UI captures and PR review are in progress. Steps 8–15 remain incomplete. |
-| Related PR | Step 7 branch `codex/phase-1-browser-admin`; PR publication in progress. Steps 1–6 merged. |
+| Implementation | Steps 1–6 merged. Step 7 browser admin workspace implemented; production build, 91 native tests, iOS bundle export and 61 backend tests pass. Both browser flows pass; 11 final UI captures inspected. PR #12 is open with CI and Greptile review in progress. Steps 8–15 remain incomplete. |
+| Related PR | [Step 7 PR #12](https://github.com/orkunozekin/team-hangout/pull/12), branch `codex/phase-1-browser-admin`; subscription verified in GitHub UI. Steps 1–6 merged. |
 | Product approval | Phase 1 capabilities approved; technical choices below are implementation defaults, not deployed behavior. |
 | Commercial approval | **Business model selection pending.** No prices, fees, ads, or entitlement restrictions are enabled by this plan. |
 
@@ -395,11 +395,11 @@ Proposed, uncreated locations: `shared/` contracts, `admin/` browser application
 - Step 6 PR #10 merged on 2026-10-11; earlier unmerged statuses are superseded. The user-supplied plan in worktree `60b9` was an older planned copy; Step 7 continues this repository's existing plan after verifying all prerequisite PRs merged.
 - Step 7 adds the isolated `admin/` React/Vite browser package and pure `shared/admin.ts` callable contracts. Email/password auth, existing-account reset, authorized direct routes, organization picker, hierarchy creation/edit/archive/restore, scoped staff assignments, loaded-revision conflicts and action-specific retry IDs use canonical server commands. Auth changes discard tenant state and in-flight responses; no hierarchy storage cache is introduced.
 - New `getAdminWorkspace` requires live staff and the server-owned `features.adminWorkspace` flag. `listOrganizationStaff` is admin-only, paginated and allowlisted. Native TypeScript and Jest exclude browser files. CI adds a separate production-build/browser/emulator job. `firebase.admin-staging.json` defines an unbound Hosting target without selecting a project or deploying. Operational contracts are in `docs/browser-admin.md`.
-- Step 7 local validation: normal production-mode browser build, Functions build, client typecheck, 14 native suites/91 tests with coverage, iOS Hermes bundle export and 61 backend tests pass on Node 26.3.0 / Java 26. CI uses Node 22 / Java 21. Two real Chrome browser flows against isolated demo Auth/Firestore/Functions emulators pass; final captures/review are pending. No production data, deployment, live flags or owner grants changed.
+- Step 7 local validation: normal production-mode browser build, Functions build, client typecheck, 14 native suites/91 tests with coverage, iOS Hermes bundle export and 61 backend tests pass on Node 26.3.0 / Java 26. CI uses Node 22 / Java 21. Two real Chrome browser flows against isolated demo Auth/Firestore/Functions emulators pass, including loading and no horizontal overflow at 390px. Eleven inspected captures are retained under `/Users/orkunozekin/.codex/visualizations/2026/10/12/01a1306a-be4f-7911-885a-5d1e4b8017e6/step-7-evidence/` with SHA-256 manifest; description attachment and review are in progress. No production data, deployment, live flags or owner grants changed.
 
 ### Remaining work
 
-1. Finish Step 7 final browser screenshot inspection/attachments and its PR review loop. Record the PR URL, subscription, checks and available AI review results here. Leave merging to the owner.
+1. Finish Step 7 PR #12 screenshot attachments and review loop. Record the PR URL, subscription, checks and available AI review results here. Leave merging to the owner.
 2. Next implementation invocation is Step 8 only: roster and household profile UI. Steps 8–15 remain incomplete; no household rollout or live migration has run.
 
 ### Blockers / risks

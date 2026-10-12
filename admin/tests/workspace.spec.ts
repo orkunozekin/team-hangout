@@ -274,6 +274,7 @@ test("program staff direct URLs reauthorize on reload and never load unrelated p
   ).toHaveCount(0);
   await capture(page, "09-program-staff");
   await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
   await capture(page, "10-small-browser");
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.reload();

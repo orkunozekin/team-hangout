@@ -258,6 +258,7 @@ nav a[aria-current="page"] {
   color: #63796a;
 }
 .workspace-main {
+  min-width: 0;
   padding: 44px 44px 28px;
   max-width: 1450px;
   width: 100%;
@@ -414,7 +415,7 @@ td strong {
     display: none;
   }
   .workspace {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   aside {
     padding: 20px;
@@ -439,6 +440,7 @@ td strong {
     display: none;
   }
   .workspace-main {
+  min-width: 0;
     padding: 28px 20px;
   }
   .toolbar {
@@ -461,7 +463,7 @@ td strong {
     width: calc(100% - 32px);
   }
   .form-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .page {
     padding: 0 20px;
