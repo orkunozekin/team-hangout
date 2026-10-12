@@ -121,7 +121,7 @@ export default function ProfileScreen({
   function onDeleteAccount() {
     Alert.alert(
       'Delete account?',
-      'This permanently deletes your account and team memberships. Teams and events you created will remain. This cannot be undone.',
+      'Your access ends immediately. Cleanup may continue after sign-out. Child profiles, other guardians, teams and events remain. If you are the last organization admin, support must restore administrative control. Calendar entries and emails already copied elsewhere remain. This cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {

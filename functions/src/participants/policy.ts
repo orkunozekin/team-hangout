@@ -1,3 +1,4 @@
+import { accountAvailable } from '../accountAccess';
 import { FieldPath, getFirestore, Timestamp, Transaction } from 'firebase-admin/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { Data, id, invalid, keys, object, wire } from '../commandSupport';
@@ -29,8 +30,7 @@ export async function adminScope(tx: Transaction, orgId: string, uid: string, wr
   return scope;
 }
 export async function availableUser(tx: Transaction, uid: string) {
-  const user = (await tx.get(getFirestore().doc(`users/${uid}`))).data();
-  if (!user || user.accountState === 'deleting') denied();
+  await accountAvailable(tx, uid);
 }
 export async function householdAccess(tx: Transaction, orgId: string, participantId: string, uid: string, right: string) {
   const db = getFirestore(); const row = await participant(tx, orgId, participantId);
