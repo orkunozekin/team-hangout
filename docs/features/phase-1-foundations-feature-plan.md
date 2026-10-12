@@ -6,8 +6,8 @@
 | --- | --- |
 | Status | in-progress |
 | Last updated | 2026-10-12 |
-| Implementation | Steps 1–9 merged, verified against remote main at `84ebee5` on 2026-10-12. Invitation UI refinements are implemented and validated; their follow-up PR is pending. Steps 10–15 remain incomplete. |
-| Related PR | Step 8 [PR #13](https://github.com/orkunozekin/team-hangout/pull/13) merged. Step 9 [PR #14](https://github.com/orkunozekin/team-hangout/pull/14) merged. Invitation UI refinement PR pending. |
+| Implementation | Steps 1–9 merged, verified against remote main at `84ebee5` on 2026-10-12. Invitation UI refinements are implemented and validated; their follow-up PR #15 is open for review. Steps 10–15 remain incomplete. |
+| Related PR | Step 8 [PR #13](https://github.com/orkunozekin/team-hangout/pull/13) merged. Step 9 [PR #14](https://github.com/orkunozekin/team-hangout/pull/14) merged. Invitation UI refinement [PR #15](https://github.com/orkunozekin/team-hangout/pull/15) open. |
 | Product approval | Phase 1 capabilities approved; technical choices below are implementation defaults, not deployed behavior. |
 | Commercial approval | **Business model selection pending.** No prices, fees, ads, or entitlement restrictions are enabled by this plan. |
 
@@ -416,7 +416,7 @@ Proposed, uncreated locations: `shared/` contracts, `admin/` browser application
 ### Remaining work
 
 1. Steps 1–9 are merged; Step 9 PR #14 is confirmed on remote main at `84ebee5`.
-2. Step 9 follow-up UI refinements replace action buttons with a kebab menu, use Story Turn date presentation, rename Send invitation and bottom-align help; awaiting follow-up PR review. See `docs/invitations.md` for hash-only lookup, encrypted queued outbox, recipient confirmation and live deployment gates.
+2. Step 9 follow-up UI refinements replace action buttons with a kebab menu, use Story Turn date presentation, rename Send invitation and bottom-align help; open in PR #15 for review, with nine inspected browser/native captures attached and subscription verified. See `docs/invitations.md` for hash-only lookup, encrypted queued outbox, recipient confirmation and live deployment gates.
 3. Next implementation invocation is Step 10 only: server household agenda and native filters. Steps 10–15 remain incomplete; no live rollout, mail delivery or migration has run.
 
 ### Blockers / risks
