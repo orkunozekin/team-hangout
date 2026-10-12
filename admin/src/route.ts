@@ -5,10 +5,12 @@ export const sections: AdminSection[] = [
   "division",
   "team",
   "participant",
+  "invitation",
   "staff",
   "organization",
 ];
 export const labels: Record<AdminSection, string> = {
+  invitation: "Invitations",
   participant: "Participants and rosters",
   program: "Programs",
   season: "Seasons",

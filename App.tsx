@@ -2,6 +2,7 @@ import React, {
   useCallback,
   useEffect,
   useState,
+  useRef,
 } from 'react';
 
 import {
@@ -43,6 +44,8 @@ import {
   Ionicons,
 } from '@expo/vector-icons';
 
+import InvitationScreen from './src/screens/InvitationScreen';
+import { invitationTokenFromUrl } from './shared/invitations';
 import HouseholdScreen from './src/screens/HouseholdScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
@@ -363,10 +366,14 @@ export default function App() {
   const [pendingInviteCode, setPendingInviteCode] = useState<string | null>(
     null,
   );
+  const [pendingInvitation, setPendingInvitation] = useState<string | null>(null);
+  const previousUid = useRef<string | null>(null);
   const [teamVersion, setTeamVersion] = useState(0);
 
   useEffect(() => {
     const unsubscribe = subscribeToAuthChanges((nextUser) => {
+      if (previousUid.current && previousUid.current !== nextUser?.uid) setPendingInvitation(null);
+      previousUid.current = nextUser?.uid ?? null;
       setUser(nextUser);
       setAuthReady(true);
       if (!nextUser) {
@@ -384,6 +391,8 @@ export default function App() {
   useEffect(() => {
     function applyUrl(url: string | null) {
       if (!url) return;
+      const token = invitationTokenFromUrl(url);
+      if (token) { setPendingInvitation(token); return; }
       const code = captureInviteCodeFromUrl(url);
       if (code) {
         setPendingInviteCode(code);
@@ -452,7 +461,9 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <NavigationContainer key={user?.uid || 'signed-out'}>
-        {!user ? (
+        {user && pendingInvitation ? (
+          <InvitationScreen key={`${user.uid}:${pendingInvitation}`} user={user} token={pendingInvitation} onClose={() => { setPendingInvitation(null); setTeamVersion(v => v + 1); }} />
+        ) : !user ? (
           <AuthNavigator />
         ) : !team || !membership ? (
           <OnboardingNavigator

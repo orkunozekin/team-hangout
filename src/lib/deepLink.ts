@@ -8,6 +8,7 @@ export function captureInviteCodeFromUrl(url: string): string | null {
       'https://teamhangout.local/',
     );
     const parsed = new URL(normalized);
+    if (parsed.pathname.split('/').includes('invitation')) return null;
     const fromQuery = parsed.searchParams.get('code');
     if (fromQuery) {
       return fromQuery.trim().toUpperCase();

@@ -243,6 +243,17 @@ export function Participants({
         {context.organization.name} / Participants and rosters
       </p>
       <h1>Participants and rosters</h1>
+      {context.admin && (
+        <a
+          href={routeUrl(orgId, "invitation")}
+          onClick={(e) => {
+            e.preventDefault();
+            go(routeUrl(orgId, "invitation"));
+          }}
+        >
+          Manage invitations
+        </a>
+      )}
       <p className="muted">
         Acting as {services.auth.currentUser?.email}. Participant identities
         belong to this organization.

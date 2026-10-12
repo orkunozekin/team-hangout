@@ -343,7 +343,7 @@ export function Workspace({
           {sections
             .filter(
               (item) =>
-                context.admin || !["staff", "organization"].includes(item),
+                context.admin || !["staff", "organization", "invitation"].includes(item),
             )
             .map((item) => (
               <a
@@ -546,7 +546,7 @@ export function Workspace({
                 key={editing === "new" ? "new" : editing.id}
                 services={services}
                 orgId={orgId}
-                kind={section as Exclude<AdminSection, "staff" | "participant">}
+                kind={section as Exclude<AdminSection, "staff" | "participant" | "invitation">}
                 existing={
                   editing === "new" ? undefined : (editing as AdminEntity)
                 }

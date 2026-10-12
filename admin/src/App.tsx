@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   onAuthStateChanged,
+  createUserWithEmailAndPassword,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut,
@@ -9,10 +10,18 @@ import {
 import type { BrowserServices } from "./firebase";
 import { message } from "./errors";
 import { go, readRoute } from "./route";
+import { InvitationAcceptance, Invitations } from "./Invitations";
+import { invitationTokenFromUrl } from "../../shared/invitations";
 import { Participants } from "./Participants";
 import { Workspace, OrganizationPicker } from "./Workspace";
 
 export function App({ services }: { services: BrowserServices }) {
+  const [pendingToken, setPendingToken] = useState(() => {
+    const token = invitationTokenFromUrl(location.href);
+    if (token) history.replaceState(null, "", "/invitation");
+    return token;
+  });
+  const previousUid = useRef<string | null>(null);
   const [session, setSession] = useState<{
     user: User | null;
     ready: boolean;
@@ -24,6 +33,9 @@ export function App({ services }: { services: BrowserServices }) {
   useEffect(
     () =>
       onAuthStateChanged(services.auth, (user) => {
+        if (previousUid.current && previousUid.current !== user?.uid)
+          setPendingToken(null);
+        previousUid.current = user?.uid ?? null;
         setSession((previous) => ({
           user,
           ready: true,
@@ -35,16 +47,24 @@ export function App({ services }: { services: BrowserServices }) {
   );
   useEffect(() => {
     const navigate = () => {
+      const token = invitationTokenFromUrl(location.href);
+      if (token) {
+        setPendingToken(token);
+        history.replaceState(null, "", "/invitation");
+      }
       setPath(location.pathname + location.search);
       setRefresh((n) => n + 1);
     };
+    window.addEventListener("hashchange", navigate);
     window.addEventListener("popstate", navigate);
     return () => {
+      window.removeEventListener("hashchange", navigate);
       window.removeEventListener("popstate", navigate);
     };
   }, []);
   async function logout() {
     try {
+      setPendingToken(null);
       await signOut(services.auth);
       go("/");
     } catch (e) {
@@ -64,7 +84,7 @@ export function App({ services }: { services: BrowserServices }) {
           }}
         >
           <span className="brand-mark">th</span>Team Hangout{" "}
-          <span className="workspace-label">Admin workspace</span>
+          <span className="workspace-label">{pendingToken ? "Household invitation" : "Admin workspace"}</span>
         </a>
         {session.user && (
           <div className="account">
@@ -88,13 +108,40 @@ export function App({ services }: { services: BrowserServices }) {
           <p role="status">Restoring your session…</p>
         </main>
       ) : !session.user ? (
-        <SignIn services={services} />
+        <>
+          {pendingToken && (
+            <p className="environment">
+              Sign in to review your invitation. Acceptance requires your
+              confirmation.
+            </p>
+          )}
+          <SignIn services={services} invitation={!!pendingToken} />
+        </>
       ) : (
         <div
           key={`${session.user.uid}:${session.generation}:${path}:${refresh}`}
         >
-          {route ? (
-            route.section === "participant" ? <Participants services={services} orgId={route.orgId} programId={route.programId} /> : <Workspace services={services} route={route} />
+          {pendingToken ? (
+            <InvitationAcceptance
+              services={services}
+              token={pendingToken}
+              onClose={() => {
+                setPendingToken(null);
+                go("/");
+              }}
+            />
+          ) : route ? (
+            route.section === "invitation" ? (
+              <Invitations services={services} orgId={route.orgId} />
+            ) : route.section === "participant" ? (
+              <Participants
+                services={services}
+                orgId={route.orgId}
+                programId={route.programId}
+              />
+            ) : (
+              <Workspace services={services} route={route} />
+            )
           ) : location.pathname === "/" ? (
             <OrganizationPicker services={services} />
           ) : (
@@ -108,13 +155,19 @@ export function App({ services }: { services: BrowserServices }) {
     </>
   );
 }
-function SignIn({ services }: { services: BrowserServices }) {
+function SignIn({
+  services,
+  invitation = false,
+}: {
+  services: BrowserServices;
+  invitation?: boolean;
+}) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  async function login(reset = false) {
+  async function login(reset = false, register = false) {
     setBusy(true);
     setError("");
     setNotice("");
@@ -124,7 +177,11 @@ function SignIn({ services }: { services: BrowserServices }) {
         setNotice(
           "If this email has an account, a password reset link has been requested.",
         );
-      } else await signInWithEmailAndPassword(services.auth, email, password);
+      } else {
+        register
+          ? await createUserWithEmailAndPassword(services.auth, email, password)
+          : await signInWithEmailAndPassword(services.auth, email, password);
+      }
     } catch (e) {
       setError(message(e));
     } finally {
@@ -136,7 +193,9 @@ function SignIn({ services }: { services: BrowserServices }) {
       <p className="eyebrow">A place for every team</p>
       <h1>Welcome back.</h1>
       <p className="muted">
-        Manage your organization, seasons and staff in one place.
+        {invitation
+          ? "Use the email address that received the invitation."
+          : "Manage your organization, seasons and staff in one place."}
       </p>
       <form
         onSubmit={(e) => {
@@ -171,6 +230,15 @@ function SignIn({ services }: { services: BrowserServices }) {
             </p>
           )}
           {notice && <p role="status">{notice}</p>}
+          {invitation && (
+            <button
+              type="button"
+              disabled={!email || password.length < 6}
+              onClick={() => void login(false, true)}
+            >
+              Create household account
+            </button>
+          )}
           <button className="primary" type="submit">
             {busy ? "Signing in…" : "Sign in"}
           </button>

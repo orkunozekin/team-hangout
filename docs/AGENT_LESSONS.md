@@ -57,3 +57,10 @@
 - **Gap:** Returning to the foreground reloaded a hidden household tab, and temporary browser read errors cleared unsaved participant edits as though permission had been revoked.
 - **Going forward:** Require both navigation focus and active app state before loading private household data. Clear editors only for confirmed authorization loss; preserve unsaved fields and provide scoped retries for temporary read failures. Test background transitions while another tab is selected and interrupted reads during active edits.
 - **Pointers:** `src/screens/HouseholdScreen.tsx`, `admin/src/Participants.tsx` and their regression tests.
+
+### 2026-10-12 — Invitation generations and delayed access reads
+
+- **Source:** PR #14 · Greptile
+- **Gap:** Resend retained a former approver, inspection omitted acceptance eligibility checks, and delayed invitation reads could restore data after denial.
+- **Going forward:** Bind each invitation generation to its current approving actor while preserving creator history, share eligibility checks between preview and acceptance, and invalidate in-flight reads when authority is denied.
+- **Pointers:** `functions/src/invitations/commands.ts`, `admin/src/Invitations.tsx`, invitation backend/browser regressions.

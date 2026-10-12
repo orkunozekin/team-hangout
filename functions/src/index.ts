@@ -10,3 +10,5 @@ export { createOrganization, saveHierarchyEntity, saveTeam, setStaffAssignment, 
 
 export { saveParticipant, saveParticipantPrivateProfile, approveSelfLink, approveGuardian, revokeGuardian, setRosterEnrollment, getParticipantProfile, editParticipantProfile, listRoster, listOrganizationParticipants } from './participants/commands';
 export { listMyParticipants } from './participants/policy';
+
+export { createInvitation, resendInvitation, revokeInvitation, listInvitations, inspectInvitation, acceptInvitation } from './invitations/commands';
