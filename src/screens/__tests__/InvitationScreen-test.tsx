@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react-native";
+import { render, screen, fireEvent, act } from "@testing-library/react-native";
 import InvitationScreen from "../InvitationScreen";
 import { httpsCallable } from "firebase/functions";
 import { auth } from "../../firebase/config";
@@ -61,4 +61,21 @@ test("wrong-account recovery does not offer acceptance and close discards pendin
   await fireEvent.press(screen.getByText("Close invitation"));
   expect(close).toHaveBeenCalledTimes(1);
   expect(calls).toEqual(["inspectInvitation"]);
+});
+
+test("a late acceptance cannot replace a newly opened invitation", async () => {
+  let finish!: (value: unknown) => void;
+  (httpsCallable as jest.Mock).mockImplementation((_f, name) => async ({ token }) => {
+    if (name === "acceptInvitation") return new Promise(resolve => { finish = resolve; });
+    return { data: { status: "pending", participantName: token.startsWith("a") ? "Jamie" : "Taylor", relationship: "guardian", permissions: { viewProfile: true } } };
+  });
+  const { rerender } = await render(<InvitationScreen key="first" user={user} token={"a".repeat(43)} onClose={jest.fn()} />);
+  await screen.findByText("Jamie");
+  await fireEvent.press(screen.getByText("Confirm and accept invitation"));
+  await rerender(<InvitationScreen key="second" user={user} token={"b".repeat(43)} onClose={jest.fn()} />);
+  await screen.findByText("Taylor");
+  await act(async () => { finish({ data: { status: "accepted" } }); });
+  expect(screen.getByText("Taylor")).toBeTruthy();
+  expect(screen.getByText("Confirm and accept invitation")).toBeTruthy();
+  expect(screen.queryByText("Invitation accepted. Open your household to check current access.")).toBeNull();
 });
