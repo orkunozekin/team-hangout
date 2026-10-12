@@ -43,3 +43,10 @@
 - **Gap:** Contact-edit normalization converted omitted fields to null, so a phone-only edit erased the saved email and an email-only edit erased the phone.
 - **Going forward:** Preserve key presence when normalizing patches. Distinguish omitted fields from explicit clearing, and test edits against fully populated records, including preservation of private fields and retry payload identity.
 - **Pointers:** `functions/src/participants/commands.ts`, `tests/backend/participants.test.mjs`.
+
+### 2026-10-12 — Reauthorize without discarding active actions
+
+- **Source:** PR #12 · Greptile
+- **Gap:** A window-focus refresh changed the workspace React key, silently discarding unsaved fields and the request ID retained after an uncertain save. Entry also awaited unrelated history on sections that did not use it.
+- **Going forward:** Recheck canonical authority without remounting an unchanged authorized scope. Clear tenant state on actual account/scope loss. Test focus during both an unsaved edit and an accepted write whose response is lost, proving the same request is replayed once. Fetch only the records and parents required by the current section.
+- **Pointers:** `admin/src/App.tsx`, `admin/src/Workspace.tsx`, `admin/src/Mutation.tsx`, `admin/tests/workspace.spec.ts`.

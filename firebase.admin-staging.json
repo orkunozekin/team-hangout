@@ -1,0 +1,16 @@
+{
+  "hosting": {
+    "target": "admin-staging",
+    "public": "admin/dist",
+    "ignore": ["firebase.admin-staging.json", "**/.*", "**/node_modules/**"],
+    "rewrites": [{ "source": "**", "destination": "/index.html" }],
+    "headers": [
+      { "source": "**", "headers": [
+        { "key": "Cache-Control", "value": "no-store" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "no-referrer" },
+        { "key": "X-Frame-Options", "value": "DENY" }
+      ] }
+    ]
+  }
+}
