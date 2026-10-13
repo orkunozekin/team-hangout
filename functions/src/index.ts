@@ -12,3 +12,5 @@ export { saveParticipant, saveParticipantPrivateProfile, approveSelfLink, approv
 export { listMyParticipants } from './participants/policy';
 
 export { createInvitation, resendInvitation, revokeInvitation, listInvitations, inspectInvitation, acceptInvitation } from './invitations/commands';
+
+export { listHouseholdAgenda } from './calendar/agenda';
