@@ -2,6 +2,7 @@
   "environment": {
     "kind": "local-emulator",
     "scope": "operations",
+    "scriptSha256": "f86046b49e6eabf0fb92d1f8a2977e20af4e8cc462fa0ad2797332aee6ba5c6a",
     "project": "demo-team-hangout",
     "region": "none, loopback; handler default us-central1 unmeasured",
     "node": "v26.3.0",
@@ -9,9 +10,9 @@
     "cpu": "Apple M5 Pro",
     "cores": 18,
     "memoryGiB": 24,
-    "commit": "992a13308e4a43f18b627ddee30232434106619b",
-    "dirty": true,
-    "recordedAt": "2026-10-13T15:12:15.361Z",
+    "commit": "24892431fe95a0493cfa7c66fba3a0e597449ec2",
+    "dirty": false,
+    "recordedAt": "2026-10-13T15:35:18.605Z",
     "invocation": "real callable .run and service workers in one local Node process; excludes HTTP/auth/network/cold start and scheduled wait",
     "readMetric": "transaction snapshot requests; includes retries, missing documents and repeated reads; excludes index-entry/billing accounting, setup/poll reconciliation reads and worker reads outside transactions"
   },
@@ -22,13 +23,13 @@
   },
   "scenarios": {
     "migration": {
-      "ms": 272.4903330000001,
+      "ms": 257.17495799999995,
       "transactionReads": {
         "requests": 30,
         "documents": 88,
         "emptyQueries": 0
       },
-      "checksum": "3946f55d75dc6d72e2cea5d6719d29104a29e9a58810623dc6cc4e10e9d99924",
+      "checksum": "a1bec9595c47bd979539ee104e3bfb8cfb8757064c5dd38acfeb576f9be5a494",
       "operationCount": 6,
       "counts": {
         "events": 1,
@@ -44,7 +45,7 @@
       "noEmail": true
     },
     "revokeAndDeletion": {
-      "ms": 2264.544083,
+      "ms": 2252.9165839999996,
       "transactionReads": {
         "requests": 1011,
         "documents": 2106,

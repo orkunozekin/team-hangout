@@ -174,120 +174,122 @@ const window = {
   to: new Date(+from + 93 * 86400000).toISOString(),
   pageSize: 20,
 };
-const rows = [];
-for (const uid of [owner, parent, other]) {
-  await getAuth().createUser({
-    uid,
-    email: `${uid}@example.test`,
-    emailVerified: true,
-  });
-  rows.push([`users/${uid}`, { uid, appRole: "user" }]);
-}
-for (const orgId of orgs) {
-  const base = { ...meta, orgId };
-  rows.push(
-    [
-      `organizations/${orgId}`,
-      {
-        ...base,
-        name: orgId,
-        features: {
-          organizationV2: true,
-          households: true,
-          imports: true,
-          adminWorkspace: true,
-          calendarSubscriptions: true,
-          essentialEmail: true,
-        },
-      },
-    ],
-    [
-      `organizations/${orgId}/members/${owner}`,
-      { ...base, roles: ["orgAdmin"], programIds: [] },
-    ],
-    [`organizations/${orgId}/programs/soccer`, { ...base, name: "Soccer" }],
-    [
-      `organizations/${orgId}/seasons/fall`,
-      {
-        ...base,
-        programId: "soccer",
-        name: "Fall",
-        startsOn: "2026-01-01",
-        endsOn: "2028-12-31",
-      },
-    ],
-    [
-      `organizations/${orgId}/divisions/u12`,
-      { ...base, programId: "soccer", seasonId: "fall" },
-    ],
-  );
-  for (const participantId of ["jamie", "casey"]) {
-    rows.push([
-      `organizations/${orgId}/participants/${participantId}`,
-      {
-        ...base,
-        displayName:
-          participantId === "jamie" ? "Jamie Example" : "Casey Example",
-        kind: "youth",
-        linkedUserId: null,
-      },
-    ]);
-    for (const uid of [parent, other])
-      rows.push([
-        `organizations/${orgId}/participants/${participantId}/guardians/${uid}`,
+try {
+  if (process.env.PHASE1_REHEARSAL_FAULT === "setup")
+    throw new Error("SYNTHETIC_SETUP_FAILURE");
+  const rows = [];
+  for (const uid of [owner, parent, other]) {
+    await getAuth().createUser({
+      uid,
+      email: `${uid}@example.test`,
+      emailVerified: true,
+    });
+    rows.push([`users/${uid}`, { uid, appRole: "user" }]);
+  }
+  for (const orgId of orgs) {
+    const base = { ...meta, orgId };
+    rows.push(
+      [
+        `organizations/${orgId}`,
         {
           ...base,
-          userId: uid,
-          participantId,
-          permissions: { viewSchedule: true, viewProfile: true },
+          name: orgId,
+          features: {
+            organizationV2: true,
+            households: true,
+            imports: true,
+            adminWorkspace: true,
+            calendarSubscriptions: true,
+            essentialEmail: true,
+          },
+        },
+      ],
+      [
+        `organizations/${orgId}/members/${owner}`,
+        { ...base, roles: ["orgAdmin"], programIds: [] },
+      ],
+      [`organizations/${orgId}/programs/soccer`, { ...base, name: "Soccer" }],
+      [
+        `organizations/${orgId}/seasons/fall`,
+        {
+          ...base,
+          programId: "soccer",
+          name: "Fall",
+          startsOn: "2026-01-01",
+          endsOn: "2028-12-31",
+        },
+      ],
+      [
+        `organizations/${orgId}/divisions/u12`,
+        { ...base, programId: "soccer", seasonId: "fall" },
+      ],
+    );
+    for (const participantId of ["jamie", "casey"]) {
+      rows.push([
+        `organizations/${orgId}/participants/${participantId}`,
+        {
+          ...base,
+          displayName:
+            participantId === "jamie" ? "Jamie Example" : "Casey Example",
+          kind: "youth",
+          linkedUserId: null,
         },
       ]);
+      for (const uid of [parent, other])
+        rows.push([
+          `organizations/${orgId}/participants/${participantId}/guardians/${uid}`,
+          {
+            ...base,
+            userId: uid,
+            participantId,
+            permissions: { viewSchedule: true, viewProfile: true },
+          },
+        ]);
+    }
   }
-}
-for (const [i, teamId] of teams.entries()) {
-  const orgId = orgs[i < 10 ? 0 : 1],
-    base = {
-      ...meta,
-      orgId,
-      programId: "soccer",
-      seasonId: "fall",
-      divisionId: "u12",
-    };
-  rows.push([
-    `teams/${teamId}`,
-    { ...base, name: `Synthetic team ${i + 1}`, externalId: `T${i}` },
-  ]);
-  for (const participantId of ["jamie", "casey"])
+  for (const [i, teamId] of teams.entries()) {
+    const orgId = orgs[i < 10 ? 0 : 1],
+      base = {
+        ...meta,
+        orgId,
+        programId: "soccer",
+        seasonId: "fall",
+        divisionId: "u12",
+      };
     rows.push([
-      `teams/${teamId}/roster/${participantId}`,
-      { ...meta, orgId, participantId },
+      `teams/${teamId}`,
+      { ...base, name: `Synthetic team ${i + 1}`, externalId: `T${i}` },
     ]);
-  for (let day = 0; day < 93; day++) {
-    const startsAt = Timestamp.fromMillis(
-      +from + day * 86400000 + 18 * 3600000,
-    );
-    rows.push([
-      `events/${teamId}-${String(day).padStart(3, "0")}`,
-      {
-        ...base,
-        title: "Synthetic practice",
-        type: "practice",
-        teamId,
-        teamIds: [teamId],
-        startsAt,
-        endsAt: Timestamp.fromMillis(startsAt.toMillis() + 3600000),
-        timeZone: "America/Chicago",
-        status: "scheduled",
-        publicationState: "published",
-        publicationOperationId: null,
-        deletedAt: null,
-        location: { name: "Example field" },
-      },
-    ]);
+    for (const participantId of ["jamie", "casey"])
+      rows.push([
+        `teams/${teamId}/roster/${participantId}`,
+        { ...meta, orgId, participantId },
+      ]);
+    for (let day = 0; day < 93; day++) {
+      const startsAt = Timestamp.fromMillis(
+        +from + day * 86400000 + 18 * 3600000,
+      );
+      rows.push([
+        `events/${teamId}-${String(day).padStart(3, "0")}`,
+        {
+          ...base,
+          title: "Synthetic practice",
+          type: "practice",
+          teamId,
+          teamIds: [teamId],
+          startsAt,
+          endsAt: Timestamp.fromMillis(startsAt.toMillis() + 3600000),
+          timeZone: "America/Chicago",
+          status: "scheduled",
+          publicationState: "published",
+          publicationOperationId: null,
+          deletedAt: null,
+          location: { name: "Example field" },
+        },
+      ]);
+    }
   }
-}
-await seed(rows);
-try {
+  await seed(rows);
   if (scope !== "operations")
     await measured("agenda", async () => {
       const samples = [];
@@ -530,19 +532,17 @@ try {
       assert.equal(revoked.code, 404);
       assert.ok(!revoked.body.includes("VEVENT"));
       const queue = async (key, uid) =>
-        db
-          .doc(`emailOutbox/${key}`)
-          .set({
-            kind: "publishedEvent",
-            orgId,
-            eventId,
-            eventRevision: 1,
-            recipientUid: uid,
-            recipientEmail: `${uid}@example.test`,
-            status: "queued",
-            attemptCount: 0,
-            nextAttemptAt: Timestamp.now(),
-          });
+        db.doc(`emailOutbox/${key}`).set({
+          kind: "publishedEvent",
+          orgId,
+          eventId,
+          eventRevision: 1,
+          recipientUid: uid,
+          recipientEmail: `${uid}@example.test`,
+          status: "queued",
+          attemptCount: 0,
+          nextAttemptAt: Timestamp.now(),
+        });
       await queue("rehearsal-sent", other);
       assert.equal(await processOutbox("rehearsal-sent"), "sent");
       await queue("rehearsal-revoked", parent);

@@ -120,3 +120,10 @@
 - **Gap:** Clearing private read data on focus unmounted the preference mutation and discarded its original pending/retry request. All read failures also looked like access loss, hiding useful report-limit and network recovery guidance.
 - **Going forward:** Keep pending mutation state mounted independently from refreshed read values; block new choices until the original request settles and clear stale read values before reopening controls. Classify denied access separately from local report limits and temporary errors without exposing raw provider text. Test delayed pre-commit saves through refresh, uncertain replay, subsequent choices, report limits and recovery.
 - **Pointers:** `admin/src/EmailInformation.tsx`, `admin/tests/email.spec.ts`.
+
+### 2026-10-13 — Rehearsal failures and accessibility coverage
+
+- **Source:** PR #22 · Greptile
+- **Gap:** Fixture initialization happened outside the report finalizer, and enlarged-text tests could pass with empty tables or measure scaled targets instead of phone control size.
+- **Going forward:** Include fixture setup in failure-report cleanup and inject a setup failure. Require populated changed states before asserting accessibility, and measure touch targets at an unzoomed phone viewport independently from zoom/reflow.
+- **Pointers:** `scripts/rehearsal/scenarios.mjs`, `tests/backend/rehearsal-guards.test.mjs`, `admin/tests/accessibility.spec.ts`.
