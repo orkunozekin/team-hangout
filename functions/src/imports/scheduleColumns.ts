@@ -1,0 +1,15 @@
+export const scheduleColumns = [
+  "externalId",
+  "teamExternalId",
+  "eventType",
+  "title",
+  "localDate",
+  "localStartTime",
+  "localEndTime",
+  "timeZone",
+  "startOffset",
+  "endOffset",
+  "locationName",
+  "address",
+  "notes",
+];

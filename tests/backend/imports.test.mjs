@@ -432,6 +432,12 @@ test("mid-import canonical revocation and deleted account fence worker; restored
   const { runRosterImport } = require("./lib/imports/roster.js");
   await db.doc(`importJobs/${job.id}`).update({ lease: null });
   await runRosterImport(job.id);
+  // A document trigger may own the lease first; wait for its durable fenced outcome.
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if ((await db.doc(`importJobs/${job.id}`).get()).data().status === "paused")
+      break;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
   assert.equal(
     (await db.doc(`importJobs/${job.id}`).get()).data().status,
     "paused",
@@ -826,4 +832,31 @@ test("excessive ambiguous candidates are bounded skippable errors and oversized 
     }),
     { code: "functions/invalid-argument" },
   );
+});
+
+test("Step 12 roster upload IDs and bindings remain compatible across the schedule engine extension", async () => {
+  const { createHash } = await import("node:crypto");
+  const hash = (value) => createHash("sha256").update(value).digest("hex");
+  const requestId = "step12-retry-contract";
+  const lines = "compatibility-identity,Compatibility participant,youth,U12,,";
+  const bytes = Buffer.from(`${headers}\r\n${lines}`);
+  const expectedId = hash(`imports-owner:${orgId}:${requestId}`);
+  const binding = hash(
+    JSON.stringify({
+      checksum: hash(bytes),
+      mapping,
+      programId,
+      seasonId,
+      templateVersion: 1,
+      policyRevision: 1,
+    }),
+  );
+  const { job } = await upload(lines, { requestId });
+  assert.equal(job.id, expectedId);
+  assert.equal(
+    (await db.doc(`importJobs/${expectedId}`).get()).data().binding,
+    binding,
+  );
+  await waitFor(job.id, ["preview"]);
+  assert.equal((await upload(lines, { requestId })).job.id, expectedId);
 });

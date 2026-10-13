@@ -18,3 +18,6 @@ export { listHouseholdAgenda } from './calendar/agenda';
 export { createCalendarSubscription, listCalendarSubscriptions, revokeCalendarSubscription, rotateCalendarSubscription, calendarSubscriptionOptions, calendarFeed } from './calendar/subscriptions';
 
 export { uploadRosterImport, getRosterImport, resolveRosterImportRow, commitRosterImport, refreshRosterImport, processRosterImports, resumeRosterImports, expireRosterImports } from './imports/roster';
+
+export { uploadScheduleImport, getScheduleImport, resolveScheduleImportRow, commitScheduleImport, refreshScheduleImport } from "./imports/roster";
+export { prepareSchedulePublication, publishScheduleImport } from "./imports/publication";

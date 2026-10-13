@@ -1,7 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import type { AdminEntity, AdminWorkspace } from "../../shared/admin";
 import type { ImportJob, ImportRow } from "../../shared/imports";
-import { columns, parseCsv, safeCsv, MAX_BYTES } from "../../shared/csv";
+import {
+  columns as rosterColumns,
+  parseCsv,
+  safeCsv,
+  MAX_BYTES,
+} from "../../shared/csv";
+import {
+  scheduleColumns,
+  type ScheduleCommands,
+} from "../../shared/scheduleImports";
 import type { BrowserServices } from "./firebase";
 import { message, uncertain } from "./errors";
 import { routeUrl } from "./route";
@@ -19,10 +28,19 @@ function download(name: string, contents: string) {
 export function RosterImports({
   services,
   orgId,
+  kind = "roster",
 }: {
   services: BrowserServices;
   orgId: string;
+  kind?: "roster" | "schedule";
 }) {
+  const schedule = kind === "schedule";
+  const columns = schedule ? scheduleColumns : rosterColumns;
+  const [selected, setSelected] = useState<number[]>([]);
+  const [publication, setPublication] = useState<
+    ScheduleCommands["prepareSchedulePublication"]["output"] | null
+  >(null);
+  const [publishConfirmed, setPublishConfirmed] = useState(false);
   const [workspace, setWorkspace] = useState<AdminWorkspace | null>(null),
     [programs, setPrograms] = useState<AdminEntity[]>([]),
     [seasons, setSeasons] = useState<AdminEntity[]>([]);
@@ -69,6 +87,8 @@ export function RosterImports({
       setRows([]);
       setBytes(null);
       setInvitation(null);
+      setPublication(null);
+      setSelected([]);
       pending.current = null;
       setRetry("");
     }
@@ -130,11 +150,14 @@ export function RosterImports({
     if (!id) return;
     const current = ++generation.current;
     try {
-      const result = await services.call("getRosterImport", {
-        orgId,
-        jobId: id,
-        offset: page,
-      });
+      const result = await services.call(
+        schedule ? "getScheduleImport" : "getRosterImport",
+        {
+          orgId,
+          jobId: id,
+          offset: page,
+        },
+      );
       if (!mounted.current || current !== generation.current) return;
       if (revoked.current) return;
       const binding = `${result.job.id}:${result.job.previewRevision}:${result.job.planRevision}`;
@@ -145,6 +168,31 @@ export function RosterImports({
       }
       setJob(result.job);
       setRows(result.rows);
+      if (schedule) {
+        const available = new Set(
+          result.rows
+            .filter(
+              (r) =>
+                ["created", "updated"].includes(r.outcome || "") &&
+                !r.publishedRevision,
+            )
+            .map((r) => r.number),
+        );
+        setSelected((current) => current.filter((n) => available.has(n)));
+        setPublication((current) =>
+          current &&
+          current.events.every((e) =>
+            result.rows.some(
+              (r) =>
+                r.number === e.number &&
+                r.eventRevision === e.revision &&
+                !r.publishedRevision,
+            ),
+          )
+            ? current
+            : null,
+        );
+      }
       setNextOffset(result.nextOffset);
       setResumeId(id);
     } catch (e) {
@@ -177,7 +225,13 @@ export function RosterImports({
       const result = await run();
       if (mounted.current && !revoked.current) {
         pending.current = null;
-        setNotice(`${label} accepted.`);
+        const publicationResult = result as
+          { published?: number; queued?: number } | undefined;
+        setNotice(
+          label === "Publication" && publicationResult?.published != null
+            ? `${publicationResult.published} events published; ${publicationResult.queued} essential updates queued.`
+            : `${label} accepted.`,
+        );
         const uploaded = result as { job?: ImportJob } | undefined;
         await read(uploaded?.job?.id ?? jobId, uploaded?.job ? 0 : offset);
       }
@@ -227,7 +281,10 @@ export function RosterImports({
       templateVersion: 1 as const,
     };
     void action("Upload", async () => {
-      const result = await services.call("uploadRosterImport", payload);
+      const result = await services.call(
+        schedule ? "uploadScheduleImport" : "uploadRosterImport",
+        payload,
+      );
       if (mounted.current && !revoked.current) {
         setOffset(0);
         setJob(result.job);
@@ -254,7 +311,10 @@ export function RosterImports({
     };
     setConfirmed(false);
     void action("Row resolution", () =>
-      services.call("resolveRosterImportRow", payload),
+      services.call(
+        schedule ? "resolveScheduleImportRow" : "resolveRosterImportRow",
+        payload,
+      ),
     );
   }
   async function outcome() {
@@ -262,22 +322,31 @@ export function RosterImports({
     const collected: ImportRow[] = [];
     let page = 0;
     do {
-      const result = await services.call("getRosterImport", {
-        orgId,
-        jobId: job.id,
-        offset: page,
-      });
+      const result = await services.call(
+        schedule ? "getScheduleImport" : "getRosterImport",
+        {
+          orgId,
+          jobId: job.id,
+          offset: page,
+        },
+      );
       collected.push(...result.rows);
       if (result.nextOffset == null) break;
       page = result.nextOffset;
     } while (page < 5000);
     download(
-      "roster-import-outcome-v1.csv",
+      `${kind}-import-outcome-v1.csv`,
       safeCsv([
-        ["row", "participantName", "externalId", "result", "errors"],
+        [
+          "row",
+          schedule ? "title" : "participantName",
+          "externalId",
+          "result",
+          "errors",
+        ],
         ...collected.map((r) => [
           r.number,
-          r.fields.participantName,
+          schedule ? r.fields.title : r.fields.participantName,
           r.fields.externalId,
           r.outcome || r.resolution || "needs-review",
           r.errors.join("; "),
@@ -289,10 +358,11 @@ export function RosterImports({
     <main className="page roster-imports">
       <a href={routeUrl(orgId, "program")}>← Organization workspace</a>
       <p className="eyebrow">Reviewed imports · Template v1</p>
-      <h1>Roster CSV imports</h1>
+      <h1>{schedule ? "Schedule CSV imports" : "Roster CSV imports"}</h1>
       <p className="muted">
-        Preview participant identities and team enrollments before committing.
-        Guardian emails never activate access. Imports send no mail.
+        {schedule
+          ? "Review event times and warnings, commit unpublished drafts, then separately confirm publication and queued essential updates. No automatic scheduling or live mail delivery."
+          : "Preview participant identities and team enrollments before committing. Guardian emails never activate access. Imports send no mail."}
       </p>
       {error && (
         <p className="error" role="alert">
@@ -319,7 +389,7 @@ export function RosterImports({
         </p>
       ) : (
         <>
-          {!workspace.admin && (
+          {!schedule && !workspace.admin && (
             <p>
               Program staff can enroll existing trusted identities on the
               selected roster. Ask an administrator to create or resolve
@@ -330,28 +400,46 @@ export function RosterImports({
             <h2>Upload and map a CSV</h2>
             <p>
               UTF-8 CSV only, up to 5 MB and 5,000 rows. Team external IDs must
-              already be configured for the selected season. Birth dates and
-              private profile fields are not imported.
+              already be configured for the selected season.
+              {schedule
+                ? " Use local YYYY-MM-DD dates, HH:mm times and an IANA zone. DST folds need startOffset/endOffset (signed HH:mm); gaps cannot be imported. Events end on the same local date."
+                : " Birth dates and private profile fields are not imported."}
             </p>
             <button
               onClick={() =>
                 download(
-                  "roster-template-v1.csv",
+                  `${kind}-template-v1.csv`,
                   safeCsv([
                     columns,
-                    [
-                      "child-001",
-                      "Jamie Example",
-                      "youth",
-                      "team-external-id",
-                      "",
-                      "",
-                    ],
+                    schedule
+                      ? [
+                          "event-001",
+                          "team-external-id",
+                          "practice",
+                          "Evening practice",
+                          "2026-10-20",
+                          "17:00",
+                          "18:00",
+                          "America/Chicago",
+                          "",
+                          "",
+                          "Park field",
+                          "",
+                          "",
+                        ]
+                      : [
+                          "child-001",
+                          "Jamie Example",
+                          "youth",
+                          "team-external-id",
+                          "",
+                          "",
+                        ],
                   ]),
                 )
               }
             >
-              Download roster template v1
+              Download {kind} template v1
             </button>
             <fieldset disabled={busy || !!retry}>
               <label>
@@ -495,7 +583,12 @@ export function RosterImports({
                     };
                     setConfirmed(false);
                     void action("Preview refresh", () =>
-                      services.call("refreshRosterImport", payload),
+                      services.call(
+                        schedule
+                          ? "refreshScheduleImport"
+                          : "refreshRosterImport",
+                        payload,
+                      ),
                     );
                   }}
                 >
@@ -513,7 +606,9 @@ export function RosterImports({
                   <thead>
                     <tr>
                       <th>Row</th>
-                      <th>Participant</th>
+                      <th>
+                        {schedule ? "Event and local time" : "Participant"}
+                      </th>
                       <th>Team external ID</th>
                       <th>Review</th>
                       <th>Resolution / outcome</th>
@@ -524,10 +619,23 @@ export function RosterImports({
                       <tr key={row.number}>
                         <td>{row.number}</td>
                         <td>
-                          <strong>{row.fields.participantName}</strong>
+                          <strong>
+                            {schedule
+                              ? row.fields.title
+                              : row.fields.participantName}
+                          </strong>
+                          {schedule && (
+                            <p>
+                              {row.fields.localDate} {row.fields.localStartTime}
+                              –{row.fields.localEndTime} · {row.fields.timeZone}
+                              <br />
+                              {row.fields.locationName} {row.fields.address}
+                            </p>
+                          )}
                           <div>
                             {row.fields.externalId || "No trusted external ID"}{" "}
-                            · {row.fields.kind}
+                            ·{" "}
+                            {schedule ? row.fields.eventType : row.fields.kind}
                           </div>
                         </td>
                         <td>{row.fields.teamExternalId}</td>
@@ -548,6 +656,41 @@ export function RosterImports({
                           {row.outcome ||
                             row.resolution ||
                             "Choose a resolution"}
+                          {schedule &&
+                            job.status === "complete" &&
+                            ["created", "updated"].includes(
+                              row.outcome || "",
+                            ) &&
+                            !row.publishedRevision && (
+                              <label>
+                                <input
+                                  type="checkbox"
+                                  aria-label={`Select draft row ${row.number} for publication`}
+                                  checked={selected.includes(row.number)}
+                                  disabled={
+                                    busy ||
+                                    !!retry ||
+                                    (selected.length >= 10 &&
+                                      !selected.includes(row.number))
+                                  }
+                                  onChange={(e) => {
+                                    setSelected(
+                                      e.target.checked
+                                        ? [...selected, row.number]
+                                        : selected.filter(
+                                            (n) => n !== row.number,
+                                          ),
+                                    );
+                                    setPublication(null);
+                                    setPublishConfirmed(false);
+                                  }}
+                                />
+                                Select draft for publication
+                              </label>
+                            )}
+                          {schedule && row.publishedRevision && (
+                            <p>Published revision {row.publishedRevision}</p>
+                          )}
                           {job.status === "preview" && !row.outcome && (
                             <div>
                               <button
@@ -557,14 +700,23 @@ export function RosterImports({
                                 Skip row {row.number}
                               </button>
                               {!row.errors.length &&
-                                workspace.admin &&
+                                (schedule || workspace.admin) &&
                                 (!row.fields.externalId ||
                                   !row.candidates.length) && (
                                   <button
                                     disabled={busy || !!retry}
-                                    onClick={() => resolve(row, "create")}
+                                    onClick={() =>
+                                      resolve(
+                                        row,
+                                        schedule && row.eventRevision
+                                          ? "update"
+                                          : "create",
+                                      )
+                                    }
                                   >
-                                    Create separate participant for row{" "}
+                                    {schedule
+                                      ? "Keep reviewed draft for row"
+                                      : "Create separate participant for row"}{" "}
                                     {row.number}
                                   </button>
                                 )}
@@ -585,7 +737,8 @@ export function RosterImports({
                                   ))}
                             </div>
                           )}
-                          {job.status === "complete" &&
+                          {!schedule &&
+                            job.status === "complete" &&
                             workspace.admin &&
                             ["created", "updated"].includes(
                               row.outcome || "",
@@ -619,13 +772,21 @@ export function RosterImports({
               <div className="actions">
                 <button
                   disabled={offset === 0 || busy}
-                  onClick={() => setOffset(Math.max(0, offset - 50))}
+                  onClick={() => {
+                    setOffset(Math.max(0, offset - 50));
+                    setSelected([]);
+                    setPublication(null);
+                  }}
                 >
                   Previous rows
                 </button>
                 <button
                   disabled={nextOffset == null || busy}
-                  onClick={() => setOffset(nextOffset!)}
+                  onClick={() => {
+                    setOffset(nextOffset!);
+                    setSelected([]);
+                    setPublication(null);
+                  }}
                 >
                   Next rows
                 </button>
@@ -637,7 +798,9 @@ export function RosterImports({
                     {job.previewUpdates}, skip {job.previewSkips}. Confirm all{" "}
                     {job.count - job.checkpoint} pending rows using their
                     current resolutions. Unresolved rows block commit.
-                    Invitations: none.
+                    {schedule
+                      ? "Drafts remain unpublished. Essential updates: none until separate publication."
+                      : "Invitations: none."}
                   </p>
                   <label>
                     <input
@@ -646,8 +809,9 @@ export function RosterImports({
                       onChange={(e) => setConfirmed(e.target.checked)}
                       disabled={busy || !!retry}
                     />
-                    I reviewed the current preview and confirm participant and
-                    roster changes without sending invitations.
+                    {schedule
+                      ? "I reviewed the current preview and confirm unpublished draft changes without queueing mail."
+                      : "I reviewed the current preview and confirm participant and roster changes without sending invitations."}
                   </label>
                   <button
                     className="primary"
@@ -664,70 +828,183 @@ export function RosterImports({
                         confirmed: true as const,
                       };
                       void action("Import commit", () =>
-                        services.call("commitRosterImport", payload),
+                        services.call(
+                          schedule
+                            ? "commitScheduleImport"
+                            : "commitRosterImport",
+                          payload,
+                        ),
                       );
                     }}
                   >
-                    Confirm and commit roster
+                    {schedule
+                      ? "Confirm and commit drafts"
+                      : "Confirm and commit roster"}
                   </button>
                 </>
               )}
-              {invitation && job.status === "complete" && workspace.admin && (
+              {schedule && job.status === "complete" && (
                 <section className="panel">
-                  <h3>Confirm guardian invitation</h3>
+                  <h3>Separately publish selected drafts</h3>
                   <p>
-                    Acting account: {services.auth.currentUser?.email}.
-                    Participant: {invitation.row.fields.participantName}.
-                    Recipient: {invitation.email}. Rights: view profile and
-                    schedule only. This queues an invitation; it does not
-                    activate guardian access or deliver live mail.
+                    Select up to 10 drafts on this page. Published events become
+                    visible to authorized household calendars and private feeds.
+                    Essential updates are queued for currently authorized,
+                    verified household contacts; this does not deliver live
+                    mail.
                   </p>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={inviteConfirmed}
-                      disabled={busy || !!retry}
-                      onChange={(e) => setInviteConfirmed(e.target.checked)}
-                    />
-                    I confirm this recipient and participant relationship.
-                  </label>
                   <button
-                    disabled={!inviteConfirmed || busy || !!retry}
+                    disabled={!selected.length || busy || !!retry}
                     onClick={() => {
-                      const selected = invitation;
                       const payload = {
-                        requestId: `import-${job.id}-${selected.row.number}-${selected.slot}`,
                         orgId,
-                        participantId: selected.row.participantId,
-                        ...(selected.row.teamId
-                          ? { teamId: selected.row.teamId }
-                          : {}),
-                        recipientEmail: selected.email,
-                        relationship: "guardian" as const,
-                        permissions: {
-                          viewSchedule: true,
-                          viewProfile: true,
-                          editProfile: false,
-                          respond: false,
-                        },
+                        jobId: job.id,
+                        numbers: selected,
                       };
-                      void action("Guardian invitation queue", async () => {
-                        await services.call("createInvitation", payload);
-                        if (mounted.current) setInvitation(null);
+                      void action("Publication review", async () => {
+                        const result = await services.call(
+                          "prepareSchedulePublication",
+                          payload,
+                        );
+                        if (mounted.current && !revoked.current) {
+                          setPublication(result);
+                          setPublishConfirmed(false);
+                        }
                       });
                     }}
                   >
-                    Queue confirmed guardian invitation
+                    Review selected publication
                   </button>
-                  <button
-                    disabled={busy || !!retry}
-                    onClick={() => setInvitation(null)}
-                  >
-                    Cancel invitation
-                  </button>
+                  {publication && (
+                    <>
+                      <p>
+                        Acting account: {services.auth.currentUser?.email}.
+                        Publish {publication.events.length} events and queue{" "}
+                        {publication.recipientCount} essential updates.
+                      </p>
+                      <ul>
+                        {publication.events.map((e) => (
+                          <li key={e.eventId}>
+                            {e.title} ·{" "}
+                            {new Intl.DateTimeFormat("en-US", {
+                              timeZone: e.timeZone,
+                              dateStyle: "medium",
+                              timeStyle: "short",
+                            }).format(new Date(e.startsAt))}{" "}
+                            –{" "}
+                            {new Intl.DateTimeFormat("en-US", {
+                              timeZone: e.timeZone,
+                              timeStyle: "short",
+                            }).format(new Date(e.endsAt))}{" "}
+                            · {e.timeZone} · {e.location?.name || "No location"}{" "}
+                            {e.location?.address} · Draft revision {e.revision}{" "}
+                            · {e.recipientCount} queued contacts
+                          </li>
+                        ))}
+                      </ul>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={publishConfirmed}
+                          disabled={busy || !!retry}
+                          onChange={(e) =>
+                            setPublishConfirmed(e.target.checked)
+                          }
+                        />
+                        I confirm these exact drafts and essential update counts
+                        for publication.
+                      </label>
+                      <button
+                        className="primary"
+                        disabled={!publishConfirmed || busy || !!retry}
+                        onClick={() => {
+                          const payload = {
+                            requestId: crypto.randomUUID(),
+                            orgId,
+                            jobId: job.id,
+                            numbers: publication.events.map((e) => e.number),
+                            binding: publication.binding,
+                            confirmed: true as const,
+                          };
+                          void action("Publication", async () => {
+                            const result = await services.call(
+                              "publishScheduleImport",
+                              payload,
+                            );
+                            if (mounted.current && !revoked.current) {
+                              setSelected([]);
+                              setPublication(null);
+                              setPublishConfirmed(false);
+                            }
+                            return result;
+                          });
+                        }}
+                      >
+                        Confirm publication and queue updates
+                      </button>
+                    </>
+                  )}
                 </section>
               )}
-              {job.status === "complete" && workspace.admin && (
+              {!schedule &&
+                invitation &&
+                job.status === "complete" &&
+                workspace.admin && (
+                  <section className="panel">
+                    <h3>Confirm guardian invitation</h3>
+                    <p>
+                      Acting account: {services.auth.currentUser?.email}.
+                      Participant: {invitation.row.fields.participantName}.
+                      Recipient: {invitation.email}. Rights: view profile and
+                      schedule only. This queues an invitation; it does not
+                      activate guardian access or deliver live mail.
+                    </p>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={inviteConfirmed}
+                        disabled={busy || !!retry}
+                        onChange={(e) => setInviteConfirmed(e.target.checked)}
+                      />
+                      I confirm this recipient and participant relationship.
+                    </label>
+                    <button
+                      disabled={!inviteConfirmed || busy || !!retry}
+                      onClick={() => {
+                        const selected = invitation;
+                        const payload = {
+                          requestId: `import-${job.id}-${selected.row.number}-${selected.slot}`,
+                          orgId,
+                          participantId: selected.row.participantId,
+                          ...(selected.row.teamId
+                            ? { teamId: selected.row.teamId }
+                            : {}),
+                          recipientEmail: selected.email,
+                          relationship: "guardian" as const,
+                          permissions: {
+                            viewSchedule: true,
+                            viewProfile: true,
+                            editProfile: false,
+                            respond: false,
+                          },
+                        };
+                        void action("Guardian invitation queue", async () => {
+                          await services.call("createInvitation", payload);
+                          if (mounted.current) setInvitation(null);
+                        });
+                      }}
+                    >
+                      Queue confirmed guardian invitation
+                    </button>
+                    <button
+                      disabled={busy || !!retry}
+                      onClick={() => setInvitation(null)}
+                    >
+                      Cancel invitation
+                    </button>
+                  </section>
+                )}
+              {!schedule && job.status === "complete" && workspace.admin && (
                 <p>
                   To invite guardians, open{" "}
                   <a href={routeUrl(orgId, "invitation")}>Invitations</a> and
