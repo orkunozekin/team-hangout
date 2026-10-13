@@ -112,7 +112,7 @@ async function recipients(tx: Transaction, event: Data) {
           target,
           "viewSchedule",
         );
-        await accountAvailable(tx, target);
+        if (!uids.has(target)) await accountAvailable(tx, target);
         uids.add(target);
       } catch (e) {
         if (
@@ -132,17 +132,18 @@ async function recipients(tx: Transaction, event: Data) {
       "resource-exhausted",
       "Recipient scope exceeds 200 accounts. Use a reviewed bulk publication workflow.",
     );
-  const result: { uid: string; email: string }[] = [];
-  for (const uid of [...uids].sort()) {
-    try {
-      const user = await getAuth().getUser(uid);
-      if (!user.disabled && user.emailVerified && user.email)
-        result.push({ uid, email: user.email.toLowerCase() });
-    } catch (e) {
-      if ((e as { code?: string }).code !== "auth/user-not-found") throw e;
-    }
-  }
-  return result;
+  const ids = [...uids].sort();
+  const batches = [];
+  for (let start = 0; start < ids.length; start += 100)
+    batches.push(
+      getAuth().getUsers(ids.slice(start, start + 100).map((uid) => ({ uid }))),
+    );
+  const resolved = await Promise.all(batches);
+  return resolved
+    .flatMap((batch) => batch.users)
+    .filter((user) => !user.disabled && user.emailVerified && user.email)
+    .map((user) => ({ uid: user.uid, email: user.email!.toLowerCase() }))
+    .sort((a, b) => a.uid.localeCompare(b.uid));
 }
 async function prepare(tx: Transaction, job: Data, numbers: number[]) {
   const db = getFirestore(),
@@ -152,6 +153,10 @@ async function prepare(tx: Transaction, job: Data, numbers: number[]) {
       event: Data;
       recipients: { uid: string; email: string }[];
     }[] = [];
+  const teamRecipients = new Map<
+    string,
+    Awaited<ReturnType<typeof recipients>>
+  >();
   for (const number of numbers) {
     const rawRow = (
       await tx.get(
@@ -205,11 +210,13 @@ async function prepare(tx: Transaction, job: Data, numbers: number[]) {
       team.divisionId,
       true,
     );
+    if (!teamRecipients.has(event.teamId))
+      teamRecipients.set(event.teamId, await recipients(tx, event));
     entries.push({
       number,
       eventId: row.eventId,
       event,
-      recipients: await recipients(tx, event),
+      recipients: teamRecipients.get(event.teamId)!,
     });
   }
   if (entries.reduce((n, e) => n + e.recipients.length, 0) > 200)

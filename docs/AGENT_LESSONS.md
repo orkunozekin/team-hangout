@@ -99,3 +99,10 @@
 - **Gap:** A CSV within the 5 MB file limit could contain a field larger than Firestore's document limit, preventing the invalid row from reaching review/skip controls. Large base64 validation also needed a canonical, linear bound.
 - **Going forward:** Keep canonical source bytes intact, but bound invalid field excerpts with explicit errors/warnings before persisting preview rows. Validate large base64 in linear form and test an oversized invalid record alongside a valid record through preview, skip and commit.
 - **Pointers:** `functions/src/imports/roster.ts`, `tests/backend/imports.test.mjs`.
+
+### 2026-10-13 — Bind reviews to identities and reuse bounded contact reads
+
+- **Source:** PR #20 · Greptile
+- **Gap:** Publication UI reused row-number/revision matches across different import jobs and event IDs; publishing several same-team events repeated canonical contact and serial Auth reads.
+- **Going forward:** Clear confirmations on job identity changes and compare event IDs alongside revisions. Keep commit confirmation disabled until canonical rows for the displayed preview binding have loaded, including accepted-upload retries. Reuse canonical recipient results only within a transaction attempt and batch bounded Auth lookups; reauthorize on every subsequent command. Test switching saved jobs with equal row revisions and revocation after a multi-event contact review.
+- **Pointers:** `admin/src/RosterImports.tsx`, `functions/src/imports/publication.ts`, schedule browser/backend regressions.

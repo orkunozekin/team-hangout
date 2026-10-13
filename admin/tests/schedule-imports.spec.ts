@@ -357,3 +357,54 @@ test("schedule stale publication and permission loss leave drafts private", asyn
     .doc(`organizations/${orgId}/members/${uid}`)
     .update({ status: "active" });
 });
+
+test("opening another completed schedule job clears the old checked publication review", async ({
+  page,
+}) => {
+  await open(page);
+  await upload(page, line("switch-first", "First saved draft"));
+  await confirm(page);
+  const first = await page.getByLabel("Import job ID").inputValue();
+  await upload(page, line("switch-second", "Second saved draft"));
+  await confirm(page);
+  const second = await page.getByLabel("Import job ID").inputValue();
+  for (const jobId of [first, second])
+    expect(
+      (await db.doc(`importJobs/${jobId}/rows/00001`).get()).data()
+        .eventRevision,
+    ).toBe(1);
+  await page.getByLabel("Import job ID").fill(first);
+  await page.getByRole("button", { name: "Open saved import" }).click();
+  await expect(
+    page.getByText("First saved draft", { exact: true }),
+  ).toBeVisible();
+  await page.getByLabel("Select draft row 1 for publication").check();
+  await page
+    .getByRole("button", { name: "Review selected publication" })
+    .click();
+  await page
+    .getByLabel(
+      "I confirm these exact drafts and essential update counts for publication.",
+    )
+    .check();
+  await expect(
+    page.getByRole("button", { name: "Confirm publication and queue updates" }),
+  ).toBeEnabled();
+  await page.getByLabel("Import job ID").fill(second);
+  await page.getByRole("button", { name: "Open saved import" }).click();
+  await expect(
+    page.getByText("Second saved draft", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("First saved draft", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Confirm publication and queue updates" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByLabel("Select draft row 1 for publication"),
+  ).not.toBeChecked();
+  await expect(
+    page.getByRole("button", { name: "Review selected publication" }),
+  ).toBeDisabled();
+});

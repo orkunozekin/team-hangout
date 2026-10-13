@@ -501,13 +501,11 @@ test("publication deduplicates siblings and scopes verified contacts without gra
       email: `${uid}@example.test`,
       emailVerified: verified,
     });
-    await db
-      .doc(`users/${uid}`)
-      .set({
-        uid,
-        appRole: "user",
-        ...(uid === "schedules-deleted" ? { accountState: "deleting" } : {}),
-      });
+    await db.doc(`users/${uid}`).set({
+      uid,
+      appRole: "user",
+      ...(uid === "schedules-deleted" ? { accountState: "deleting" } : {}),
+    });
   }
   const child = "schedule-sibling";
   await db
@@ -587,4 +585,47 @@ test("concurrent schedule jobs with one external identity cannot create duplicat
     ).size,
     1,
   );
+});
+
+test("multi-event publication resolves each team's verified contacts once per transaction and rechecks on the next call", async () => {
+  const { job } = await upload(
+    [
+      line("batch-contacts-a", "Batch contacts A"),
+      line("batch-contacts-b", "Batch contacts B"),
+    ].join("\n"),
+  );
+  const done = await commit((await waitFor(job.id, ["preview"])).job);
+  const {
+    prepareSchedulePublication,
+  } = require("./lib/imports/publication.js");
+  const auth = adminAuth(app),
+    original = auth.getUsers.bind(auth);
+  let batches = 0;
+  auth.getUsers = async (identifiers) => {
+    batches++;
+    return original(identifiers);
+  };
+  try {
+    const review = await prepareSchedulePublication.run({
+      auth: { uid: "schedules-owner" },
+      data: { orgId, jobId: job.id, numbers: [1, 2] },
+    });
+    assert.equal(review.events.length, 2);
+    assert.equal(review.recipientCount, 4);
+    assert.equal(batches, 1);
+    await db
+      .doc(
+        `organizations/${orgId}/participants/schedule-sibling/guardians/schedules-second`,
+      )
+      .update({ status: "revoked" });
+    const refreshed = await prepareSchedulePublication.run({
+      auth: { uid: "schedules-owner" },
+      data: { orgId, jobId: job.id, numbers: [1, 2] },
+    });
+    assert.equal(refreshed.recipientCount, 2);
+    assert.equal(batches, 2);
+    assert.notEqual(refreshed.binding, review.binding);
+  } finally {
+    auth.getUsers = original;
+  }
 });

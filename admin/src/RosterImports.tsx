@@ -66,6 +66,7 @@ export function RosterImports({
     } | null>(null),
     [inviteConfirmed, setInviteConfirmed] = useState(false);
   const loadedPreview = useRef("");
+  const loadedJob = useRef("");
   const revoked = useRef(false);
   const generation = useRef(0),
     mounted = useRef(true),
@@ -170,6 +171,12 @@ export function RosterImports({
       );
       if (!mounted.current || current !== generation.current) return;
       if (revoked.current) return;
+      if (loadedJob.current !== result.job.id) {
+        setPublication(null);
+        setPublishConfirmed(false);
+        setSelected([]);
+        loadedJob.current = result.job.id;
+      }
       const binding = `${result.job.id}:${result.job.previewRevision}:${result.job.planRevision}`;
       if (loadedPreview.current !== binding) {
         setConfirmed(false);
@@ -195,6 +202,7 @@ export function RosterImports({
             result.rows.some(
               (r) =>
                 r.number === e.number &&
+                r.eventId === e.eventId &&
                 r.eventRevision === e.revision &&
                 !r.publishedRevision,
             ),
@@ -297,6 +305,8 @@ export function RosterImports({
       );
       if (mounted.current && !revoked.current) {
         setOffset(0);
+        loadedPreview.current = "";
+        setRows([]);
         setJob(result.job);
         setConfirmed(false);
       }
@@ -817,7 +827,12 @@ export function RosterImports({
                       type="checkbox"
                       checked={confirmed}
                       onChange={(e) => setConfirmed(e.target.checked)}
-                      disabled={busy || !!retry}
+                      disabled={
+                        busy ||
+                        !!retry ||
+                        loadedPreview.current !==
+                          `${job.id}:${job.previewRevision}:${job.planRevision}`
+                      }
                     />
                     {schedule
                       ? "I reviewed the current preview and confirm unpublished draft changes without queueing mail."
@@ -826,7 +841,12 @@ export function RosterImports({
                   <button
                     className="primary"
                     disabled={
-                      !confirmed || job.unresolved > 0 || busy || !!retry
+                      !confirmed ||
+                      job.unresolved > 0 ||
+                      busy ||
+                      !!retry ||
+                      loadedPreview.current !==
+                        `${job.id}:${job.previewRevision}:${job.planRevision}`
                     }
                     onClick={() => {
                       const payload = {
