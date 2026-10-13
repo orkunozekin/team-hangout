@@ -6,6 +6,7 @@ import type {
 
 /** Callable JSON only. No browser, native or Firebase runtime dependencies. */
 export type AdminSection =
+  | "import"
   | "invitation"
   | "participant"
   | "program"
@@ -22,6 +23,7 @@ export type AdminEntity = {
   programId?: string;
   seasonId?: string;
   divisionId?: string;
+  externalId?: string | null;
   kind?: "municipal" | "communityCenter" | "club";
   timeZone?: string;
   sportCode?: string;
@@ -63,10 +65,11 @@ export type TeamInput = {
     programId: string;
     seasonId: string;
     divisionId: string;
+    externalId?: string | null;
     status: "active" | "archived";
   };
 };
-export type AdminCommands = import("./calendarSubscriptions").CalendarCommands & import("./participants").ParticipantCommands & import("./invitations").InvitationCommands & {
+export type AdminCommands = import("./imports").ImportCommands & import("./calendarSubscriptions").CalendarCommands & import("./participants").ParticipantCommands & import("./invitations").InvitationCommands & {
   listMyOrganizations: {
     input: { cursor?: string; pageSize?: number };
     output: Page<OrganizationLink>;

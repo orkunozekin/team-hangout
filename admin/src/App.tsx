@@ -13,6 +13,7 @@ import { go, readRoute } from "./route";
 import { InvitationAcceptance, Invitations } from "./Invitations";
 import { invitationTokenFromUrl } from "../../shared/invitations";
 import { CalendarSubscriptions } from "./CalendarSubscriptions";
+import { RosterImports } from "./RosterImports";
 import { Participants } from "./Participants";
 import { Workspace, OrganizationPicker } from "./Workspace";
 
@@ -145,7 +146,9 @@ export function App({ services }: { services: BrowserServices }) {
               }}
             />
           ) : route ? (
-            route.section === "invitation" ? (
+            route.section === "import" ? (
+              <RosterImports services={services} orgId={route.orgId} />
+            ) : route.section === "invitation" ? (
               <Invitations services={services} orgId={route.orgId} />
             ) : route.section === "participant" ? (
               <Participants

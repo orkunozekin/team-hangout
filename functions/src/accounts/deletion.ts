@@ -7,7 +7,7 @@ import { Data } from '../commandSupport';
 const PAGE_SIZE = 25;
 // Future token/feed/invitation writers must use these ownership fields and the tombstone gate.
 export const cleanupHooks = [
-  ['calendarSubscriptions', 'ownerUid'], ['invitations', 'recipientUid'],
+  ['importJobs', 'ownerUid'], ['calendarSubscriptions', 'ownerUid'], ['invitations', 'recipientUid'],
   ['emailOutbox', 'recipientUid'], ['notificationEndpoints', 'userId'],
   ['commandRequests', 'uid'],
 ] as const;
@@ -84,6 +84,10 @@ async function prepareRemoval(tx: Transaction, uid: string, stage: string, doc: 
       tx.update(doc.ref, { linkedUserId: null, ...bump(row) });
       if (profile.exists) tx.update(profile.ref, { contactEmail: FieldValue.delete(), contactPhone: FieldValue.delete(), ...bump(profile.data()!) });
     };
+  }
+  if (stage === 'importJobs') {
+    // Fence workers immediately; scheduled retention removes private bytes and nested rows.
+    return () => tx.update(doc.ref, { ownerUid: null, status: 'expired', expiresAt: Timestamp.now(), lease: null, updatedAt: Timestamp.now() });
   }
   if (stage === 'invitations' && row.tokenHash && row.outboxId) {
     return () => {
