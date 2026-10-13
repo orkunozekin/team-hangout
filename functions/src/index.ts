@@ -21,3 +21,7 @@ export { uploadRosterImport, getRosterImport, resolveRosterImportRow, commitRost
 
 export { uploadScheduleImport, getScheduleImport, resolveScheduleImportRow, commitScheduleImport, refreshScheduleImport } from "./imports/roster";
 export { prepareSchedulePublication, publishScheduleImport } from "./imports/publication";
+
+export { resumeEssentialEmail } from "./email/worker";
+export { getPrivateEventInformation } from "./email/access";
+export { listEssentialEmail, getEssentialEmailPreference, setEssentialEmailPreference } from "./email/commands";

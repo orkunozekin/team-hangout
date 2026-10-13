@@ -13,6 +13,11 @@ import { go, readRoute } from "./route";
 import { InvitationAcceptance, Invitations } from "./Invitations";
 import { invitationTokenFromUrl } from "../../shared/invitations";
 import { CalendarSubscriptions } from "./CalendarSubscriptions";
+import {
+  PrivateEventInformation,
+  EmailPreferences,
+  EmailHelp,
+} from "./EmailInformation";
 import { RosterImports } from "./RosterImports";
 import { Participants } from "./Participants";
 import { Workspace, OrganizationPicker } from "./Workspace";
@@ -102,6 +107,15 @@ export function App({ services }: { services: BrowserServices }) {
             >
               Calendar subscriptions
             </a>
+            <a
+              href="/email-preferences"
+              onClick={(e) => {
+                e.preventDefault();
+                go("/email-preferences");
+              }}
+            >
+              Email preferences
+            </a>
             <button onClick={() => void logout()}>Sign out</button>
           </div>
         )}
@@ -116,7 +130,9 @@ export function App({ services }: { services: BrowserServices }) {
           {error}
         </p>
       )}
-      {!session.ready ? (
+      {location.pathname === "/help" ? (
+        <EmailHelp />
+      ) : !session.ready ? (
         <main>
           <p role="status">Restoring your session…</p>
         </main>
@@ -134,7 +150,16 @@ export function App({ services }: { services: BrowserServices }) {
         <div
           key={`${session.user.uid}:${session.generation}:${path}:${refresh}`}
         >
-          {location.pathname === "/calendar-subscriptions" && !pendingToken ? (
+          {!pendingToken &&
+          /^\/events\/[A-Za-z0-9_-]+$/.test(location.pathname) ? (
+            <PrivateEventInformation
+              services={services}
+              eventId={location.pathname.split("/")[2]}
+            />
+          ) : !pendingToken && location.pathname === "/email-preferences" ? (
+            <EmailPreferences services={services} />
+          ) : location.pathname === "/calendar-subscriptions" &&
+            !pendingToken ? (
             <CalendarSubscriptions services={services} />
           ) : pendingToken ? (
             <InvitationAcceptance

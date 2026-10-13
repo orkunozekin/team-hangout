@@ -141,6 +141,7 @@ export async function resumeDeletion(uid: string, maxPages = 30, auth: AuthClean
       await db.runTransaction(async tx => {
         const job = await tx.get(ref);
         if (job.data()?.status === 'complete') return;
+        tx.delete(db.doc(`users/${uid}/communication/essential`));
         tx.delete(db.doc(`users/${uid}`)); tx.delete(db.doc(`organizationOwners/${uid}`));
         tx.update(ref, { status: 'complete', completedAt: Timestamp.now(), updatedAt: Timestamp.now(), lastError: null });
       });
