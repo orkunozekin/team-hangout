@@ -231,13 +231,14 @@ export function Participants({
   return (
     <main className="page">
       <a
+        className="back-link"
         href={routeUrl(orgId, "team", programId)}
         onClick={(e) => {
           e.preventDefault();
           go(routeUrl(orgId, "team", programId));
         }}
       >
-        ← Back to teams
+        ← Back
       </a>
       <p className="eyebrow">
         {context.organization.name} / Participants and rosters

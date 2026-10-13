@@ -417,9 +417,10 @@ export function Workspace({
               </select>
             </label>
           )}
-          <label className="check">
+          <label className="toggle">
             <input
               type="checkbox"
+              role="switch"
               checked={archived}
               onChange={(e) => setArchived(e.target.checked)}
             />
