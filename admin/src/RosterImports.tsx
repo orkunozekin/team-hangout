@@ -375,7 +375,7 @@ export function RosterImports({
     );
   }
   return (
-    <main className="page roster-imports">
+    <main id="main-content" tabIndex={-1} className="page roster-imports">
       <a href={routeUrl(orgId, "program")}>← Organization workspace</a>
       <p className="eyebrow">Reviewed imports · Template v1</p>
       <h1>{schedule ? "Schedule CSV imports" : "Roster CSV imports"}</h1>
@@ -621,17 +621,17 @@ export function RosterImports({
               >
                 Download outcome CSV
               </button>
-              <div className="table-wrap">
+              <div className="table-wrap" role="region" aria-label="Records table" tabIndex={0}>
                 <table>
                   <thead>
                     <tr>
-                      <th>Row</th>
-                      <th>
+                      <th scope="col">Row</th>
+                      <th scope="col">
                         {schedule ? "Event and local time" : "Participant"}
                       </th>
-                      <th>Team external ID</th>
-                      <th>Review</th>
-                      <th>Resolution / outcome</th>
+                      <th scope="col">Team external ID</th>
+                      <th scope="col">Review</th>
+                      <th scope="col">Resolution / outcome</th>
                     </tr>
                   </thead>
                   <tbody>

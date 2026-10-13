@@ -210,7 +210,7 @@ export function Participants({
   }, [services, orgId, context]);
   if (error)
     return (
-      <main className="page">
+      <main id="main-content" tabIndex={-1} className="page">
         <h1>Participant access unavailable</h1>
         <p role="alert" className="error">
           {error}
@@ -223,13 +223,13 @@ export function Participants({
     );
   if (!context)
     return (
-      <main className="page">
+      <main id="main-content" tabIndex={-1} className="page">
         <p role="status">Authorizing participant workspace…</p>
       </main>
     );
   const callbacks = { onSaved: reload, onDenied: denied };
   return (
-    <main className="page">
+    <main id="main-content" tabIndex={-1} className="page">
       <a
         className="back-link"
         href={routeUrl(orgId, "team", programId)}
@@ -286,14 +286,14 @@ export function Participants({
               {!roster.length ? (
                 <p>No enrolled participants.</p>
               ) : (
-                <div className="table-wrap">
+                <div className="table-wrap" role="region" aria-label="Records table" tabIndex={0}>
                   <table>
                     <thead>
                       <tr>
-                        <th>Participant</th>
-                        <th>Identity</th>
-                        <th>Jersey</th>
-                        <th>Enrollment</th>
+                        <th scope="col">Participant</th>
+                        <th scope="col">Identity</th>
+                        <th scope="col">Jersey</th>
+                        <th scope="col">Enrollment</th>
                       </tr>
                     </thead>
                     <tbody>

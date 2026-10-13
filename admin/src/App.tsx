@@ -81,6 +81,16 @@ export function App({ services }: { services: BrowserServices }) {
   const route = readRoute();
   return (
     <>
+      <a
+        className="skip-link"
+        href="#main-content"
+        onClick={(event) => {
+          event.preventDefault();
+          document.getElementById("main-content")?.focus();
+        }}
+      >
+        Skip to main content
+      </a>
       <header className="topbar">
         <a
           className="brand"
@@ -137,7 +147,7 @@ export function App({ services }: { services: BrowserServices }) {
       {location.pathname === "/help" ? (
         <EmailHelp />
       ) : !session.ready ? (
-        <main>
+        <main id="main-content" tabIndex={-1}>
           <p role="status">Restoring your session…</p>
         </main>
       ) : !session.user ? (
@@ -200,7 +210,7 @@ export function App({ services }: { services: BrowserServices }) {
           ) : location.pathname === "/" ? (
             <OrganizationPicker services={services} />
           ) : (
-            <main>
+            <main id="main-content" tabIndex={-1}>
               <h1>Page not found</h1>
               <a href="/">Choose an organization</a>
             </main>
@@ -246,7 +256,7 @@ function SignIn({
     }
   }
   return (
-    <main className="auth-card">
+    <main id="main-content" tabIndex={-1} className="auth-card">
       <p className="eyebrow">A place for every team</p>
       <h1>Welcome back.</h1>
       <p className="muted">

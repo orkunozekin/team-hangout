@@ -15,11 +15,11 @@ export const colors = {
 
   text: '#1A1A1A',
   textMuted: '#6B6560',
-  textFaint: '#9A938A',
+  textFaint: '#736C64',
 
-  success: '#1E8E5A',
+  success: '#176D45',
   successBg: '#E7F7EE',
-  warning: '#B76E00',
+  warning: '#8A5300',
   warningBg: '#FFF4E0',
   danger: '#C62828',
   dangerBg: '#FDECEA',

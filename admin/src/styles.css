@@ -140,7 +140,7 @@ fieldset {
   font:
     400 13px "DM Sans",
     system-ui;
-  color: #667c70;
+  color: #596e65;
 }
 .account {
   display: flex;
@@ -173,7 +173,7 @@ fieldset {
 .eyebrow {
   text-transform: uppercase;
   letter-spacing: 0.15em;
-  color: #637a6c;
+  color: #526452;
   font-size: 11px;
   font-weight: 700;
   margin: 0 0 18px;
@@ -276,7 +276,7 @@ nav a[aria-current="page"] {
   margin-top: auto;
   padding-top: 60px;
   font-size: 12px;
-  color: #63796a;
+  color: #526452;
 }
 .workspace-main {
   min-width: 0;
@@ -358,7 +358,7 @@ table {
 }
 th {
   font-size: 11px;
-  color: #6c7d70;
+  color: #536558;
   font-weight: 500;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -400,7 +400,7 @@ td strong {
 .empty p {
   max-width: 560px;
   margin: 12px auto 24px;
-  color: #667969;
+  color: #526452;
 }
 .empty-icon {
   display: inline-grid;
@@ -691,3 +691,18 @@ td strong {
 .roster-imports .import-job-id { overflow-wrap: anywhere; }
 .roster-imports label:has(input[type="checkbox"]) { display: flex; flex-direction: row; align-items: center; gap: 12px; min-height: 44px; }
 .roster-imports input[type="checkbox"] { width: 20px; height: 20px; flex: 0 0 20px; }
+
+/* Keep controls readable and operable at enlarged text and phone widths. */
+button, .back-link, nav a { min-height: 44px; }
+button { overflow-wrap: anywhere; }
+.page, .workspace-main, .panel, .auth-card, .account, .brand { overflow-wrap: anywhere; }
+.org-grid { grid-template-columns: repeat(auto-fit, minmax(min(270px, 100%), 1fr)); }
+.table-wrap:focus-visible, .table-scroll:focus-visible { outline: 3px solid #bc741c; outline-offset: 3px; }
+.skip-link { position: fixed; top: 8px; left: 8px; z-index: 100; padding: 12px; background: white; transform: translateY(-150%); }
+.skip-link:focus { transform: none; }
+@media (max-width: 600px) {
+  button, td button { font-size: 1rem; }
+  table, .small, .account { font-size: 0.9rem; }
+  th, .badge { font-size: 0.8rem; }
+  .panel { padding: 18px; }
+}

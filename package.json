@@ -44,6 +44,7 @@
     "typecheck": "tsc --noEmit",
     "test:backend": "npm --prefix functions run build && node scripts/test-backend.mjs",
     "test:contracts": "node --import tsx --test tests/backend/contracts.test.mjs",
-    "test:admin": "yarn --cwd functions build && yarn --cwd admin build --mode emulator && node scripts/test-admin.mjs"
+    "test:admin": "yarn --cwd functions build && yarn --cwd admin build --mode emulator && node scripts/test-admin.mjs",
+    "rehearse:phase1": "npm --prefix functions run build && node scripts/rehearsal/run.mjs"
   }
 }
