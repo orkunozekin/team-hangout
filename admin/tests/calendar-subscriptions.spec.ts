@@ -198,3 +198,42 @@ test("lost issue response replays exact action; hidden tab discards late private
   ).toBeVisible();
   await capture(page, "step11-browser-no-access");
 });
+
+test("discovery fanout failure does not block owner removal", async ({
+  page,
+}) => {
+  await login(page);
+  page.on("dialog", (dialog) => void dialog.accept());
+  await expect(
+    page.getByRole("heading", { name: "Subscription 1", exact: true }),
+  ).toBeVisible();
+  const refs = Array.from({ length: 101 }, (_v, i) =>
+    db.doc(`teamMembers/calendar-overflow-${i}_ui-parent`),
+  );
+  const batch = db.batch();
+  for (const [i, ref] of refs.entries())
+    batch.set(ref, {
+      schemaVersion: 2,
+      teamId: `calendar-overflow-${i}`,
+      userId: "ui-parent",
+      status: "active",
+      roles: ["coach"],
+    });
+  await batch.commit();
+  try {
+    await page.getByRole("button", { name: "Reload subscriptions" }).click();
+    await expect(page.getByRole("alert")).toHaveText(
+      "Unable to load team choices. Saved subscriptions can still be removed.",
+    );
+    await expect(
+      page.getByRole("button", { name: "Remove subscription" }),
+    ).toBeEnabled();
+    await capture(page, "step11-browser-discovery-failed");
+    await page.getByRole("button", { name: "Remove subscription" }).click();
+    await expect(page.getByText("No active subscriptions.")).toBeVisible();
+  } finally {
+    const cleanup = db.batch();
+    for (const ref of refs) cleanup.delete(ref);
+    await cleanup.commit();
+  }
+});

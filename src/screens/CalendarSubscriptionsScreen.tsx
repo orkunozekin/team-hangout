@@ -129,23 +129,41 @@ export default function CalendarSubscriptionsScreen({
     setTeams(null);
     setItems(null);
     setError("");
-    Promise.all([
-      call("calendarSubscriptionOptions", {}),
-      call("listCalendarSubscriptions", {}),
-    ])
-      .then(([options, list]) => {
+    // Owner removal must stay available even when schedule discovery is slow or fails.
+    call("listCalendarSubscriptions", {})
+      .then((list) => {
+        if (active) setItems(list.items);
+      })
+      .catch(() => {
+        if (active)
+          setError((previous) =>
+            [
+              previous,
+              "Unable to load saved subscriptions. Reload to try again.",
+            ]
+              .filter(Boolean)
+              .join(" "),
+          );
+      });
+    call("calendarSubscriptionOptions", {})
+      .then((options) => {
         if (!active) return;
         setTeams(options.teams);
-        setItems(list.items);
         setSelected([]);
         setParticipants([]);
         setNames(false);
       })
       .catch(() => {
-        if (active)
-          setError(
-            "Unable to load subscriptions. Reload to check current access.",
-          );
+        if (!active) return;
+        setTeams([]);
+        setError((previous) =>
+          [
+            previous,
+            "Unable to load team choices. Saved subscriptions can still be removed.",
+          ]
+            .filter(Boolean)
+            .join(" "),
+        );
       });
     return () => {
       active = false;

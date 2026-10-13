@@ -78,3 +78,10 @@
 - **Gap:** Calendar-only reloads cleared events on explicit denial, but a successful response with fewer authorized participants left stale names and profile buttons in surrounding household discovery.
 - **Going forward:** Reconcile related private views after successful canonical refreshes as well as denied reads. Keep discovery refresh generations separate from calendar refresh dependencies to avoid loops, and cancel older responses before loading current scope.
 - **Pointers:** `src/components/HouseholdAgenda.tsx`, `src/screens/HouseholdScreen.tsx`, native calendar/discovery regressions.
+
+### 2026-10-13 — Keep owner cleanup independent of discovery
+
+- **Source:** PR #17 · Greptile
+- **Gap:** Combining saved subscription reads with team discovery hid removal controls when discovery exceeded its fanout limit, despite owner revocation remaining authorized.
+- **Going forward:** Load owner cleanup records independently from optional scope discovery. Test pending and failed discovery while verifying saved records remain visible and removable.
+- **Pointers:** `admin/src/CalendarSubscriptions.tsx`, `src/screens/CalendarSubscriptionsScreen.tsx`, calendar subscription UI regressions.

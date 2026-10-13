@@ -126,3 +126,53 @@ test("late issue response is discarded after leaving management", async () => {
   });
   expect(screen.queryByText("private-late")).toBeNull();
 });
+
+test("saved subscriptions remain removable while discovery is pending or failed", async () => {
+  let rejectOptions: (error: Error) => void = () => {};
+  let removed = false;
+  const saved = {
+    id: "saved",
+    revision: 1,
+    scope: {
+      teamIds: ["team"],
+      participantRefs: [],
+      eventTypes: ["practice"],
+      includeParticipantNames: false,
+    },
+  };
+  (httpsCallable as jest.Mock).mockImplementation(
+    (_f, name) => async (data: any) => {
+      calls.push({ name, data });
+      if (name === "calendarSubscriptionOptions")
+        return new Promise((_resolve, reject) => {
+          rejectOptions = reject;
+        });
+      if (name === "listCalendarSubscriptions")
+        return { data: { items: removed ? [] : [saved] } };
+      if (name === "revokeCalendarSubscription") {
+        removed = true;
+        return { data: { ok: true } };
+      }
+      throw new Error("Unexpected command");
+    },
+  );
+  await render(<CalendarSubscriptionsScreen onBack={() => {}} />);
+  const remove = await screen.findByRole("button", {
+    name: "Remove subscription",
+  });
+  expect(remove.props.accessibilityState.disabled).toBe(false);
+  await act(() => {
+    rejectOptions(new Error("Discovery limit"));
+  });
+  await screen.findByText(
+    "Unable to load team choices. Saved subscriptions can still be removed.",
+  );
+  await fireEvent.press(
+    screen.getByRole("button", { name: "Remove subscription" }),
+  );
+  await screen.findByText("No active subscriptions.");
+  expect(
+    calls.find((c) => c.name === "revokeCalendarSubscription")?.data
+      .subscriptionId,
+  ).toBe("saved");
+});
