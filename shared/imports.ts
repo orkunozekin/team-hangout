@@ -5,6 +5,7 @@ export type ImportJob = {
   seasonId: string;
   status: string;
   previewRevision: number;
+  planRevision: number;
   count: number;
   previewCheckpoint: number;
   checkpoint: number;
@@ -60,6 +61,7 @@ export type ImportCommands = {
       jobId: string;
       number: number;
       previewRevision: number;
+      planRevision: number;
       resolution: "create" | "update" | "skip";
       participantId?: string;
     };
@@ -71,6 +73,7 @@ export type ImportCommands = {
       orgId: string;
       jobId: string;
       previewRevision: number;
+      planRevision: number;
       confirmed: true;
     };
     output: { ok: boolean };

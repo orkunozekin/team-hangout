@@ -53,6 +53,7 @@ const publicJob = (job: Data) =>
       "seasonId",
       "status",
       "previewRevision",
+      "planRevision",
       "count",
       "previewCheckpoint",
       "checkpoint",
@@ -194,6 +195,7 @@ export const uploadRosterImport = onCall(
         policyRevision: 1,
         status: "uploading",
         previewRevision: 1,
+        planRevision: 1,
         count: rows!.length - 1,
         previewCheckpoint: 0,
         checkpoint: 0,
@@ -300,6 +302,9 @@ async function preview(
     db
       .collection("teams")
       .where("orgId", "==", job.orgId)
+      .where("programId", "==", job.programId)
+      .where("seasonId", "==", job.seasonId)
+      .where("status", "==", "active")
       .where("externalId", "==", fields.teamExternalId)
       .limit(2),
   );
@@ -315,15 +320,27 @@ async function preview(
     errors.push(
       "Team external ID must identify one active team in the selected program and season.",
     );
-  if (team)
-    await hierarchy(
-      tx,
-      job.orgId,
-      job.programId,
-      job.seasonId,
-      team.divisionId,
-      true,
-    );
+  if (team) {
+    try {
+      await hierarchy(
+        tx,
+        job.orgId,
+        job.programId,
+        job.seasonId,
+        team.divisionId,
+        true,
+      );
+    } catch (error) {
+      if (
+        !(error instanceof HttpsError) ||
+        !["permission-denied", "failed-precondition"].includes(error.code)
+      )
+        throw error;
+      errors.push(
+        "Team division is unavailable or archived. Skip this row or correct its hierarchy before a new preview.",
+      );
+    }
+  }
   // Names are only review candidates. Never establish identity from a name or email.
   const access = await staffScope(tx, job.orgId, job.ownerUid);
   let matches;
@@ -496,6 +513,7 @@ export const resolveRosterImportRow = command(
       "jobId",
       "number",
       "previewRevision",
+      "planRevision",
       "resolution",
       "participantId",
     ]);
@@ -507,6 +525,7 @@ export const resolveRosterImportRow = command(
       ...identity(data),
       number,
       previewRevision: revision(data.previewRevision),
+      planRevision: revision(data.planRevision),
       resolution: data.resolution,
       participantId:
         data.participantId == null
@@ -520,7 +539,8 @@ export const resolveRosterImportRow = command(
     await scope(tx, job, uid, true);
     if (
       job.status !== "preview" ||
-      job.previewRevision !== payload.previewRevision
+      job.previewRevision !== payload.previewRevision ||
+      job.planRevision !== payload.planRevision
     )
       invalid("Wait for or refresh the current preview.");
     const ref = rowRef(job.id, payload.number),
@@ -566,6 +586,7 @@ export const resolveRosterImportRow = command(
     }
     tx.set(ref, next);
     tx.update(jobRef(job.id), {
+      planRevision: job.planRevision + 1,
       unresolved: job.unresolved + (row.resolution ? 0 : -1),
       previewCreates:
         (job.previewCreates ?? 0) -
@@ -587,12 +608,20 @@ export const resolveRosterImportRow = command(
 export const commitRosterImport = command(
   "commitRosterImport",
   (data) => {
-    keys(data, ["requestId", "orgId", "jobId", "previewRevision", "confirmed"]);
+    keys(data, [
+      "requestId",
+      "orgId",
+      "jobId",
+      "previewRevision",
+      "planRevision",
+      "confirmed",
+    ]);
     if (data.confirmed !== true)
       invalid("Confirm the exact import preview first.");
     return {
       ...identity(data),
       previewRevision: revision(data.previewRevision),
+      planRevision: revision(data.planRevision),
       confirmed: true,
     };
   },
@@ -603,6 +632,7 @@ export const commitRosterImport = command(
     if (
       job.status !== "preview" ||
       job.previewRevision !== payload.previewRevision ||
+      job.planRevision !== payload.planRevision ||
       job.unresolved
     )
       invalid("Resolve every row in the current preview before committing.");
@@ -610,6 +640,7 @@ export const commitRosterImport = command(
       status: "committing",
       confirmedBinding: job.binding,
       confirmedPreviewRevision: job.previewRevision,
+      confirmedPlanRevision: job.planRevision,
       lease: null,
       error: null,
       updatedAt: Timestamp.now(),
@@ -632,6 +663,7 @@ export const refreshRosterImport = command(
     tx.update(jobRef(job.id), {
       status: "previewing",
       previewRevision: job.previewRevision + 1,
+      planRevision: job.planRevision + 1,
       previewCheckpoint: job.checkpoint,
       unresolved: 0,
       previewCreates: 0,
@@ -653,6 +685,7 @@ async function commitRow(tx: Transaction, job: Data, row: Data) {
   if (
     job.confirmedBinding !== job.binding ||
     job.confirmedPreviewRevision !== job.previewRevision ||
+    job.confirmedPlanRevision !== job.planRevision ||
     row.previewRevision !== job.previewRevision
   )
     invalid("Preview binding changed.");
@@ -680,9 +713,24 @@ async function commitRow(tx: Transaction, job: Data, row: Data) {
     before = (await tx.get(ref)).data();
   const rosterRef = db.doc(`teams/${row.teamId}/roster/${row.participantId}`),
     enrollment = (await tx.get(rosterRef)).data();
+  const mutationRef = jobRef(job.id)
+    .collection("mutations")
+    .doc(row.participantId);
+  const previousMutation = (await tx.get(mutationRef)).data();
+  const ownMutation =
+    previousMutation?.previewRevision === job.previewRevision &&
+    previousMutation?.sourceRevision === row.participantRevision
+      ? previousMutation
+      : null;
+  const ownRoster = ownMutation?.rosters?.[row.teamId];
+  const participantRevision = ownMutation?.revision ?? row.participantRevision;
+  const rosterRevision =
+    ownRoster?.sourceRevision === row.rosterRevision
+      ? ownRoster.revision
+      : row.rosterRevision;
   if (
-    (before?.revision ?? 0) !== row.participantRevision ||
-    (enrollment?.revision ?? 0) !== row.rosterRevision ||
+    (before?.revision ?? 0) !== participantRevision ||
+    (enrollment?.revision ?? 0) !== rosterRevision ||
     (before &&
       (before.schemaVersion !== 2 ||
         (before.orgId != null && before.orgId !== job.orgId) ||
@@ -732,7 +780,7 @@ async function commitRow(tx: Transaction, job: Data, row: Data) {
     accessRevision,
     job.ownerUid,
   );
-  const participant = {
+  const participant: Data = {
     ...before,
     ...(access.admin
       ? {
@@ -754,6 +802,18 @@ async function commitRow(tx: Transaction, job: Data, row: Data) {
   await tx.get(ledger); // Fences concurrent jobs through their canonical participant transaction.
   return () => {
     tx.set(ref, participant);
+    tx.set(mutationRef, {
+      previewRevision: job.previewRevision,
+      sourceRevision: row.participantRevision,
+      revision: participant.revision,
+      rosters: {
+        ...(ownMutation?.rosters ?? {}),
+        [row.teamId]: {
+          sourceRevision: row.rosterRevision,
+          revision: (enrollment?.revision ?? 0) + 1,
+        },
+      },
+    });
     projections();
     tx.set(rosterRef, {
       ...enrollment,
@@ -909,16 +969,41 @@ export const resumeRosterImports = onSchedule("every 5 minutes", async () => {
     .get();
   for (const job of jobs.docs) await runRosterImport(job.id);
 });
-export const expireRosterImports = onSchedule("every 24 hours", async () => {
-  const jobs = await getFirestore()
-    .collection("importJobs")
-    .where("expiresAt", "<=", Timestamp.now())
-    .limit(25)
-    .get();
-  for (const snap of jobs.docs) {
-    const job = snap.data();
-    await snap.ref.update({ status: "expired", lease: null });
-    await source(job).delete({ ignoreNotFound: true });
-    await getFirestore().recursiveDelete(snap.ref);
+/** Drain multiple bounded pages; frequent scheduled continuation prevents a daily 25-job bottleneck. */
+export async function cleanupExpiredRosterImports(maxBatches = 20) {
+  const db = getFirestore(),
+    cutoff = Timestamp.now();
+  let removed = 0,
+    failed = 0;
+  for (let page = 0; page < maxBatches; page++) {
+    const jobs = await db
+      .collection("importJobs")
+      .where("expiresAt", "<=", cutoff)
+      .orderBy("expiresAt")
+      .limit(25)
+      .get();
+    if (jobs.empty) break;
+    let pageRemoved = 0;
+    for (const snap of jobs.docs) {
+      try {
+        const job = snap.data();
+        await snap.ref.update({ status: "expired", lease: null });
+        await source(job).delete({ ignoreNotFound: true });
+        await db.recursiveDelete(snap.ref);
+        removed++;
+        pageRemoved++;
+      } catch {
+        failed++;
+      }
+    }
+    // A persistent bucket outage stays retryable without looping on the same failed page.
+    if (!pageRemoved || jobs.size < 25) break;
   }
-});
+  return { removed, failed };
+}
+export const expireRosterImports = onSchedule(
+  { schedule: "every 5 minutes", timeoutSeconds: 540 },
+  async () => {
+    await cleanupExpiredRosterImports();
+  },
+);

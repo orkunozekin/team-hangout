@@ -77,6 +77,7 @@ async function commit(job) {
       orgId,
       jobId: job.id,
       previewRevision: job.previewRevision,
+      planRevision: job.planRevision,
       confirmed: true,
     }),
   );
@@ -288,6 +289,7 @@ test("preview writes no identities, exact duplicate IDs require explicit skip an
         jobId: job.id,
         number,
         previewRevision: 1,
+        planRevision: (await load(job.id)).job.planRevision,
         resolution: "skip",
       }),
     );
@@ -338,6 +340,7 @@ test("normalized same-name identities require explicit match or separate creatio
       jobId: job.id,
       number: 1,
       previewRevision: 1,
+      planRevision: (await load(job.id)).job.planRevision,
       resolution: "create",
     }),
   );
@@ -410,6 +413,7 @@ test("mid-import canonical revocation and deleted account fence worker; restored
     status: "committing",
     confirmedBinding: stored.binding,
     confirmedPreviewRevision: 1,
+    confirmedPlanRevision: stored.planRevision,
   });
   await assert.rejects(load(job.id), { code: "functions/permission-denied" });
   // Service worker uses live owner authority, independently of the callable token.
@@ -476,6 +480,7 @@ test("staff enrollment preserves identity and rejects new or foreign identity cr
       orgId,
       jobId: uploaded.job.id,
       previewRevision: 1,
+      planRevision: preview.job.planRevision,
       confirmed: true,
     }),
     "imports-staff",
@@ -589,6 +594,7 @@ test("completed commit and upload receipts survive archival but recheck revocati
     orgId,
     jobId: job.id,
     previewRevision: preview.job.previewRevision,
+    planRevision: preview.job.planRevision,
     confirmed: true,
   });
   const result = await call("commitRosterImport", confirmed);
@@ -610,4 +616,149 @@ test("completed commit and upload receipts survive archival but recheck revocati
   await db
     .doc(`organizations/${orgId}/seasons/${seasonId}`)
     .update({ status: "active" });
+});
+
+async function resolve(jobId, number, resolution, participantId) {
+  const { job } = await load(jobId);
+  return call(
+    "resolveRosterImportRow",
+    request({
+      orgId,
+      jobId,
+      number,
+      previewRevision: job.previewRevision,
+      planRevision: job.planRevision,
+      resolution,
+      ...(participantId ? { participantId } : {}),
+    }),
+  );
+}
+
+test("another tab changing a resolution invalidates old plan confirmation without writing identities", async () => {
+  const { job } = await upload("plan-fence,Plan fence,youth,U12,,");
+  const initial = await waitFor(job.id, ["preview"]);
+  const staleConfirmation = request({
+    orgId,
+    jobId: job.id,
+    previewRevision: 1,
+    planRevision: initial.job.planRevision,
+    confirmed: true,
+  });
+  await resolve(job.id, 1, "skip");
+  await resolve(job.id, 1, "create");
+  assert.equal(
+    (await load(job.id)).job.planRevision,
+    initial.job.planRevision + 2,
+  );
+  await assert.rejects(call("commitRosterImport", staleConfirmation), {
+    code: "functions/invalid-argument",
+  });
+  assert.equal(
+    (
+      await db
+        .doc(
+          `organizations/${orgId}/participants/${initial.rows[0].participantId}`,
+        )
+        .get()
+    ).exists,
+    false,
+  );
+  assert.equal((await commit((await load(job.id)).job)).job.status, "complete");
+});
+test("team matching scopes season and active status; invalid divisions and foreign-season rows are skippable errors", async () => {
+  const base = (await db.doc(`teams/${teamId}`).get()).data();
+  await db
+    .doc("teams/imports-other-season")
+    .set({ ...base, seasonId: "another-season" });
+  await db
+    .doc("teams/imports-archived-copy")
+    .set({ ...base, status: "archived" });
+  await db
+    .doc("teams/imports-bad-division")
+    .set({ ...base, externalId: "BAD", divisionId: "missing-division" });
+  await db
+    .doc("teams/imports-foreign-only")
+    .set({ ...base, externalId: "FOREIGN", seasonId: "another-season" });
+  const { job } = await upload(
+    "scoped-match,Selected season,youth,U12,,\ninvalid-division,Bad division,youth,BAD,,\nforeign-season,Foreign season,youth,FOREIGN,,",
+  );
+  const preview = await waitFor(job.id, ["preview"]);
+  assert.equal(preview.rows[0].resolution, "create");
+  assert.equal(preview.rows[0].teamId, teamId);
+  assert.equal(preview.job.unresolved, 2);
+  assert.ok(preview.rows[1].errors.some((e) => e.includes("division")));
+  assert.ok(
+    preview.rows[2].errors.some((e) =>
+      e.includes("selected program and season"),
+    ),
+  );
+  for (const number of [2, 3]) await resolve(job.id, number, "skip");
+  const done = await commit((await load(job.id)).job);
+  assert.equal(done.job.created, 1);
+  assert.equal(done.job.skipped, 2);
+});
+test("two explicit matches enroll one participant on two teams in one commit without treating own revision as stale", async () => {
+  const base = (await db.doc(`teams/${teamId}`).get()).data();
+  await db
+    .doc("teams/imports-second-team")
+    .set({ ...base, externalId: "SECOND" });
+  await db
+    .doc(`organizations/${orgId}/participants/imports-multi-enrollment`)
+    .set({
+      ...meta,
+      displayName: "Multi enrollment",
+      kind: "youth",
+      linkedUserId: null,
+    });
+  const { job } = await upload(
+    ",Multi enrollment,youth,U12,,\n,Multi enrollment,youth,SECOND,,",
+  );
+  const preview = await waitFor(job.id, ["preview"]);
+  assert.equal(preview.job.unresolved, 2);
+  for (const number of [1, 2])
+    await resolve(job.id, number, "update", "imports-multi-enrollment");
+  const done = await commit((await load(job.id)).job);
+  assert.equal(done.job.status, "complete");
+  assert.equal(done.job.updated, 2);
+  assert.equal(done.job.checkpoint, 2);
+  for (const team of [teamId, "imports-second-team"])
+    assert.equal(
+      (
+        await db.doc(`teams/${team}/roster/imports-multi-enrollment`).get()
+      ).data().status,
+      "active",
+    );
+  assert.equal(
+    (
+      await db
+        .doc(`organizations/${orgId}/participants/imports-multi-enrollment`)
+        .get()
+    ).data().revision,
+    3,
+  );
+});
+test("retention drains more than one bounded page per run", async () => {
+  const ids = Array.from({ length: 28 }, (_, n) => `imports-expired-bulk-${n}`);
+  const batch = db.batch();
+  for (const id of ids)
+    batch.set(db.doc(`importJobs/${id}`), {
+      id,
+      orgId,
+      status: "preview",
+      ownerUid: "imports-owner",
+      expiresAt: Timestamp.fromMillis(Date.now() - 1000),
+    });
+  await batch.commit();
+  const { getStorage } = require("firebase-admin/storage");
+  const file = getStorage(app)
+    .bucket(`${projectId}.appspot.com`)
+    .file(`imports/${orgId}/${ids[27]}/source.csv`);
+  await file.save("Synthetic expired source");
+  const { cleanupExpiredRosterImports } = require("./lib/imports/roster.js");
+  const result = await cleanupExpiredRosterImports();
+  assert.ok(result.removed >= 28);
+  assert.equal(result.failed, 0);
+  for (const id of ids)
+    assert.equal((await db.doc(`importJobs/${id}`).get()).exists, false);
+  assert.equal((await file.exists())[0], false);
 });

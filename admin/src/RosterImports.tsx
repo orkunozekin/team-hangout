@@ -137,7 +137,7 @@ export function RosterImports({
       });
       if (!mounted.current || current !== generation.current) return;
       if (revoked.current) return;
-      const binding = `${result.job.id}:${result.job.previewRevision}`;
+      const binding = `${result.job.id}:${result.job.previewRevision}:${result.job.planRevision}`;
       if (loadedPreview.current !== binding) {
         setConfirmed(false);
         setInvitation(null);
@@ -248,6 +248,7 @@ export function RosterImports({
       jobId: job.id,
       number: row.number,
       previewRevision: job.previewRevision,
+      planRevision: job.planRevision,
       resolution,
       ...(participantId ? { participantId } : {}),
     };
@@ -659,6 +660,7 @@ export function RosterImports({
                         orgId,
                         jobId: job.id,
                         previewRevision: job.previewRevision,
+                        planRevision: job.planRevision,
                         confirmed: true as const,
                       };
                       void action("Import commit", () =>

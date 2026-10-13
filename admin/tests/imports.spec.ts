@@ -301,3 +301,28 @@ test("focus preserves file mapping, uncertain upload retries same request, and r
     .doc(`organizations/${orgId}/members/${uid}`)
     .update({ status: "active" });
 });
+
+test("another tab changing a saved resolution clears the original confirmation", async ({
+  page,
+  context,
+}) => {
+  await open(page);
+  await upload(page, "tab-plan,Tab confirmation,youth,U12,,");
+  const jobId = await page.getByLabel("Import job ID").inputValue();
+  await page.getByRole("checkbox").check();
+  const second = await context.newPage();
+  await open(second);
+  await second.getByLabel("Import job ID").fill(jobId);
+  await second.getByRole("button", { name: "Open saved import" }).click();
+  await expect(second.getByText(/^preview · Previewed/)).toBeVisible();
+  await second.getByRole("button", { name: "Skip row 1", exact: true }).click();
+  await expect(
+    second.getByText(/Pending plan: create 0, update 0, skip 1/),
+  ).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(page.getByRole("checkbox")).not.toBeChecked();
+  await expect(
+    page.getByRole("button", { name: "Confirm and commit roster" }),
+  ).toBeDisabled();
+  await second.close();
+});

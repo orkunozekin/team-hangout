@@ -181,6 +181,18 @@
           "order": "ASCENDING"
         },
         {
+          "fieldPath": "programId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "seasonId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
           "fieldPath": "externalId",
           "order": "ASCENDING"
         }
