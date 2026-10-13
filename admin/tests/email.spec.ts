@@ -283,3 +283,124 @@ test("staff delivery counts and recovery advice hide recipient addresses and cle
     .doc(`organizations/${orgId}/members/${owner}`)
     .update({ status: "active" });
 });
+
+test("pending preference and original retry survive focus refresh before a delayed save commits", async ({
+  page,
+}) => {
+  await db
+    .doc(`users/${uid}/communication/essential`)
+    .set({ suppressed: false });
+  await page.goto("/email-preferences");
+  await login(page);
+  await expect(page.getByText(/Essential email is allowed/)).toBeVisible();
+  let release!: () => void, entered!: () => void;
+  const gate = new Promise<void>((r) => {
+      release = r;
+    }),
+    waiting = new Promise<void>((r) => {
+      entered = r;
+    });
+  let first = true;
+  const payloads: string[] = [];
+  await page.route("**/setEssentialEmailPreference", async (route) => {
+    payloads.push(route.request().postData() || "");
+    if (first) {
+      first = false;
+      entered();
+      await gate;
+      await route.fetch();
+      await route.abort("failed");
+    } else await route.fulfill({ response: await route.fetch() });
+  });
+  await page
+    .getByRole("button", { name: "Suppress essential email", exact: true })
+    .click();
+  await waiting;
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(page.getByText(/Essential email is allowed/)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Saving…", exact: true }),
+  ).toBeDisabled();
+  expect(payloads.length).toBe(1);
+  release();
+  await expect(
+    page.getByRole("button", { name: "Retry same action", exact: true }),
+  ).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(page.getByText(/Essential email is suppressed/)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Allow essential email", exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Retry same action", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Allow essential email", exact: true }),
+  ).toBeVisible();
+  expect(payloads.length).toBe(2);
+  expect(payloads[0]).toBe(payloads[1]);
+  await page
+    .getByRole("button", { name: "Allow essential email", exact: true })
+    .click();
+  await expect(page.getByText(/Essential email is allowed/)).toBeVisible();
+  expect(
+    (await db.doc(`users/${uid}/communication/essential`).get()).data()
+      .suppressed,
+  ).toBe(false);
+});
+
+test("delivery report limits and network failures show safe recovery guidance rather than lockout", async ({
+  page,
+}) => {
+  await page.goto(`/organizations/${orgId}/invitation`);
+  await login(page, owner);
+  await expect(
+    page.getByText("2 failed · 1 pending", { exact: true }),
+  ).toBeVisible();
+  await page.route("**/listEssentialEmail", async (route) =>
+    route.abort("failed"),
+  );
+  await page
+    .getByRole("button", { name: "Reload email delivery", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Check your connection and try again",
+  );
+  await expect(page.getByText(/Sign in with the invited account/)).toHaveCount(
+    0,
+  );
+  await page.unroute("**/listEssentialEmail");
+  let next = 0;
+  await page.route("**/listEssentialEmail", async (route) => {
+    const items = Array.from({ length: 50 }, () => ({
+      id: `bounded-${++next}`,
+      kind: "publishedEvent",
+      status: "sent",
+      attemptCount: 1,
+      failureCode: null,
+      nextAttemptAt: null,
+    }));
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ result: { items, nextCursor: `cursor-${next}` } }),
+    });
+  });
+  await page
+    .getByRole("button", { name: "Reload email delivery", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toContainText("exceeds 1,000 messages");
+  await expect(page.getByText(/Sign in with the invited account/)).toHaveCount(
+    0,
+  );
+  await expect(
+    page.getByText("Transport accepted", { exact: true }),
+  ).toHaveCount(0);
+  await page.unroute("**/listEssentialEmail");
+  await page
+    .getByRole("button", { name: "Reload email delivery", exact: true })
+    .click();
+  await expect(
+    page.getByText("2 failed · 1 pending", { exact: true }),
+  ).toBeVisible();
+});

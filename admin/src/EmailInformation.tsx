@@ -2,6 +2,21 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { PrivateEvent, EmailDelivery } from "../../shared/email";
 import type { BrowserServices } from "./firebase";
 import { Mutation } from "./Mutation";
+import { errorCode } from "./errors";
+class ReportLimitError extends Error {}
+function privateReadError(error: unknown) {
+  if (error instanceof ReportLimitError)
+    return "The delivery report exceeds 1,000 messages. Ask support for a narrower delivery report.";
+  if (
+    ["functions/permission-denied", "functions/unauthenticated"].includes(
+      errorCode(error),
+    )
+  )
+    return "Access unavailable. Sign in with the invited account or contact your organization.";
+  if (errorCode(error) === "functions/resource-exhausted")
+    return "This information exceeds the supported scope. Ask your organization for a narrower report.";
+  return "Unable to load current information. Check your connection and try again.";
+}
 
 function usePrivateRead<T>(load: () => Promise<T>) {
   const [value, setValue] = useState<T | null>(null),
@@ -18,11 +33,9 @@ function usePrivateRead<T>(load: () => Promise<T>) {
         .then((v) => {
           if (alive && request === generation.current) setValue(v);
         })
-        .catch(() => {
+        .catch((error) => {
           if (alive && request === generation.current)
-            setError(
-              "Access unavailable. Sign in with the invited account or contact your organization.",
-            );
+            setError(privateReadError(error));
         });
     };
     refresh();
@@ -35,7 +48,14 @@ function usePrivateRead<T>(load: () => Promise<T>) {
       document.removeEventListener("visibilitychange", refresh);
     };
   }, [load]);
-  return { value, error };
+  return {
+    value,
+    error,
+    clear: () => {
+      generation.current++;
+      setValue(null);
+    },
+  };
 }
 export function PrivateEventInformation({
   services,
@@ -91,12 +111,18 @@ export function PrivateEventInformation({
   );
 }
 export function EmailPreferences({ services }: { services: BrowserServices }) {
-  const [version, setVersion] = useState(0);
+  const [version, setVersion] = useState(0),
+    [mutationEpoch, setMutationEpoch] = useState(0);
   const load = useCallback(
     () => services.call("getEssentialEmailPreference", {}),
     [services, version],
   );
-  const { value, error } = usePrivateRead(load);
+  const { value, error, clear } = usePrivateRead(load);
+  const settled = () => {
+    clear();
+    setMutationEpoch((n) => n + 1);
+    setVersion((n) => n + 1);
+  };
   return (
     <main className="auth-card">
       <h1>Essential email preferences</h1>
@@ -112,29 +138,32 @@ export function EmailPreferences({ services }: { services: BrowserServices }) {
       {error && <p role="alert">{error}</p>}
       {!value && !error && <p role="status">Loading preference…</p>}
       {value && (
-        <>
-          <p role="status">
-            Essential email is {value.suppressed ? "suppressed" : "allowed"}.
-          </p>
-          <Mutation
-            label={
-              value.suppressed
+        <p role="status">
+          Essential email is {value.suppressed ? "suppressed" : "allowed"}.
+        </p>
+      )}
+      {/* Keep the original request and retry mounted while private reads clear on focus or visibility changes. */}
+      <fieldset disabled={!value}>
+        <Mutation
+          key={mutationEpoch}
+          label={
+            value
+              ? value.suppressed
                 ? "Allow essential email"
                 : "Suppress essential email"
-            }
-            onSaved={() => setVersion((v) => v + 1)}
-            onDenied={() => setVersion((v) => v + 1)}
-            action={() => {
-              const payload = {
-                requestId: crypto.randomUUID(),
-                suppressed: !value.suppressed,
-              };
-              return () =>
-                services.call("setEssentialEmailPreference", payload);
-            }}
-          />
-        </>
-      )}
+              : "Change essential email preference"
+          }
+          onSaved={settled}
+          onDenied={settled}
+          action={() => {
+            const payload = {
+              requestId: crypto.randomUUID(),
+              suppressed: !value!.suppressed,
+            };
+            return () => services.call("setEssentialEmailPreference", payload);
+          }}
+        />
+      </fieldset>
       <a href="/help">Get help</a>
     </main>
   );
@@ -157,8 +186,7 @@ export function EmailDeliveryStatus({
       });
       items.push(...page.items);
       cursor = page.nextCursor || undefined;
-      if (items.length >= 1000 && cursor)
-        throw new Error("Narrow the delivery report through support.");
+      if (items.length >= 1000 && cursor) throw new ReportLimitError();
     } while (cursor);
     return items;
   }, [services, orgId, version]);

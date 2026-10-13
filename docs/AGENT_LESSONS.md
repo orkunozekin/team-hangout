@@ -113,3 +113,10 @@
 - **Gap:** A lease checked before a long canonical authorization read could expire or be cancelled before the external transport was invoked.
 - **Going forward:** Recheck the owned lease and deadline after preparation and renew it immediately before dispatch. A lost lease must send nothing; unknown errors after invocation terminate as ambiguous rather than automatically retry.
 - **Pointers:** `functions/src/email/worker.ts`, `tests/backend/email.test.mjs`.
+
+### 2026-10-13 — Preserve pending mutations across private refreshes
+
+- **Source:** PR #21 · Greptile
+- **Gap:** Clearing private read data on focus unmounted the preference mutation and discarded its original pending/retry request. All read failures also looked like access loss, hiding useful report-limit and network recovery guidance.
+- **Going forward:** Keep pending mutation state mounted independently from refreshed read values; block new choices until the original request settles and clear stale read values before reopening controls. Classify denied access separately from local report limits and temporary errors without exposing raw provider text. Test delayed pre-commit saves through refresh, uncertain replay, subsequent choices, report limits and recovery.
+- **Pointers:** `admin/src/EmailInformation.tsx`, `admin/tests/email.spec.ts`.
