@@ -10,6 +10,23 @@ import {
 import HouseholdScreen from "../HouseholdScreen";
 import { httpsCallable } from "firebase/functions";
 import { runCommand } from "../../firebase/commands";
+let mockAgendaRefreshed: (() => void) | undefined;
+let mockAgendaDenied: (() => void) | undefined;
+jest.mock(
+  "../../components/HouseholdAgenda",
+  () =>
+    ({
+      onAccessDenied,
+      onAccessRefreshed,
+    }: {
+      onAccessDenied: () => void;
+      onAccessRefreshed: () => void;
+    }) => {
+      mockAgendaDenied = onAccessDenied;
+      mockAgendaRefreshed = onAccessRefreshed;
+      return null;
+    },
+);
 let mockBlur: (() => void) | undefined;
 jest.mock("@react-navigation/native", () => ({
   useFocusEffect: (effect: () => () => void) =>
@@ -38,6 +55,9 @@ let revoked = false;
 beforeEach(() => {
   jest.clearAllMocks();
   revoked = false;
+  jest
+    .spyOn(AppState, "addEventListener")
+    .mockReturnValue({ remove: jest.fn() });
   (httpsCallable as jest.Mock).mockImplementation(
     (_functions, name) => async (input: any) => {
       if (name === "listMyParticipants")
@@ -136,4 +156,42 @@ test("foregrounding while on Teams does not reload the hidden household", async 
   expect((httpsCallable as jest.Mock).mock.calls.length).toBe(before);
   expect(screen.queryByText("Jamie")).toBeNull();
   listener.mockRestore();
+});
+
+test("agenda authorization loss also clears previously loaded participant labels", async () => {
+  await render(<HouseholdScreen user={user} onTeams={jest.fn()} />);
+  await screen.findByText("Jamie");
+  await act(async () => mockAgendaDenied?.());
+  await screen.findByText(
+    "Household access changed. Reload your household to confirm current permissions.",
+  );
+  expect(screen.queryByText("Jamie")).toBeNull();
+  expect(screen.queryByText("Casey")).toBeNull();
+});
+
+test("delayed participant discovery cannot repopulate household after agenda denial", async () => {
+  let finish: (value: unknown) => void = () => {};
+  (httpsCallable as jest.Mock).mockImplementation(
+    () => () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await render(<HouseholdScreen user={user} onTeams={jest.fn()} />);
+  await act(async () => mockAgendaDenied?.());
+  await act(async () =>
+    finish({ data: { items: children, nextCursor: null } }),
+  );
+  expect(screen.queryByText("Jamie")).toBeNull();
+  expect(screen.queryByText("Casey")).toBeNull();
+});
+
+test("successful calendar refresh reauthorizes participant discovery after an individual grant is revoked", async () => {
+  await render(<HouseholdScreen user={user} onTeams={jest.fn()} />);
+  await screen.findByText("Jamie");
+  revoked = true;
+  await act(async () => mockAgendaRefreshed?.());
+  await screen.findByText("Casey");
+  expect(screen.queryByText("Jamie")).toBeNull();
+  expect(screen.queryByLabelText("View Jamie, guardian access")).toBeNull();
 });

@@ -1,3 +1,4 @@
+import HouseholdAgenda from "../components/HouseholdAgenda";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -67,9 +68,11 @@ export default function HouseholdScreen({
   user: User;
   onTeams: () => void;
 }) {
+  const householdGeneration = useRef(0);
   const [items, setItems] = useState<HouseholdParticipant[] | null>(null);
   const [selected, setSelected] = useState<HouseholdParticipant | null>(null);
   const [version, setVersion] = useState(0);
+  const [discoveryVersion, setDiscoveryVersion] = useState(0);
   const [focused, setFocused] = useState(false);
   const [appActive, setAppActive] = useState(
     AppState.currentState !== "background" &&
@@ -81,6 +84,7 @@ export default function HouseholdScreen({
       setFocused(true);
       setVersion((n) => n + 1);
       return () => {
+        householdGeneration.current++;
         setFocused(false);
         setSelected(null);
         setItems(null);
@@ -89,6 +93,7 @@ export default function HouseholdScreen({
   );
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
+      householdGeneration.current++;
       setSelected(null);
       setItems(null);
       setAppActive(state === "active");
@@ -99,6 +104,7 @@ export default function HouseholdScreen({
   useEffect(() => {
     if (!focused || !appActive) return;
     let active = true;
+    const generation = ++householdGeneration.current;
     setItems(null);
     async function load() {
       const rows: HouseholdParticipant[] = [];
@@ -116,16 +122,18 @@ export default function HouseholdScreen({
         rows.push(...result.items);
         cursor = result.nextCursor || undefined;
       } while (cursor);
-      if (active) setItems(rows);
+      if (active && generation === householdGeneration.current) setItems(rows);
     }
     void load().catch((e) => {
-      if (active) setError(errorMessage(e));
+      if (active && generation === householdGeneration.current)
+        setError(errorMessage(e));
     });
     return () => {
       active = false;
     };
-  }, [user.uid, version, focused, appActive]);
+  }, [user.uid, version, discoveryVersion, focused, appActive]);
   function reload() {
+    householdGeneration.current++;
     setSelected(null);
     setError("");
     setVersion((n) => n + 1);
@@ -161,6 +169,26 @@ export default function HouseholdScreen({
           />
         ) : (
           <>
+            {focused && appActive ? (
+              <HouseholdAgenda
+                key={user.uid}
+                refresh={version}
+                onAccessRefreshed={() => {
+                  householdGeneration.current++;
+                  setItems(null);
+                  setError("");
+                  setDiscoveryVersion((n) => n + 1);
+                }}
+                onAccessDenied={() => {
+                  householdGeneration.current++;
+                  setSelected(null);
+                  setItems(null);
+                  setError(
+                    "Household access changed. Reload your household to confirm current permissions.",
+                  );
+                }}
+              />
+            ) : null}
             <Text style={styles.heading}>Your participants</Text>
             <Text style={styles.copy}>
               Choose who you are acting for. Team roles stay separate.

@@ -71,3 +71,10 @@
 - **Gap:** Reopening a menu focused a disabled action, and fixed popover coordinates outlived their viewport size.
 - **Going forward:** Focus the first enabled action on open, close or reposition menus on viewport changes, and exercise reopen-during-request behavior alongside safe retry.
 - **Pointers:** `admin/src/InvitationActions.tsx`, `admin/tests/invitations.spec.ts`.
+
+### 2026-10-12 — Successful reads can reveal revoked scope
+
+- **Source:** PR #16 · Greptile
+- **Gap:** Calendar-only reloads cleared events on explicit denial, but a successful response with fewer authorized participants left stale names and profile buttons in surrounding household discovery.
+- **Going forward:** Reconcile related private views after successful canonical refreshes as well as denied reads. Keep discovery refresh generations separate from calendar refresh dependencies to avoid loops, and cancel older responses before loading current scope.
+- **Pointers:** `src/components/HouseholdAgenda.tsx`, `src/screens/HouseholdScreen.tsx`, native calendar/discovery regressions.
