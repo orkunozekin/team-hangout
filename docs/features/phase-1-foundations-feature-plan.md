@@ -5,9 +5,9 @@
 | Field | Value |
 | --- | --- |
 | Status | in-progress |
-| Last updated | 2026-10-12 |
-| Implementation | Steps 1–10 and invitation refinements merged, verified against remote main at `fe06186`. Step 11 private calendar subscriptions implemented on `codex/phase-1-calendar-subscriptions`; PR publication/review is pending. Real iOS subscription and hosted Google/Outlook refresh verification remain external acceptance gates. Steps 12–15 remain incomplete. |
-| Related PR | Step 9 [PR #14](https://github.com/orkunozekin/team-hangout/pull/14) and invitation refinement [PR #15](https://github.com/orkunozekin/team-hangout/pull/15) merged. Step 10 [PR #16](https://github.com/orkunozekin/team-hangout/pull/16) merged. Step 11 branch `codex/phase-1-calendar-subscriptions`, PR pending. |
+| Last updated | 2026-10-13 |
+| Implementation | Steps 1–10 and invitation refinements merged, verified against remote main at `fe06186`. Step 11 private calendar subscriptions implemented on `codex/phase-1-calendar-subscriptions`; [PR #17](https://github.com/orkunozekin/team-hangout/pull/17) is open with CI and Greptile review running. Real iOS subscription and hosted Google/Outlook refresh verification remain external acceptance gates. Steps 12–15 remain incomplete. |
+| Related PR | Step 9 [PR #14](https://github.com/orkunozekin/team-hangout/pull/14) and invitation refinement [PR #15](https://github.com/orkunozekin/team-hangout/pull/15) merged. Step 10 [PR #16](https://github.com/orkunozekin/team-hangout/pull/16) merged. Step 11 [PR #17](https://github.com/orkunozekin/team-hangout/pull/17), branch `codex/phase-1-calendar-subscriptions`, open for review. |
 | Product approval | Phase 1 capabilities approved; technical choices below are implementation defaults, not deployed behavior. |
 | Commercial approval | **Business model selection pending.** No prices, fees, ads, or entitlement restrictions are enabled by this plan. |
 
@@ -422,12 +422,12 @@ Proposed, uncreated locations: `shared/` contracts, `admin/` browser application
 
 - Step 10 PR #16 is now merged in remote main (`fe06186`); earlier open/re-review-pending notes are superseded.
 - Step 11 implements standards-based private ICS feeds for calendar clients offering URL subscriptions, with SHA-256 bearer storage, metadata-only command receipts, exact immutable scope, live canonical authorization, create/list/rotate/revoke, opt-in names and private cache headers without ETags. Native and household-accessible browser management explain provider access, refresh delays and local calendar removal. No new teams/participants silently broaden saved scope. Deployment flags, public HTTPS configuration, stable UID domain and infrastructure URL-log redaction are staging gates.
-- Step 11 validation: all 84 backend emulator tests and 115 native tests pass, including 500-event failure without partial content, direct-access denial, stable UID/revision, escaping/folding, permission/account loss and retry identity. Functions build, native typecheck and browser builds pass. Browser end-to-end tests cover actual callable/HTTP flows, hidden-tab races, lost responses, account switch and mobile layout. Inspected native captures cover selection, confirmation, active scope and removal; browser captures cover empty, active, revoked, retry, mobile and lost access. Captures remain outside source in the chat's `step11/` evidence directory.
+- Step 11 validation: all 84 backend emulator tests and 115 native tests pass, including 500-event failure without partial content, direct-access denial, stable UID/revision, escaping/folding, permission/account loss and retry identity. Functions build, native typecheck and browser builds pass. All 11 browser end-to-end scenarios pass, covering actual callable/HTTP flows, hidden-tab races, lost responses, account switch and mobile layout. Inspected native captures cover selection, confirmation, active scope and removal; browser captures cover empty, active, revoked, retry, mobile and lost access. Captures remain outside source in the chat's `step11/` evidence directory.
 - Step 11 client observations: macOS Calendar completed an On My Mac subscription and manual refresh updated an existing UID without duplication. Default refresh was weekly; five-minute refresh was selected but not timed. Server revocation returns generic 404 without event data; Calendar retained its cached event, then the synthetic local subscription was removed. iOS 26.5 parsed the feed and previewed the correct event/time, but inaccessible final confirmation and failed coordinate control (`noWindowsAvailable`) blocked completed subscription/refresh verification. Google/Outlook hosted fetches require an approved public HTTPS endpoint. Compatibility with every calendar application is not claimed; no production endpoint or flags were changed.
 
 ### Remaining work
 
-1. Finish Step 11 PR publication, screenshot attachments and AI review. User authorizes squash merge after Greptile 5/5 and all checks pass.
+1. Finish Step 11 PR #17 screenshot attachments and AI review; subscription is verified as SUBSCRIBED. User authorizes squash merge after Greptile 5/5 and all checks pass.
 2. Complete real iOS subscription and hosted Google/Outlook refresh verification against approved HTTPS staging before exposure.
 3. Next implementation invocation is Step 12 only: roster CSV preview and resumable commit. Steps 12–15 remain incomplete; no live rollout, mail delivery or migration has run.
 
