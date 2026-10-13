@@ -706,3 +706,6 @@ button { overflow-wrap: anywhere; }
   th, .badge { font-size: 0.8rem; }
   .panel { padding: 18px; }
 }
+
+.table-wrap table, .table-scroll table { min-width: 560px; overflow-wrap: normal; }
+.badge, td button { white-space: nowrap; }

@@ -185,6 +185,7 @@ test("introduced browser screens reflow at 200 percent and preserve phone action
     await page.goto(`/organizations/${orgId}/${section}`);
     await expect(page.getByRole("main")).toBeVisible();
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: /Loading|Authorizing/ })).toHaveCount(0);
     await page.evaluate(() => {
       document.documentElement.style.zoom = "2";
     });
