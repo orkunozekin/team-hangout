@@ -29,6 +29,9 @@ async function capture(page: Page, name: string) {
   await page.screenshot({
     path: path.join(process.env.ADMIN_EVIDENCE_DIR, name + ".png"),
     fullPage: (page.viewportSize()?.width || 1440) > 500,
+    ...((page.viewportSize()?.width || 1440) <= 500
+      ? { clip: { x: 0, y: 0, width: 390, height: 740 } }
+      : {}),
   });
 }
 async function login(page: Page, id = uid) {
@@ -60,17 +63,15 @@ test.beforeAll(async () => {
     createdBy: owner,
     updatedBy: owner,
   };
-  await db
-    .doc(`organizations/${orgId}`)
-    .set({
-      ...meta,
-      name: "Cedar Park Athletics",
-      features: {
-        households: true,
-        organizationV2: true,
-        adminWorkspace: true,
-      },
-    });
+  await db.doc(`organizations/${orgId}`).set({
+    ...meta,
+    name: "Cedar Park Athletics",
+    features: {
+      households: true,
+      organizationV2: true,
+      adminWorkspace: true,
+    },
+  });
   await db
     .doc(`organizations/${orgId}/members/${owner}`)
     .set({ ...meta, roles: ["orgAdmin"], programIds: [] });
@@ -80,31 +81,25 @@ test.beforeAll(async () => {
   await db
     .doc(`organizations/${orgId}/seasons/email-season`)
     .set({ ...meta, programId: "email-program", name: "Fall 2026" });
-  await db
-    .doc(`organizations/${orgId}/divisions/email-division`)
-    .set({
-      ...meta,
-      programId: "email-program",
-      seasonId: "email-season",
-      name: "U12",
-    });
-  await db
-    .doc("teams/browser-email-team")
-    .set({
-      ...meta,
-      programId: "email-program",
-      seasonId: "email-season",
-      divisionId: "email-division",
-      name: "Falcons",
-    });
-  await db
-    .doc(`organizations/${orgId}/participants/email-child`)
-    .set({
-      ...meta,
-      displayName: "Private child",
-      kind: "youth",
-      linkedUserId: null,
-    });
+  await db.doc(`organizations/${orgId}/divisions/email-division`).set({
+    ...meta,
+    programId: "email-program",
+    seasonId: "email-season",
+    name: "U12",
+  });
+  await db.doc("teams/browser-email-team").set({
+    ...meta,
+    programId: "email-program",
+    seasonId: "email-season",
+    divisionId: "email-division",
+    name: "Falcons",
+  });
+  await db.doc(`organizations/${orgId}/participants/email-child`).set({
+    ...meta,
+    displayName: "Private child",
+    kind: "youth",
+    linkedUserId: null,
+  });
   await db
     .doc(`organizations/${orgId}/participants/email-child/guardians/${uid}`)
     .set({
@@ -116,26 +111,24 @@ test.beforeAll(async () => {
   await db
     .doc("teams/browser-email-team/roster/email-child")
     .set({ ...meta, participantId: "email-child" });
-  await db
-    .doc("events/browser-email-event")
-    .set({
-      ...meta,
-      programId: "email-program",
-      seasonId: "email-season",
-      divisionId: "email-division",
-      teamId: "browser-email-team",
-      teamIds: ["browser-email-team"],
-      title: "Evening practice",
-      type: "practice",
-      startsAt: Timestamp.fromDate(new Date("2026-10-20T22:00:00Z")),
-      endsAt: Timestamp.fromDate(new Date("2026-10-20T23:00:00Z")),
-      timeZone: "America/Chicago",
-      location: { name: "Cedar Park field", address: "123 Example Lane" },
-      status: "scheduled",
-      publicationState: "published",
-      publicationOperationId: null,
-      deletedAt: null,
-    });
+  await db.doc("events/browser-email-event").set({
+    ...meta,
+    programId: "email-program",
+    seasonId: "email-season",
+    divisionId: "email-division",
+    teamId: "browser-email-team",
+    teamIds: ["browser-email-team"],
+    title: "Evening practice",
+    type: "practice",
+    startsAt: Timestamp.fromDate(new Date("2026-10-20T22:00:00Z")),
+    endsAt: Timestamp.fromDate(new Date("2026-10-20T23:00:00Z")),
+    timeZone: "America/Chicago",
+    location: { name: "Cedar Park field", address: "123 Example Lane" },
+    status: "scheduled",
+    publicationState: "published",
+    publicationOperationId: null,
+    deletedAt: null,
+  });
   for (const [id, status, failureCode, attemptCount] of [
     ["one", "failed", "AMBIGUOUS", 1],
     ["two", "failed", "BOUNCE", 1],
@@ -143,15 +136,13 @@ test.beforeAll(async () => {
     ["four", "sent", null, 1],
     ["five", "cancelled", "SUPPRESSED_OR_STALE", 1],
   ])
-    await db
-      .doc(`emailOutbox/browser-email-${id}`)
-      .set({
-        orgId,
-        kind: "publishedEvent",
-        status,
-        failureCode,
-        attemptCount,
-      });
+    await db.doc(`emailOutbox/browser-email-${id}`).set({
+      orgId,
+      kind: "publishedEvent",
+      status,
+      failureCode,
+      attemptCount,
+    });
 });
 test.afterAll(async () => deleteApp(app));
 test("private event requires sign-in and clears content on revoked access, including delayed response races", async ({
