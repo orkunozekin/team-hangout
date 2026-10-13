@@ -709,3 +709,5 @@ button { overflow-wrap: anywhere; }
 
 .table-wrap table, .table-scroll table { min-width: 560px; overflow-wrap: normal; }
 .badge, td button { white-space: nowrap; }
+
+.table-wrap, .table-scroll { position: relative; width: 100%; max-width: 100%; min-width: 0; }
