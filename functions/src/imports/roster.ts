@@ -28,7 +28,15 @@ import {
   projectionSources,
   readCommand,
 } from "../participants/policy";
-import { parseCsv, columns, MAX_BYTES } from "./csv";
+import { parseCsv, columns as rosterColumns, MAX_BYTES } from "./csv";
+import { scheduleColumns } from "./scheduleColumns";
+import {
+  previewScheduleRow,
+  commitScheduleRow,
+  resolveScheduleRow,
+  sourceScheduleOverlaps,
+} from "./schedule";
+type ImportKind = "roster" | "schedule";
 
 const retentionDays = Number(process.env.IMPORT_RETENTION_DAYS || "7");
 const hash = (value: string | Buffer) =>
@@ -95,13 +103,15 @@ async function owned(
   payload: Data,
   uid: string,
   writing = false,
+  kind: ImportKind = "roster",
 ) {
   const job = (await tx.get(jobRef(payload.jobId))).data();
-  if (!job || job.orgId !== payload.orgId) denied();
+  if (!job || job.orgId !== payload.orgId || job.kind !== kind) denied();
   await scope(tx, job, uid, writing);
   return job;
 }
-function mappingFor(rows: string[][], raw: unknown) {
+function mappingFor(rows: string[][], raw: unknown, kind: ImportKind) {
+  const columns = kind === "schedule" ? scheduleColumns : rosterColumns;
   const mapping = object(raw);
   keys(mapping, columns);
   for (const key of columns) {
@@ -113,7 +123,17 @@ function mappingFor(rows: string[][], raw: unknown) {
     )
       invalid(`Choose a CSV header of at most 200 characters for ${key}.`);
   }
-  for (const key of ["participantName", "kind", "teamExternalId"])
+  for (const key of kind === "schedule"
+    ? [
+        "teamExternalId",
+        "eventType",
+        "title",
+        "localDate",
+        "localStartTime",
+        "localEndTime",
+        "timeZone",
+      ]
+    : ["participantName", "kind", "teamExternalId"])
     if (!mapping[key]) invalid(`Map ${key} before previewing.`);
   const selected = Object.values(mapping).filter(Boolean);
   if (new Set(selected).size !== selected.length)
@@ -121,9 +141,8 @@ function mappingFor(rows: string[][], raw: unknown) {
   return Object.fromEntries(columns.map((k) => [k, mapping[k] ?? null]));
 }
 /** Authenticated server upload avoids public download tokens and independently parses exact bytes. */
-export const uploadRosterImport = onCall(
-  { timeoutSeconds: 120, memory: "512MiB" },
-  async (request) => {
+function uploadImport(kind: ImportKind) {
+  return onCall({ timeoutSeconds: 120, memory: "512MiB" }, async (request) => {
     const uid = request.auth?.uid;
     if (!uid) throw new HttpsError("unauthenticated", "Sign in to continue.");
     const data = object(request.data);
@@ -136,7 +155,7 @@ export const uploadRosterImport = onCall(
       "mapping",
       "templateVersion",
     ]);
-    if (data.templateVersion !== 1) invalid("Use roster template version 1.");
+    if (data.templateVersion !== 1) invalid(`Use ${kind} template version 1.`);
     if (
       !Number.isInteger(retentionDays) ||
       retentionDays < 1 ||
@@ -163,14 +182,19 @@ export const uploadRosterImport = onCall(
     } catch (e) {
       invalid((e as Error).message);
     }
-    const mapping = mappingFor(rows!, data.mapping);
+    const mapping = mappingFor(rows!, data.mapping, kind);
     const orgId = id(data.orgId, "orgId"),
       programId = id(data.programId, "programId"),
       seasonId = id(data.seasonId, "seasonId");
-    const jobId = hash(`${uid}:${orgId}:${requestId}`),
+    const jobId = hash(
+        kind === "roster"
+          ? `${uid}:${orgId}:${requestId}`
+          : `${uid}:${orgId}:${kind}:${requestId}`,
+      ),
       checksum = hash(bytes);
     const binding = hash(
       JSON.stringify({
+        ...(kind === "schedule" ? { kind } : {}),
         checksum,
         mapping,
         programId,
@@ -189,7 +213,7 @@ export const uploadRosterImport = onCall(
         programId,
         seasonId,
         ownerUid: uid,
-        kind: "roster",
+        kind,
         templateVersion: 1,
         fileChecksum: checksum,
         mapping,
@@ -250,8 +274,10 @@ export const uploadRosterImport = onCall(
       });
     }
     return wire({ job: publicJob(job) });
-  },
-);
+  });
+}
+export const uploadRosterImport = uploadImport("roster");
+export const uploadScheduleImport = uploadImport("schedule");
 
 async function preview(
   tx: Transaction,
@@ -262,7 +288,7 @@ async function preview(
   number: number,
 ) {
   const fields: Data = Object.fromEntries(
-    columns.map((k) => [
+    rosterColumns.map((k) => [
       k,
       job.mapping[k] ? raw[header.indexOf(job.mapping[k])].trim() : "",
     ]),
@@ -485,205 +511,226 @@ function duplicateKeys(rows: string[][], mapping: Data): Set<string> {
   }
   return repeated;
 }
-export const getRosterImport = readCommand(
-  (data) => {
-    keys(data, ["orgId", "jobId", "offset"]);
-    const offset = data.offset ?? 0;
-    if (!Number.isSafeInteger(offset) || offset < 0 || offset > 5000)
-      invalid("Invalid page offset.");
-    return { ...identity(data), offset };
-  },
-  async (tx, payload, uid) => {
-    const job = await owned(tx, payload, uid);
-    const rows = await tx.get(
-      jobRef(job.id)
-        .collection("rows")
-        .orderBy("number")
-        .startAt(payload.offset + 1)
-        .limit(50),
-    );
-    return {
-      job: publicJob(job),
-      rows: rows.docs.map((d) => d.data()),
-      nextOffset:
-        payload.offset + rows.size < job.previewCheckpoint
-          ? payload.offset + rows.size
-          : null,
-    };
-  },
-);
-export const resolveRosterImportRow = command(
-  "resolveRosterImportRow",
-  (data) => {
-    keys(data, [
-      "requestId",
-      "orgId",
-      "jobId",
-      "number",
-      "previewRevision",
-      "planRevision",
-      "resolution",
-      "participantId",
-    ]);
-    const number = revision(data.number);
-    if (number < 1 || number > 5000) invalid("Invalid row number.");
-    if (!["create", "update", "skip"].includes(data.resolution))
-      invalid("Choose create, match or skip.");
-    return {
-      ...identity(data),
-      number,
-      previewRevision: revision(data.previewRevision),
-      planRevision: revision(data.planRevision),
-      resolution: data.resolution,
-      participantId:
-        data.participantId == null
-          ? null
-          : id(data.participantId, "participantId"),
-    };
-  },
-  async (tx, payload, uid, _actor, replay) => {
-    const job = await owned(tx, payload, uid);
-    if (replay) return replay;
-    await scope(tx, job, uid, true);
-    if (
-      job.status !== "preview" ||
-      job.previewRevision !== payload.previewRevision ||
-      job.planRevision !== payload.planRevision
-    )
-      invalid("Wait for or refresh the current preview.");
-    const ref = rowRef(job.id, payload.number),
-      row = (await tx.get(ref)).data()!;
-    if (!row || row.outcome) invalid("Row is unavailable.");
-    const access = await staffScope(tx, job.orgId, uid);
-    const candidate = row.candidates.find(
-      (c: Data) => c.id === payload.participantId,
-    );
-    if (
-      payload.resolution !== "skip" &&
-      (row.errors.length || (!access.admin && payload.resolution === "create"))
-    )
-      invalid("Invalid rows must be skipped or corrected in a new upload.");
-    if (
-      payload.resolution === "create" &&
-      row.fields.externalId &&
-      row.candidates.length
-    )
-      invalid("A trusted external ID must match its existing identity.");
-    if (
-      payload.resolution === "update" &&
-      (!candidate || candidate.status !== "active")
-    )
-      invalid("Choose one of the reviewed active candidates.");
-    const next: Data = { ...row, resolution: payload.resolution };
-    if (payload.resolution === "update") {
-      next.participantId = candidate.id;
-      next.participantRevision = candidate.revision;
-      next.rosterRevision =
-        (
-          await tx.get(
-            getFirestore().doc(`teams/${row.teamId}/roster/${candidate.id}`),
-          )
-        ).data()?.revision ?? 0;
-    }
-    if (payload.resolution === "create") {
-      next.participantId = hash(
-        `${job.orgId}:roster:${row.fields.externalId || `${job.id}:${row.number}`}`,
-      ).slice(0, 40);
-      next.participantRevision = 0;
-      next.rosterRevision = 0;
-    }
-    tx.set(ref, next);
-    tx.update(jobRef(job.id), {
-      planRevision: job.planRevision + 1,
-      unresolved: job.unresolved + (row.resolution ? 0 : -1),
-      previewCreates:
-        (job.previewCreates ?? 0) -
-        (row.resolution === "create" ? 1 : 0) +
-        (payload.resolution === "create" ? 1 : 0),
-      previewUpdates:
-        (job.previewUpdates ?? 0) -
-        (row.resolution === "update" ? 1 : 0) +
-        (payload.resolution === "update" ? 1 : 0),
-      previewSkips:
-        (job.previewSkips ?? 0) -
-        (row.resolution === "skip" ? 1 : 0) +
-        (payload.resolution === "skip" ? 1 : 0),
-      updatedAt: Timestamp.now(),
-    });
-    return { ok: true };
-  },
-);
-export const commitRosterImport = command(
-  "commitRosterImport",
-  (data) => {
-    keys(data, [
-      "requestId",
-      "orgId",
-      "jobId",
-      "previewRevision",
-      "planRevision",
-      "confirmed",
-    ]);
-    if (data.confirmed !== true)
-      invalid("Confirm the exact import preview first.");
-    return {
-      ...identity(data),
-      previewRevision: revision(data.previewRevision),
-      planRevision: revision(data.planRevision),
-      confirmed: true,
-    };
-  },
-  async (tx, payload, uid, _actor, replay) => {
-    const job = await owned(tx, payload, uid);
-    if (replay) return replay;
-    await scope(tx, job, uid, true);
-    if (
-      job.status !== "preview" ||
-      job.previewRevision !== payload.previewRevision ||
-      job.planRevision !== payload.planRevision ||
-      job.unresolved
-    )
-      invalid("Resolve every row in the current preview before committing.");
-    tx.update(jobRef(job.id), {
-      status: "committing",
-      confirmedBinding: job.binding,
-      confirmedPreviewRevision: job.previewRevision,
-      confirmedPlanRevision: job.planRevision,
-      lease: null,
-      error: null,
-      updatedAt: Timestamp.now(),
-    });
-    return { ok: true };
-  },
-);
-export const refreshRosterImport = command(
-  "refreshRosterImport",
-  (data) => {
-    keys(data, ["requestId", "orgId", "jobId"]);
-    return identity(data);
-  },
-  async (tx, payload, uid, _actor, replay) => {
-    const job = await owned(tx, payload, uid);
-    if (replay) return replay;
-    await scope(tx, job, uid, true);
-    if (!["preview", "needs-review", "paused"].includes(job.status))
-      invalid("This job cannot be refreshed yet.");
-    tx.update(jobRef(job.id), {
-      status: "previewing",
-      previewRevision: job.previewRevision + 1,
-      planRevision: job.planRevision + 1,
-      previewCheckpoint: job.checkpoint,
-      unresolved: 0,
-      previewCreates: 0,
-      previewUpdates: 0,
-      previewSkips: 0,
-      lease: null,
-      error: null,
-      updatedAt: Timestamp.now(),
-    });
-    return { ok: true };
-  },
-);
+function getImport(kind: ImportKind) {
+  return readCommand(
+    (data) => {
+      keys(data, ["orgId", "jobId", "offset"]);
+      const offset = data.offset ?? 0;
+      if (!Number.isSafeInteger(offset) || offset < 0 || offset > 5000)
+        invalid("Invalid page offset.");
+      return { ...identity(data), offset };
+    },
+    async (tx, payload, uid) => {
+      const job = await owned(tx, payload, uid, false, kind);
+      const rows = await tx.get(
+        jobRef(job.id)
+          .collection("rows")
+          .orderBy("number")
+          .startAt(payload.offset + 1)
+          .limit(50),
+      );
+      return {
+        job: publicJob(job),
+        rows: rows.docs.map((d) => d.data()),
+        nextOffset:
+          payload.offset + rows.size < job.previewCheckpoint
+            ? payload.offset + rows.size
+            : null,
+      };
+    },
+  );
+}
+export const getRosterImport = getImport("roster");
+export const getScheduleImport = getImport("schedule");
+
+function resolveImportRow(kind: ImportKind) {
+  return command(
+    kind === "roster" ? "resolveRosterImportRow" : "resolveScheduleImportRow",
+    (data) => {
+      keys(data, [
+        "requestId",
+        "orgId",
+        "jobId",
+        "number",
+        "previewRevision",
+        "planRevision",
+        "resolution",
+        "participantId",
+      ]);
+      const number = revision(data.number);
+      if (number < 1 || number > 5000) invalid("Invalid row number.");
+      if (!["create", "update", "skip"].includes(data.resolution))
+        invalid("Choose create, match or skip.");
+      return {
+        ...identity(data),
+        number,
+        previewRevision: revision(data.previewRevision),
+        planRevision: revision(data.planRevision),
+        resolution: data.resolution,
+        participantId:
+          data.participantId == null
+            ? null
+            : id(data.participantId, "participantId"),
+      };
+    },
+    async (tx, payload, uid, _actor, replay) => {
+      const job = await owned(tx, payload, uid, false, kind);
+      if (replay) return replay;
+      await scope(tx, job, uid, true);
+      if (
+        job.status !== "preview" ||
+        job.previewRevision !== payload.previewRevision ||
+        job.planRevision !== payload.planRevision
+      )
+        invalid("Wait for or refresh the current preview.");
+      const ref = rowRef(job.id, payload.number),
+        row = (await tx.get(ref)).data()!;
+      if (!row || row.outcome) invalid("Row is unavailable.");
+      if (kind === "schedule") return resolveScheduleRow(tx, job, row, payload);
+      const access = await staffScope(tx, job.orgId, uid);
+      const candidate = row.candidates.find(
+        (c: Data) => c.id === payload.participantId,
+      );
+      if (
+        payload.resolution !== "skip" &&
+        (row.errors.length ||
+          (!access.admin && payload.resolution === "create"))
+      )
+        invalid("Invalid rows must be skipped or corrected in a new upload.");
+      if (
+        payload.resolution === "create" &&
+        row.fields.externalId &&
+        row.candidates.length
+      )
+        invalid("A trusted external ID must match its existing identity.");
+      if (
+        payload.resolution === "update" &&
+        (!candidate || candidate.status !== "active")
+      )
+        invalid("Choose one of the reviewed active candidates.");
+      const next: Data = { ...row, resolution: payload.resolution };
+      if (payload.resolution === "update") {
+        next.participantId = candidate.id;
+        next.participantRevision = candidate.revision;
+        next.rosterRevision =
+          (
+            await tx.get(
+              getFirestore().doc(`teams/${row.teamId}/roster/${candidate.id}`),
+            )
+          ).data()?.revision ?? 0;
+      }
+      if (payload.resolution === "create") {
+        next.participantId = hash(
+          `${job.orgId}:roster:${row.fields.externalId || `${job.id}:${row.number}`}`,
+        ).slice(0, 40);
+        next.participantRevision = 0;
+        next.rosterRevision = 0;
+      }
+      tx.set(ref, next);
+      tx.update(jobRef(job.id), {
+        planRevision: job.planRevision + 1,
+        unresolved: job.unresolved + (row.resolution ? 0 : -1),
+        previewCreates:
+          (job.previewCreates ?? 0) -
+          (row.resolution === "create" ? 1 : 0) +
+          (payload.resolution === "create" ? 1 : 0),
+        previewUpdates:
+          (job.previewUpdates ?? 0) -
+          (row.resolution === "update" ? 1 : 0) +
+          (payload.resolution === "update" ? 1 : 0),
+        previewSkips:
+          (job.previewSkips ?? 0) -
+          (row.resolution === "skip" ? 1 : 0) +
+          (payload.resolution === "skip" ? 1 : 0),
+        updatedAt: Timestamp.now(),
+      });
+      return { ok: true };
+    },
+  );
+}
+export const resolveRosterImportRow = resolveImportRow("roster");
+export const resolveScheduleImportRow = resolveImportRow("schedule");
+
+function commitImport(kind: ImportKind) {
+  return command(
+    kind === "roster" ? "commitRosterImport" : "commitScheduleImport",
+    (data) => {
+      keys(data, [
+        "requestId",
+        "orgId",
+        "jobId",
+        "previewRevision",
+        "planRevision",
+        "confirmed",
+      ]);
+      if (data.confirmed !== true)
+        invalid("Confirm the exact import preview first.");
+      return {
+        ...identity(data),
+        previewRevision: revision(data.previewRevision),
+        planRevision: revision(data.planRevision),
+        confirmed: true,
+      };
+    },
+    async (tx, payload, uid, _actor, replay) => {
+      const job = await owned(tx, payload, uid, false, kind);
+      if (replay) return replay;
+      await scope(tx, job, uid, true);
+      if (
+        job.status !== "preview" ||
+        job.previewRevision !== payload.previewRevision ||
+        job.planRevision !== payload.planRevision ||
+        job.unresolved
+      )
+        invalid("Resolve every row in the current preview before committing.");
+      tx.update(jobRef(job.id), {
+        status: "committing",
+        confirmedBinding: job.binding,
+        confirmedPreviewRevision: job.previewRevision,
+        confirmedPlanRevision: job.planRevision,
+        lease: null,
+        error: null,
+        updatedAt: Timestamp.now(),
+      });
+      return { ok: true };
+    },
+  );
+}
+export const commitRosterImport = commitImport("roster");
+export const commitScheduleImport = commitImport("schedule");
+
+function refreshImport(kind: ImportKind) {
+  return command(
+    kind === "roster" ? "refreshRosterImport" : "refreshScheduleImport",
+    (data) => {
+      keys(data, ["requestId", "orgId", "jobId"]);
+      return identity(data);
+    },
+    async (tx, payload, uid, _actor, replay) => {
+      const job = await owned(tx, payload, uid, false, kind);
+      if (replay) return replay;
+      await scope(tx, job, uid, true);
+      if (!["preview", "needs-review", "paused"].includes(job.status))
+        invalid("This job cannot be refreshed yet.");
+      tx.update(jobRef(job.id), {
+        status: "previewing",
+        previewRevision: job.previewRevision + 1,
+        planRevision: job.planRevision + 1,
+        previewCheckpoint: job.checkpoint,
+        unresolved: 0,
+        previewCreates: 0,
+        previewUpdates: 0,
+        previewSkips: 0,
+        lease: null,
+        error: null,
+        updatedAt: Timestamp.now(),
+      });
+      return { ok: true };
+    },
+  );
+}
+export const refreshRosterImport = refreshImport("roster");
+export const refreshScheduleImport = refreshImport("schedule");
 
 async function commitRow(tx: Transaction, job: Data, row: Data) {
   const db = getFirestore();
@@ -869,13 +916,16 @@ export async function runRosterImport(jobId: string, budget = 25) {
   if (!initial) return;
   try {
     let rows: string[][] | null = null,
-      duplicates = new Set<string>();
+      duplicates = new Set<string>(),
+      sourceOverlaps = new Set<number>();
     if (initial.status === "previewing") {
       const [bytes] = await source(initial).download();
       if (hash(bytes) !== initial.fileChecksum)
         invalid("Uploaded source checksum changed.");
       rows = parseCsv(bytes);
       duplicates = duplicateKeys(rows, initial.mapping);
+      if (initial.kind === "schedule")
+        sourceOverlaps = sourceScheduleOverlaps(rows, initial.mapping);
     }
     for (let i = 0; i < budget; i++) {
       const more = await db.runTransaction(async (tx) => {
@@ -895,13 +945,16 @@ export async function runRosterImport(jobId: string, budget = 25) {
         }
         const number = checkpoint + 1;
         if (job.status === "previewing") {
-          const next = await preview(
+          const next = await (
+            job.kind === "schedule" ? previewScheduleRow : preview
+          )(
             tx,
             job,
             rows![number],
             rows![0],
             duplicates,
             number,
+            ...(job.kind === "schedule" ? [sourceOverlaps] : []),
           );
           tx.set(rowRef(jobId, number), next);
           tx.update(ref, {
@@ -918,7 +971,9 @@ export async function runRosterImport(jobId: string, budget = 25) {
         } else {
           const row = (await tx.get(rowRef(jobId, number))).data()!;
           if (!row?.resolution) invalid("Unresolved import row.");
-          const write = await commitRow(tx, job, row);
+          const write = await (
+            job.kind === "schedule" ? commitScheduleRow : commitRow
+          )(tx, job, row);
           write();
           const key =
             row.resolution === "skip"

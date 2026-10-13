@@ -36,6 +36,9 @@ export type ImportRow = {
   outcome: string | null;
   participantId: string;
   teamId: string | null;
+  eventId?: string;
+  eventRevision?: number;
+  publishedRevision?: number;
 };
 export type ImportCommands = {
   uploadRosterImport: {

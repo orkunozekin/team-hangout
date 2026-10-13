@@ -146,8 +146,13 @@ export function App({ services }: { services: BrowserServices }) {
               }}
             />
           ) : route ? (
-            route.section === "import" ? (
-              <RosterImports services={services} orgId={route.orgId} />
+            ["import", "schedule"].includes(route.section) ? (
+              <RosterImports
+                key={route.section}
+                services={services}
+                orgId={route.orgId}
+                kind={route.section === "schedule" ? "schedule" : "roster"}
+              />
             ) : route.section === "invitation" ? (
               <Invitations services={services} orgId={route.orgId} />
             ) : route.section === "participant" ? (
