@@ -28,6 +28,10 @@ export { uploadRosterImport, getRosterImport, resolveRosterImportRow, commitRost
 export { uploadScheduleImport, getScheduleImport, resolveScheduleImportRow, commitScheduleImport, refreshScheduleImport } from "./imports/roster";
 export { prepareSchedulePublication, publishScheduleImport } from "./imports/publication";
 
-export { resumeEssentialEmail } from "./email/worker";
+// Do not register provider secrets or a sending schedule in isolated staging.
+export const resumeEssentialEmail: typeof import('./email/worker').resumeEssentialEmail | undefined =
+  process.env.GCLOUD_PROJECT === 'team-hangout-staging'
+    ? undefined
+    : require('./email/worker').resumeEssentialEmail;
 export { getPrivateEventInformation } from "./email/access";
 export { listEssentialEmail, getEssentialEmailPreference, setEssentialEmailPreference } from "./email/commands";
