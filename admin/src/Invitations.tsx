@@ -111,13 +111,14 @@ export function Invitations({
   return (
     <main className="invitation-page">
       <a
+        className="back-link"
         href={routeUrl(orgId, "participant")}
         onClick={(e) => {
           e.preventDefault();
           go(routeUrl(orgId, "participant"));
         }}
       >
-        Back to participants
+        ← Back to participants
       </a>
       <p className="eyebrow">Organization / Household access</p>
       <h1>Invitations</h1>

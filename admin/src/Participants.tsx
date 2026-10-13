@@ -231,6 +231,7 @@ export function Participants({
   return (
     <main className="page">
       <a
+        className="back-link"
         href={routeUrl(orgId, "team", programId)}
         onClick={(e) => {
           e.preventDefault();

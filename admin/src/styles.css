@@ -288,17 +288,53 @@ nav a[aria-current="page"] {
   min-width: 200px;
   font-size: 12px;
 }
-.toolbar .check {
+.toolbar .toggle {
   flex-direction: row;
   align-items: center;
   margin-left: auto;
   font-size: 13px;
   min-width: 0;
 }
-.check input {
-  width: 16px;
-  height: 16px;
-  accent-color: #245f4f;
+.toggle input {
+  appearance: none;
+  flex-shrink: 0;
+  width: 44px;
+  height: 26px;
+  padding: 3px;
+  margin: 0;
+  border: 1px solid #8fa79b;
+  border-radius: 999px;
+  background: #e4ece6;
+  cursor: pointer;
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+.toggle input::before {
+  content: "";
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px #203a3533;
+  transition: transform 160ms ease;
+}
+.toggle input:checked {
+  background: #245f4f;
+  border-color: #245f4f;
+}
+.toggle input:checked::before {
+  transform: translateX(18px);
+}
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-bottom: 24px;
+  text-decoration: none;
+  font-weight: 600;
+}
+.back-link:hover {
+  color: #184a3c;
 }
 .table-wrap {
   overflow: auto;
@@ -522,7 +558,7 @@ td strong {
     flex-wrap: wrap;
     gap: 16px;
   }
-  .toolbar .check {
+  .toolbar .toggle {
     margin-left: 0;
   }
   .page-heading {
@@ -585,6 +621,8 @@ td strong {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .toggle input,
+  .toggle input::before,
   button.navigation-toggle,
   .menu-icon > span {
     transition: none;
