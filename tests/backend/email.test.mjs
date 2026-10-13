@@ -437,13 +437,11 @@ test("private event response and staff summaries are scoped, denied to outsiders
       db.runTransaction((tx) => eventInformation(tx, "email-event", uid)),
       { code: "permission-denied" },
     );
-    await db
-      .doc("events/email-event")
-      .update({
-        publicationState: "published",
-        deletedAt: null,
-        publicationOperationId: null,
-      });
+    await db.doc("events/email-event").update({
+      publicationState: "published",
+      deletedAt: null,
+      publicationOperationId: null,
+    });
   }
   const { listEssentialEmail } = require("./lib/email/commands.js");
   const result = await listEssentialEmail.run({
@@ -465,6 +463,25 @@ test("private event response and staff summaries are scoped, denied to outsiders
     { code: "permission-denied" },
   );
 });
+test("lease expiration or cancellation during canonical preparation prevents dispatch", async () => {
+  for (const patch of [
+    { leaseUntil: Timestamp.fromMillis(0) },
+    { status: "cancelled" },
+  ]) {
+    const key = await queue();
+    assert.equal(
+      await processOutbox(key, {
+        afterPrepare: async () => db.doc(`emailOutbox/${key}`).update(patch),
+      }),
+      "skipped",
+    );
+    assert.equal(
+      (await db.doc(`developmentMailbox/${key}`).get()).exists,
+      false,
+    );
+  }
+});
+
 test("account deletion removes transactional preference and fences mail during cleanup", async () => {
   const {
     beginDeletion,

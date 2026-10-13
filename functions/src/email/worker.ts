@@ -254,6 +254,7 @@ export async function processOutbox(
     transport?: Transport;
     config?: SenderConfig;
     beforeSend?: () => Promise<void>;
+    afterPrepare?: () => Promise<void>;
     now?: number;
   } = {},
 ) {
@@ -343,6 +344,23 @@ export async function processOutbox(
       });
       return "cancelled";
     }
+    await options.afterPrepare?.();
+    // Canonical reads can outlast the original lease. Fence and renew immediately before dispatch.
+    const dispatch = await db.runTransaction(async (tx) => {
+      const row = (await tx.get(ref)).data();
+      if (
+        !row ||
+        row.status !== "sending" ||
+        row.lease !== lease ||
+        row.leaseUntil.toMillis() <= Date.now()
+      )
+        return false;
+      tx.update(ref, {
+        leaseUntil: Timestamp.fromMillis(Date.now() + LEASE_MS),
+      });
+      return true;
+    });
+    if (!dispatch) return "skipped";
     invoked = true;
     const messageId = await transport.send(key, mail);
     await finish(key, lease, {
