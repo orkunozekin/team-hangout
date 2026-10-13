@@ -195,6 +195,14 @@ test("introduced browser screens reflow at 200 percent and preserve phone action
         document.documentElement.clientWidth + 1,
     );
     expect(overflow, section).toBe(false);
+    for (const region of await page.getByRole("region", { name: "Records table" }).all()) {
+      if (await region.evaluate(element => element.scrollWidth > element.clientWidth)) {
+        await region.focus();
+        await region.press("ArrowRight");
+        await expect.poll(() => region.evaluate(element => element.scrollLeft)).toBeGreaterThan(0);
+        await region.press("Home");
+      }
+    }
     for (const button of await page.locator("main button:visible").all())
       expect(
         (await button.boundingBox())!.height,
