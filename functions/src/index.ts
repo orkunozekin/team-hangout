@@ -1,4 +1,10 @@
 import { initializeApp } from 'firebase-admin/app';
+import { setGlobalOptions } from 'firebase-functions/v2';
+
+// Bound the isolated staging project without changing production resource settings.
+if (process.env.GCLOUD_PROJECT === 'team-hangout-staging') {
+  setGlobalOptions({ region: 'us-central1', minInstances: 0, maxInstances: 2, concurrency: 1 });
+}
 
 initializeApp();
 
