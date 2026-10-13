@@ -1,0 +1,47 @@
+{
+  "project": "team-hangout-staging",
+  "orgId": "staging-smoke-20261013",
+  "sourceSha": "2152c66",
+  "startedAt": "2026-10-13T19:49:12.949Z",
+  "limits": {
+    "fixtureWrites": 12,
+    "authUsers": 2,
+    "maxCallableRequests": 12,
+    "importRows": 0
+  },
+  "checks": [
+    {
+      "name": "getAdminWorkspace",
+      "status": 401,
+      "elapsedMs": 255,
+      "error": "UNAUTHENTICATED"
+    },
+    {
+      "name": "getAdminWorkspace",
+      "status": 403,
+      "elapsedMs": 1343,
+      "error": "PERMISSION_DENIED"
+    },
+    {
+      "name": "getAdminWorkspace",
+      "status": 400,
+      "elapsedMs": 164,
+      "error": "FAILED_PRECONDITION"
+    },
+    {
+      "name": "getAdminWorkspace",
+      "status": 200,
+      "elapsedMs": 179,
+      "error": null
+    },
+    {
+      "name": "listMyOrganizations",
+      "status": 200,
+      "elapsedMs": 1912,
+      "error": null
+    }
+  ],
+  "passed": false,
+  "failure": "Unexpected token '<', \"\n<html><hea\"... is not valid JSON",
+  "completedAt": "2026-10-13T19:49:18.783Z"
+}

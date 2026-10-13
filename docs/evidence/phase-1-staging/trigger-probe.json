@@ -1,0 +1,21 @@
+{
+  "projectId": "team-hangout-staging",
+  "startedAt": "2026-10-13T20:00:15.834Z",
+  "documentId": "staging-inactive-trigger-probe-20261013",
+  "status": "cancelled",
+  "rows": 0,
+  "sourceObjects": 0,
+  "expectedBehavior": "Eventarc invokes processRosterImports; inactive status returns without leases or processing.",
+  "invocationVerified": true,
+  "requestEvidence": [
+    {
+      "timestamp": "2026-10-13T20:00:16.923695Z",
+      "status": 200,
+      "revision": "processrosterimports-00001-ril",
+      "latency": "1.794845380s"
+    }
+  ],
+  "remainedInactive": true,
+  "completedAt": "2026-10-13T20:01:29.852Z",
+  "passed": true
+}

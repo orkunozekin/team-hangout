@@ -60,3 +60,6 @@ admin/playwright-report/
 # Project-specific backend configuration
 functions/.env.*
 !functions/.env.example
+
+# Local Firebase deployment cache
+.firebase/
