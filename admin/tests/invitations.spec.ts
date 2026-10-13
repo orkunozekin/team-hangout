@@ -76,6 +76,8 @@ test.beforeAll(async () => {
     await deleteApp(app);
   }
 });
+const invitationStatus = (page: Page) => page.locator("section").filter({ has: page.getByRole("heading", { name: "Invitation status", exact: true }) });
+
 test("admin queues, rotates and revokes an invitation with clear delivery status", async ({
   page,
 }) => {
@@ -91,9 +93,9 @@ test("admin queues, rotates and revokes an invitation with clear delivery status
     .getByRole("button", { name: "Send invitation", exact: true })
     .click();
   await expect(
-    page.getByRole("cell", { name: "queued", exact: true }),
+    invitationStatus(page).getByRole("cell", { name: "queued", exact: true }),
   ).toBeVisible();
-  await expect(page.locator("tbody")).toContainText(/(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday), [A-Z][a-z]{2} \d{1,2}/);
+  await expect(invitationStatus(page).locator("tbody")).toContainText(/(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday), [A-Z][a-z]{2} \d{1,2}/);
   const old = await token("ui-outsider@example.test");
   await page.getByRole("button", { name: "Actions for ui-outsider@example.test", exact: true }).click();
   await expect(page.getByRole("menuitem", {name:"Resend with new link",exact:true})).toBeFocused();
@@ -156,7 +158,7 @@ test("admin queues, rotates and revokes an invitation with clear delivery status
   await page.getByRole("button", {name:"Actions for ui-outsider@example.test",exact:true}).click();
   await page.getByRole("menuitem", {name:"Revoke invitation",exact:true}).click();
   await expect(
-    page.getByRole("cell", { name: "revoked", exact: true }),
+    invitationStatus(page).getByRole("cell", { name: "revoked", exact: true }),
   ).toBeVisible();
   await capture(page, "step9-browser-revoked");
   await page
@@ -167,7 +169,7 @@ test("admin queues, rotates and revokes an invitation with clear delivery status
     .getByRole("button", { name: "Send invitation", exact: true })
     .click();
   await expect(
-    page.getByRole("cell", { name: "pending", exact: true }),
+    invitationStatus(page).getByRole("cell", { name: "pending", exact: true }),
   ).toBeVisible();
   await capture(page, "step9-browser-queued");
   acceptanceToken = await token("ui-outsider@example.test");
@@ -235,7 +237,7 @@ test("new household account verifies email before confirmation and uses no nativ
     .getByRole("button", { name: "Send invitation", exact: true })
     .click();
   await expect(
-    page.getByRole("cell", { name: email, exact: true }),
+    invitationStatus(page).getByRole("cell", { name: email, exact: true }),
   ).toBeVisible();
   const raw = await token(email);
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
@@ -292,7 +294,7 @@ test("new household account verifies email before confirmation and uses no nativ
 test("denial invalidates delayed authorized invitation responses", async ({ page }) => {
   await page.goto(`/organizations/${householdOrg}/invitation`);
   await signIn(page, "ui-admin");
-  await expect(page.getByRole("cell", {name: "ui-outsider@example.test", exact: true}).first()).toBeVisible();
+  await expect(invitationStatus(page).getByRole("cell", {name: "ui-outsider@example.test", exact: true}).first()).toBeVisible();
   let release!: () => void;
   let loaded!: () => void;
   const held = new Promise<void>(resolve => { release = resolve; });
@@ -314,7 +316,7 @@ test("denial invalidates delayed authorized invitation responses", async ({ page
     release();
     await page.unrouteAll({behavior: "wait"});
     await expect(page.getByRole("heading", {name: "New invitation", exact: true})).toBeHidden();
-    await expect(page.getByRole("cell", {name: "ui-outsider@example.test", exact: true})).toHaveCount(0);
+    await expect(invitationStatus(page).getByRole("cell", {name: "ui-outsider@example.test", exact: true})).toHaveCount(0);
     await capture(page, "step9-browser-denied-race");
   } finally {
     release();

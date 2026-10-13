@@ -1,3 +1,4 @@
+import { EmailDeliveryStatus } from "./EmailInformation";
 import { InvitationActions } from "./InvitationActions";
 import { formatDateTime } from "../../shared/dates";
 import { useEffect, useRef, useState } from "react";
@@ -209,6 +210,7 @@ export function Invitations({
               </p>
             </Mutation>
           </section>
+          <EmailDeliveryStatus services={services} orgId={orgId} />
           <section className="panel">
             <h2>Invitation status</h2>
             {rows.length === 0 ? (

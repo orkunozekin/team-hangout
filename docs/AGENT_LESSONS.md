@@ -106,3 +106,17 @@
 - **Gap:** Publication UI reused row-number/revision matches across different import jobs and event IDs; publishing several same-team events repeated canonical contact and serial Auth reads.
 - **Going forward:** Clear confirmations on job identity changes and compare event IDs alongside revisions. Keep commit confirmation disabled until canonical rows for the displayed preview binding have loaded, including accepted-upload retries. Reuse canonical recipient results only within a transaction attempt and batch bounded Auth lookups; reauthorize on every subsequent command. Test switching saved jobs with equal row revisions and revocation after a multi-event contact review.
 - **Pointers:** `admin/src/RosterImports.tsx`, `functions/src/imports/publication.ts`, schedule browser/backend regressions.
+
+### 2026-10-13 — Fence dispatch after canonical reads
+
+- **Source:** PR #21 · local concurrency audit
+- **Gap:** A lease checked before a long canonical authorization read could expire or be cancelled before the external transport was invoked.
+- **Going forward:** Recheck the owned lease and deadline after preparation and renew it immediately before dispatch. A lost lease must send nothing; unknown errors after invocation terminate as ambiguous rather than automatically retry.
+- **Pointers:** `functions/src/email/worker.ts`, `tests/backend/email.test.mjs`.
+
+### 2026-10-13 — Preserve pending mutations across private refreshes
+
+- **Source:** PR #21 · Greptile
+- **Gap:** Clearing private read data on focus unmounted the preference mutation and discarded its original pending/retry request. All read failures also looked like access loss, hiding useful report-limit and network recovery guidance.
+- **Going forward:** Keep pending mutation state mounted independently from refreshed read values; block new choices until the original request settles and clear stale read values before reopening controls. Classify denied access separately from local report limits and temporary errors without exposing raw provider text. Test delayed pre-commit saves through refresh, uncertain replay, subsequent choices, report limits and recovery.
+- **Pointers:** `admin/src/EmailInformation.tsx`, `admin/tests/email.spec.ts`.

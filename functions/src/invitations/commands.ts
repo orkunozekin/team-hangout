@@ -89,7 +89,7 @@ function publicRow(invitationId: string, row: Data): Data {
     revision: row.revision,
   };
 }
-async function target(tx: Transaction, row: Data, writing = true) {
+export async function target(tx: Transaction, row: Data, writing = true) {
   const p = await participant(tx, row.orgId, row.participantId);
   if (writing && p.status !== "active") inactive();
   if (row.relationship === "self" && p.kind !== "adult")
@@ -123,7 +123,7 @@ async function target(tx: Transaction, row: Data, writing = true) {
   }
   return p;
 }
-function needsReview(row: Data, p: Data, organization: Data) {
+export function needsReview(row: Data, p: Data, organization: Data) {
   return (p.accessRevision ?? 0) !== row.participantAccessRevision ||
     (row.relationship === "guardian" && row.permissions.editProfile &&
       organization.features?.guardianProfileEditing !== true);
@@ -307,6 +307,11 @@ function issue(resend: boolean) {
           recipientUid: row.recipientUid,
           recipientEmail: row.recipientEmail,
           status: "queued",
+          invitationRevision: row.revision,
+          attemptCount: 0,
+          nextAttemptAt: now,
+          transportMessageId: null,
+          failureCode: null,
           payload: seal(raw),
           expiresAt: row.expiresAt,
           createdAt: now,

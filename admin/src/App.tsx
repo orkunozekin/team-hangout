@@ -13,6 +13,11 @@ import { go, readRoute } from "./route";
 import { InvitationAcceptance, Invitations } from "./Invitations";
 import { invitationTokenFromUrl } from "../../shared/invitations";
 import { CalendarSubscriptions } from "./CalendarSubscriptions";
+import {
+  PrivateEventInformation,
+  EmailPreferences,
+  EmailHelp,
+} from "./EmailInformation";
 import { RosterImports } from "./RosterImports";
 import { Participants } from "./Participants";
 import { Workspace, OrganizationPicker } from "./Workspace";
@@ -87,7 +92,11 @@ export function App({ services }: { services: BrowserServices }) {
         >
           <span className="brand-mark">th</span>Team Hangout{" "}
           <span className="workspace-label">
-            {pendingToken ? "Household invitation" : "Admin workspace"}
+            {pendingToken
+              ? "Household invitation"
+              : /^\/events\//.test(location.pathname)
+                ? "Team information"
+                : "Admin workspace"}
           </span>
         </a>
         {session.user && (
@@ -101,6 +110,15 @@ export function App({ services }: { services: BrowserServices }) {
               }}
             >
               Calendar subscriptions
+            </a>
+            <a
+              href="/email-preferences"
+              onClick={(e) => {
+                e.preventDefault();
+                go("/email-preferences");
+              }}
+            >
+              Email preferences
             </a>
             <button onClick={() => void logout()}>Sign out</button>
           </div>
@@ -116,7 +134,9 @@ export function App({ services }: { services: BrowserServices }) {
           {error}
         </p>
       )}
-      {!session.ready ? (
+      {location.pathname === "/help" ? (
+        <EmailHelp />
+      ) : !session.ready ? (
         <main>
           <p role="status">Restoring your session…</p>
         </main>
@@ -128,13 +148,26 @@ export function App({ services }: { services: BrowserServices }) {
               confirmation.
             </p>
           )}
-          <SignIn services={services} invitation={!!pendingToken} />
+          <SignIn
+            services={services}
+            invitation={!!pendingToken}
+            information={/^\/events\//.test(location.pathname)}
+          />
         </>
       ) : (
         <div
           key={`${session.user.uid}:${session.generation}:${path}:${refresh}`}
         >
-          {location.pathname === "/calendar-subscriptions" && !pendingToken ? (
+          {!pendingToken &&
+          /^\/events\/[A-Za-z0-9_-]+$/.test(location.pathname) ? (
+            <PrivateEventInformation
+              services={services}
+              eventId={location.pathname.split("/")[2]}
+            />
+          ) : !pendingToken && location.pathname === "/email-preferences" ? (
+            <EmailPreferences services={services} />
+          ) : location.pathname === "/calendar-subscriptions" &&
+            !pendingToken ? (
             <CalendarSubscriptions services={services} />
           ) : pendingToken ? (
             <InvitationAcceptance
@@ -180,9 +213,11 @@ export function App({ services }: { services: BrowserServices }) {
 function SignIn({
   services,
   invitation = false,
+  information = false,
 }: {
   services: BrowserServices;
   invitation?: boolean;
+  information?: boolean;
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -217,7 +252,9 @@ function SignIn({
       <p className="muted">
         {invitation
           ? "Use the email address that received the invitation."
-          : "Manage your organization, seasons and staff in one place."}
+          : information
+            ? "Sign in to read your private team schedule. No app installation needed."
+            : "Manage your organization, seasons and staff in one place."}
       </p>
       <form
         onSubmit={(e) => {
