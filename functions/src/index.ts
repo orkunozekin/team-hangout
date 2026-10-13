@@ -16,3 +16,5 @@ export { createInvitation, resendInvitation, revokeInvitation, listInvitations, 
 export { listHouseholdAgenda } from './calendar/agenda';
 
 export { createCalendarSubscription, listCalendarSubscriptions, revokeCalendarSubscription, rotateCalendarSubscription, calendarSubscriptionOptions, calendarFeed } from './calendar/subscriptions';
+
+export { uploadRosterImport, getRosterImport, resolveRosterImportRow, commitRosterImport, refreshRosterImport, processRosterImports, resumeRosterImports, expireRosterImports } from './imports/roster';

@@ -87,6 +87,7 @@ export function EntityEditor({
     existing?.programId || selectedProgram,
   );
   const [seasonId, setSeason] = useState(existing?.seasonId || "");
+  const [externalId, setExternalId] = useState(existing?.externalId || "");
   const [divisionId, setDivision] = useState(existing?.divisionId || "");
   const [startsOn, setStarts] = useState(existing?.startsOn || "");
   const [endsOn, setEnds] = useState(existing?.endsOn || "");
@@ -113,7 +114,14 @@ export function EntityEditor({
       const input = {
         ...base,
         ...(existing ? { teamId: existing.id } : {}),
-        fields: { name, status: activeStatus, programId, seasonId, divisionId },
+        fields: {
+          name,
+          status: activeStatus,
+          programId,
+          seasonId,
+          divisionId,
+          externalId,
+        },
       };
       return () => services.call("saveTeam", input);
     }
@@ -219,6 +227,16 @@ export function EntityEditor({
                   setDivision("");
                 }}
               />
+            )}
+            {kind === "team" && (
+              <label>
+                Team external ID (CSV imports)
+                <input
+                  maxLength={128}
+                  value={externalId}
+                  onChange={(e) => setExternalId(e.target.value)}
+                />
+              </label>
             )}
             {kind === "team" && (
               <Select

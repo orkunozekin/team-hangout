@@ -115,7 +115,11 @@ test('last admin and only guardian can delete; children, other guardians, roster
   assert.equal((await db.doc('teams/erase-roster/roster/shared').get()).exists, true);
   assert.equal((await db.doc(`organizationOwners/${uid}`).get()).exists, false);
   for (const [collection] of cleanupHooks) {
-    assert.equal((await db.doc(`${collection}/erase-owned`).get()).exists, false);
+    const owned = await db.doc(`${collection}/erase-owned`).get();
+    if (collection === 'importJobs') {
+      assert.equal(owned.data().status, 'expired'); assert.equal(owned.data().ownerUid, null);
+      assert.ok(owned.data().expiresAt.toMillis() <= Date.now());
+    } else assert.equal(owned.exists, false);
     assert.equal((await db.doc(`${collection}/erase-other`).get()).exists, true);
   }
   for (const projection of ['participantLinks', 'organizationLinks', 'teamAccess', 'agenda', 'deviceTokens', 'notificationEndpoints']) assert.equal((await db.collection(`users/${uid}/${projection}`).get()).size, 0);

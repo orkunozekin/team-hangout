@@ -105,9 +105,9 @@ export const saveHierarchyEntity = command('saveHierarchyEntity', data => {
 
 export const saveTeam = command('saveTeam', data => {
   keys(data, ['requestId', 'orgId', 'teamId', 'expectedRevision', 'fields']);
-  const fields = object(data.fields); keys(fields, ['name', 'programId', 'seasonId', 'divisionId', 'status']);
+  const fields = object(data.fields); keys(fields, ['name', 'programId', 'seasonId', 'divisionId', 'status', 'externalId']);
   return { orgId: id(data.orgId, 'orgId'), teamId: data.teamId == null ? null : id(data.teamId, 'teamId'), expectedRevision: revision(data.expectedRevision),
-    fields: { name: text(fields.name, 'name'), programId: id(fields.programId, 'programId'), seasonId: id(fields.seasonId, 'seasonId'), divisionId: id(fields.divisionId, 'divisionId'), status: choice(fields.status, ['active', 'archived'], 'status') } };
+    fields: { ...(Object.prototype.hasOwnProperty.call(fields, 'externalId') ? { externalId: optional(fields.externalId, 'externalId', 128) } : {}), name: text(fields.name, 'name'), programId: id(fields.programId, 'programId'), seasonId: id(fields.seasonId, 'seasonId'), divisionId: id(fields.divisionId, 'divisionId'), status: choice(fields.status, ['active', 'archived'], 'status') } };
 }, async (tx, payload, uid, _actor, replay) => {
   const scope = await staffScope(tx, payload.orgId, uid); enabled(scope.organization); requireProgram(scope, payload.fields.programId);
   const db = getFirestore(); const ref = db.collection('teams').doc(payload.teamId ?? replay?.team?.id ?? db.collection('teams').doc().id);

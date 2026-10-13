@@ -85,3 +85,17 @@
 - **Gap:** Combining saved subscription reads with team discovery hid removal controls when discovery exceeded its fanout limit, despite owner revocation remaining authorized.
 - **Going forward:** Load owner cleanup records independently from optional scope discovery. Test pending and failed discovery while verifying saved records remain visible and removable.
 - **Pointers:** `admin/src/CalendarSubscriptions.tsx`, `src/screens/CalendarSubscriptionsScreen.tsx`, calendar subscription UI regressions.
+
+### 2026-10-13 — Bind confirmation to the mutable plan
+
+- **Source:** PR #19 · Greptile
+- **Gap:** CSV resolution changes retained the preview version, letting another tab broaden a checked confirmation. Team queries also applied season filters after a limit; invalid divisions stopped all row review; later rows conflicted with earlier writes in their own job; daily cleanup capped throughput at 25 jobs.
+- **Going forward:** Version both source previews and mutable resolution plans and require the confirmed plan version at commit. Filter the complete target scope before limits, record row-specific failures as skippable errors, distinguish job-local revisions from outside edits, and drain bounded cleanup pages with scheduled continuation. Cover these with multi-tab, cross-season, bad-row, multi-team and multi-page regressions.
+- **Pointers:** `functions/src/imports/roster.ts`, `tests/backend/imports.test.mjs`, `admin/tests/imports.spec.ts`.
+
+### 2026-10-13 — Bound invalid preview values separately from source bytes
+
+- **Source:** PR #19 · local acceptance audit
+- **Gap:** A CSV within the 5 MB file limit could contain a field larger than Firestore's document limit, preventing the invalid row from reaching review/skip controls. Large base64 validation also needed a canonical, linear bound.
+- **Going forward:** Keep canonical source bytes intact, but bound invalid field excerpts with explicit errors/warnings before persisting preview rows. Validate large base64 in linear form and test an oversized invalid record alongside a valid record through preview, skip and commit.
+- **Pointers:** `functions/src/imports/roster.ts`, `tests/backend/imports.test.mjs`.
