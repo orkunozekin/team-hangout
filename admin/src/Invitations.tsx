@@ -118,7 +118,7 @@ export function Invitations({
           go(routeUrl(orgId, "participant"));
         }}
       >
-        ← Back to participants
+        ← Back
       </a>
       <p className="eyebrow">Organization / Household access</p>
       <h1>Invitations</h1>

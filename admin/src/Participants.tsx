@@ -238,7 +238,7 @@ export function Participants({
           go(routeUrl(orgId, "team", programId));
         }}
       >
-        ← Back to teams
+        ← Back
       </a>
       <p className="eyebrow">
         {context.organization.name} / Participants and rosters
