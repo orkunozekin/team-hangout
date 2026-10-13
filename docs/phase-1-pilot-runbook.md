@@ -2,6 +2,12 @@
 
 Phase 1 is **not pilot-ready**. This runbook prepares a reviewable release decision; it does not authorize a deployment, production migration, live email, sender changes or pilot enrollment. Step 15 implements local accessibility corrections and executable synthetic rehearsals. Owner acceptance and the external evidence below remain incomplete.
 
+## Staging preparation
+
+The [staging deployment and acceptance package](phase-1-staging-acceptance.md) specifies the proposed isolated deployment, artifact/configuration record, index/scheduler verification, HTTPS capacity protocol, real accessibility/calendar sessions and separately reviewed webhook/migration paths. Copy [one acceptance record](phase-1-acceptance-record.md) per gate/session. Prepared 2026-10-13; project/domain/budget/operator approvals, testers and owners remain pending. No deployment, live email, migration or pilot exposure has been performed.
+
+Step 15 PR #22 merged as `11aa852a1fe70c272bdddf04d0f8856989684bd3`. This closes local implementation/review, not external release acceptance.
+
 ## Evidence and repeatable local rehearsal
 
 Use Node 22 and Java 21+ for CI parity. Local measurements used Node 26.3.0, Java 26, macOS 25.5.0 arm64, Apple M5 Pro with 18 cores and 24 GiB RAM. The Firebase project is the isolated `demo-team-hangout`; every service uses loopback. No region was measured. Backend default region `us-central1` is a configuration, not staging evidence.
