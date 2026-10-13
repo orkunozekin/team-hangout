@@ -1,6 +1,12 @@
-import { FieldPath, getFirestore, Timestamp } from "firebase-admin/firestore";
-import { command, id, invalid, keys } from "../commandSupport";
-import { adminScope, page, readCommand } from "../participants/policy";
+import { checkRevision } from "../organizations/policy";
+import { FieldPath, getFirestore } from "firebase-admin/firestore";
+import { command, id, invalid, keys, revision } from "../commandSupport";
+import {
+  adminScope,
+  metadata,
+  page,
+  readCommand,
+} from "../participants/policy";
 export const listEssentialEmail = readCommand(
   (data) => {
     keys(data, ["orgId", "cursor", "pageSize"]);
@@ -37,28 +43,36 @@ export const getEssentialEmailPreference = readCommand(
     keys(data, []);
     return {};
   },
-  async (tx, _data, uid) => ({
-    suppressed:
-      (
-        await tx.get(getFirestore().doc(`users/${uid}/communication/essential`))
-      ).data()?.suppressed === true,
-  }),
+  async (tx, _data, uid) => {
+    const row = (
+      await tx.get(getFirestore().doc(`users/${uid}/communication/essential`))
+    ).data();
+    return {
+      suppressed: row?.suppressed === true,
+      revision: row?.revision ?? 0,
+    };
+  },
 );
+
 export const setEssentialEmailPreference = command(
   "setEssentialEmailPreference",
   (data) => {
-    keys(data, ["requestId", "suppressed"]);
+    keys(data, ["requestId", "suppressed", "expectedRevision"]);
     if (typeof data.suppressed !== "boolean")
       invalid("Choose an email preference.");
-    return { suppressed: data.suppressed };
+    return {
+      suppressed: data.suppressed,
+      expectedRevision: revision(data.expectedRevision),
+    };
   },
   async (tx, data, uid, _actor, replay) => {
     if (replay) return replay;
-    tx.set(getFirestore().doc(`users/${uid}/communication/essential`), {
-      suppressed: data.suppressed,
-      updatedAt: Timestamp.now(),
-      schemaVersion: 2,
-    });
-    return { suppressed: data.suppressed };
+    const ref = getFirestore().doc(`users/${uid}/communication/essential`);
+    const before = (await tx.get(ref)).data();
+    checkRevision(before, data.expectedRevision);
+    const next = metadata(uid, before);
+    next.suppressed = data.suppressed;
+    tx.set(ref, next);
+    return { suppressed: next.suppressed, revision: next.revision };
   },
 );

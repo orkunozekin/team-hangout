@@ -27,10 +27,10 @@ export type EmailCommands = {
   };
   getEssentialEmailPreference: {
     input: Record<string, never>;
-    output: { suppressed: boolean };
+    output: { suppressed: boolean; revision: number };
   };
   setEssentialEmailPreference: {
-    input: { requestId: string; suppressed: boolean };
-    output: { suppressed: boolean };
+    input: { requestId: string; suppressed: boolean; expectedRevision: number };
+    output: { suppressed: boolean; revision: number };
   };
 };

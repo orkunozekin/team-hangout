@@ -159,6 +159,7 @@ export function EmailPreferences({ services }: { services: BrowserServices }) {
             const payload = {
               requestId: crypto.randomUUID(),
               suppressed: !value!.suppressed,
+              expectedRevision: value!.revision,
             };
             return () => services.call("setEssentialEmailPreference", payload);
           }}

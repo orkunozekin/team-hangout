@@ -482,6 +482,46 @@ test("lease expiration or cancellation during canonical preparation prevents dis
   }
 });
 
+test("revisioned preference rejects delayed stale choices and retries never overwrite newer state", async () => {
+  const {
+    getEssentialEmailPreference,
+    setEssentialEmailPreference,
+  } = require("./lib/email/commands.js");
+  const read = () =>
+    getEssentialEmailPreference.run({ auth: { uid }, data: {} });
+  const write = (data) =>
+    setEssentialEmailPreference.run({ auth: { uid }, data });
+  const before = await read();
+  const original = {
+    requestId: "preference-original",
+    suppressed: true,
+    expectedRevision: before.revision,
+  };
+  const saved = await write(original);
+  const latest = await write({
+    requestId: "preference-latest",
+    suppressed: false,
+    expectedRevision: saved.revision,
+  });
+  await assert.rejects(
+    write({
+      requestId: "preference-delayed",
+      suppressed: true,
+      expectedRevision: before.revision,
+    }),
+    { code: "aborted" },
+  );
+  assert.deepEqual(await write(original), saved);
+  assert.deepEqual(await read(), latest);
+  assert.equal(latest.suppressed, false);
+  const record = (
+    await db.doc(`users/${uid}/communication/essential`).get()
+  ).data();
+  assert.equal(record.createdBy, uid);
+  assert.equal(record.updatedBy, uid);
+  assert.equal(record.schemaVersion, 2);
+});
+
 test("account deletion removes transactional preference and fences mail during cleanup", async () => {
   const {
     beginDeletion,
