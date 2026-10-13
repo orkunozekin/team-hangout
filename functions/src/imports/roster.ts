@@ -107,9 +107,11 @@ function mappingFor(rows: string[][], raw: unknown) {
   for (const key of columns) {
     if (
       mapping[key] != null &&
-      (typeof mapping[key] !== "string" || !rows[0].includes(mapping[key]))
+      (typeof mapping[key] !== "string" ||
+        mapping[key].length > 200 ||
+        !rows[0].includes(mapping[key]))
     )
-      invalid(`Choose a CSV header for ${key}.`);
+      invalid(`Choose a CSV header of at most 200 characters for ${key}.`);
   }
   for (const key of ["participantName", "kind", "teamExternalId"])
     if (!mapping[key]) invalid(`Map ${key} before previewing.`);
@@ -148,12 +150,13 @@ export const uploadRosterImport = onCall(
     if (
       typeof data.csvBase64 !== "string" ||
       data.csvBase64.length > Math.ceil(MAX_BYTES / 3) * 4 ||
-      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(
-        data.csvBase64,
-      )
+      data.csvBase64.length % 4 !== 0 ||
+      !/^[A-Za-z0-9+/]*={0,2}$/.test(data.csvBase64)
     )
       invalid("Upload a valid CSV of at most 5 MB.");
     const bytes = Buffer.from(data.csvBase64, "base64");
+    if (bytes.toString("base64") !== data.csvBase64)
+      invalid("Upload canonical base64 CSV bytes.");
     let rows: string[][];
     try {
       rows = parseCsv(bytes);
@@ -266,19 +269,24 @@ async function preview(
   );
   const errors: string[] = [],
     warnings: string[] = [];
-  for (const [k, v] of Object.entries(fields))
+  for (const [k, v] of Object.entries(fields)) {
+    const max =
+      k === "participantName" ? 200 : k.startsWith("guardian") ? 254 : 128;
     if (
       typeof v !== "string" ||
-      v.length >
-        (k === "participantName"
-          ? 200
-          : k.startsWith("guardian")
-            ? 254
-            : 128) ||
+      v.length > max ||
       /^[\s]*[=+@-]/.test(v) ||
       /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(v)
     )
-      errors.push(`Invalid or formula-like ${k}.`);
+      errors.push(`Invalid or formula-like ${k}; maximum ${max} characters.`);
+    // Invalid fields stay skippable without exceeding Firestore's document limit.
+    if (typeof v === "string" && v.length > max) {
+      fields[k] = v.slice(0, max);
+      warnings.push(
+        `${k} preview is limited to ${max} characters. The full invalid value will not be imported.`,
+      );
+    }
+  }
   if (!fields.participantName) errors.push("Participant name is required.");
   if (!["youth", "adult", "unknown"].includes(fields.kind))
     errors.push("Kind must be youth, adult or unknown.");
@@ -386,7 +394,7 @@ async function preview(
     warnings.push(
       "Program staff import only enrollment. Existing participant identity fields are preserved.",
     );
-  for (const d of docs) {
+  for (const d of docs.slice(0, 11)) {
     const p = d.data();
     if (p.schemaVersion !== 2 || (p.orgId != null && p.orgId !== job.orgId))
       continue;
@@ -398,7 +406,7 @@ async function preview(
     }
     candidates.push({
       id: d.id,
-      displayName: p.displayName,
+      displayName: String(p.displayName ?? "").slice(0, 200),
       revision: p.revision ?? 0,
       status: p.status,
       kind: p.kind,

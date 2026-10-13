@@ -50,8 +50,20 @@ const call = async (name, data, uid = "imports-owner") =>
 const load = async (jobId) => await call("getRosterImport", { orgId, jobId });
 async function waitFor(jobId, status) {
   for (let i = 0; i < 120; i++) {
-    const result = await load(jobId);
-    if (status.includes(result.job.status)) return result;
+    try {
+      const result = await load(jobId);
+      if (status.includes(result.job.status)) return result;
+    } catch (error) {
+      // Polling reads can recover from transient emulator transport/transaction failures.
+      if (
+        ![
+          "functions/internal",
+          "functions/unavailable",
+          "functions/deadline-exceeded",
+        ].includes(error.code)
+      )
+        throw error;
+    }
     await new Promise((r) => setTimeout(r, 250));
   }
   throw new Error(`Import ${jobId} did not reach ${status}`);
@@ -761,4 +773,57 @@ test("retention drains more than one bounded page per run", async () => {
   for (const id of ids)
     assert.equal((await db.doc(`importJobs/${id}`).get()).exists, false);
   assert.equal((await file.exists())[0], false);
+});
+
+test("a megabyte invalid field remains a visible skippable row and large canonical base64 upload does not overflow validation", async () => {
+  const huge = "x".repeat(1100000);
+  const { job } = await upload(
+    `large-invalid,${huge},youth,U12,,\nlarge-valid,Valid remainder,youth,U12,,`,
+  );
+  const preview = await waitFor(job.id, ["preview"]);
+  assert.equal(preview.job.unresolved, 1);
+  assert.equal(preview.rows[0].fields.participantName.length, 200);
+  assert.ok(
+    preview.rows[0].warnings.some((w) => w.includes("full invalid value")),
+  );
+  assert.ok(preview.rows[0].errors.length);
+  await resolve(job.id, 1, "skip");
+  const done = await commit((await load(job.id)).job);
+  assert.equal(done.job.created, 1);
+  assert.equal(done.job.skipped, 1);
+});
+
+test("excessive ambiguous candidates are bounded skippable errors and oversized mapped headers are rejected before persistence", async () => {
+  const batch = db.batch();
+  for (let n = 0; n < 12; n++)
+    batch.set(
+      db.doc(`organizations/${orgId}/participants/imports-crowded-${n}`),
+      {
+        ...meta,
+        displayName: "Crowded identity",
+        kind: "youth",
+        linkedUserId: null,
+      },
+    );
+  await batch.commit();
+  const { job } = await upload(",Crowded identity,youth,U12,,");
+  const preview = await waitFor(job.id, ["preview"]);
+  assert.equal(preview.job.unresolved, 1);
+  assert.equal(preview.rows[0].candidates.length, 11);
+  assert.ok(
+    preview.rows[0].errors.some((e) => e.includes("Too many identity")),
+  );
+  await resolve(job.id, 1, "skip");
+  assert.equal((await commit((await load(job.id)).job)).job.skipped, 1);
+  const longHeader = "h".repeat(201);
+  const csvBase64 = Buffer.from(
+    `${headers.replace("participantName", longHeader)}\nheader-invalid,Name,youth,U12,,`,
+  ).toString("base64");
+  await assert.rejects(
+    upload("", {
+      csvBase64,
+      mapping: { ...mapping, participantName: longHeader },
+    }),
+    { code: "functions/invalid-argument" },
+  );
 });
