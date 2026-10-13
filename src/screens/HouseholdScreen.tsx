@@ -1,3 +1,4 @@
+import CalendarSubscriptionsScreen from "./CalendarSubscriptionsScreen";
 import HouseholdAgenda from "../components/HouseholdAgenda";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -68,6 +69,11 @@ export default function HouseholdScreen({
   user: User;
   onTeams: () => void;
 }) {
+  const scrollRef = useRef<ScrollView>(null);
+  const [subscriptions, setSubscriptions] = useState(false);
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, [subscriptions]);
   const householdGeneration = useRef(0);
   const [items, setItems] = useState<HouseholdParticipant[] | null>(null);
   const [selected, setSelected] = useState<HouseholdParticipant | null>(null);
@@ -86,6 +92,7 @@ export default function HouseholdScreen({
       return () => {
         householdGeneration.current++;
         setFocused(false);
+        setSubscriptions(false);
         setSelected(null);
         setItems(null);
       };
@@ -96,6 +103,7 @@ export default function HouseholdScreen({
       householdGeneration.current++;
       setSelected(null);
       setItems(null);
+      setSubscriptions(false);
       setAppActive(state === "active");
       if (state === "active") setVersion((n) => n + 1);
     });
@@ -141,6 +149,7 @@ export default function HouseholdScreen({
   return (
     <Screen>
       <ScrollView
+        ref={scrollRef}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ paddingBottom: 32 }}
       >
@@ -154,7 +163,15 @@ export default function HouseholdScreen({
             {error}
           </Text>
         ) : null}
-        {selected && focused && appActive ? (
+        {subscriptions && focused && appActive ? (
+          <CalendarSubscriptionsScreen
+            key={user.uid}
+            onBack={() => {
+              setSubscriptions(false);
+              reload();
+            }}
+          />
+        ) : selected && focused && appActive ? (
           <Profile
             key={`${selected.orgId}:${selected.id}`}
             user={user}
@@ -189,6 +206,10 @@ export default function HouseholdScreen({
                 }}
               />
             ) : null}
+            <Button
+              label="Calendar subscriptions"
+              onPress={() => setSubscriptions(true)}
+            />
             <Text style={styles.heading}>Your participants</Text>
             <Text style={styles.copy}>
               Choose who you are acting for. Team roles stay separate.

@@ -12,6 +12,7 @@ import { message } from "./errors";
 import { go, readRoute } from "./route";
 import { InvitationAcceptance, Invitations } from "./Invitations";
 import { invitationTokenFromUrl } from "../../shared/invitations";
+import { CalendarSubscriptions } from "./CalendarSubscriptions";
 import { Participants } from "./Participants";
 import { Workspace, OrganizationPicker } from "./Workspace";
 
@@ -84,11 +85,22 @@ export function App({ services }: { services: BrowserServices }) {
           }}
         >
           <span className="brand-mark">th</span>Team Hangout{" "}
-          <span className="workspace-label">{pendingToken ? "Household invitation" : "Admin workspace"}</span>
+          <span className="workspace-label">
+            {pendingToken ? "Household invitation" : "Admin workspace"}
+          </span>
         </a>
         {session.user && (
           <div className="account">
             <span>{session.user.email}</span>
+            <a
+              href="/calendar-subscriptions"
+              onClick={(e) => {
+                e.preventDefault();
+                go("/calendar-subscriptions");
+              }}
+            >
+              Calendar subscriptions
+            </a>
             <button onClick={() => void logout()}>Sign out</button>
           </div>
         )}
@@ -121,7 +133,9 @@ export function App({ services }: { services: BrowserServices }) {
         <div
           key={`${session.user.uid}:${session.generation}:${path}:${refresh}`}
         >
-          {pendingToken ? (
+          {location.pathname === "/calendar-subscriptions" && !pendingToken ? (
+            <CalendarSubscriptions services={services} />
+          ) : pendingToken ? (
             <InvitationAcceptance
               services={services}
               token={pendingToken}

@@ -135,7 +135,7 @@ test('v2 hierarchy, teams, events and audit data cannot leak through legacy read
   });
   for (const uid of ['coach-a', 'player-a', 'outsider', 'admin']) {
     const db = dbFor(uid);
-    for (const path of ['teams/v2-team', 'events/v2-event', 'organizations/org-a', 'organizations/org-a/members/coach-a', 'organizations/org-a/programs/p', 'organizations/org-a/audit/a', 'organizationOwners/outsider']) {
+    for (const path of ['teams/v2-team', 'events/v2-event', 'organizations/org-a', 'organizations/org-a/members/coach-a', 'organizations/org-a/programs/p', 'organizations/org-a/audit/a', 'organizationOwners/outsider', 'calendarSubscriptions/private-hash', 'commandRequests/calendar-receipt']) {
       await assertFails(getDoc(doc(db, path)));
       await assertFails(setDoc(doc(db, path), { orgId: 'org-a' }));
     }
