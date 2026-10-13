@@ -55,7 +55,7 @@ export function Screen({
 }
 
 export function Title({ children }: { children: React.ReactNode }) {
-  return <Text style={styles.title}>{children}</Text>;
+  return <Text accessibilityRole="header" style={styles.title}>{children}</Text>;
 }
 
 export function Subtitle({ children }: { children: React.ReactNode }) {
@@ -68,7 +68,7 @@ export function FieldLabel({ children }: { children: React.ReactNode }) {
 
 export function FieldError({ message }: { message?: string }) {
   if (!message) return null;
-  return <Text style={styles.error}>{message}</Text>;
+  return <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{message}</Text>;
 }
 
 export function TextField({
@@ -103,6 +103,9 @@ export function PrimaryButton({
     <Pressable
       onPress={onPress}
       disabled={isDisabled}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: !!isDisabled, busy: !!loading }}
       style={[
         styles.primaryButton,
         isDisabled ? styles.buttonDisabled : null,
@@ -133,6 +136,9 @@ export function SecondaryButton({
     <Pressable
       onPress={onPress}
       disabled={isDisabled}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: !!isDisabled, busy: !!loading }}
       style={[
         styles.secondaryButton,
         isDisabled ? styles.buttonDisabled : null,
@@ -155,7 +161,7 @@ export function LinkButton({
   onPress: () => void;
 }) {
   return (
-    <Pressable onPress={onPress} style={styles.linkButton}>
+    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={styles.linkButton}>
       <Text style={styles.linkText}>{label}</Text>
     </Pressable>
   );
@@ -250,6 +256,8 @@ const styles = StyleSheet.create({
   primaryButton: {
     backgroundColor: colors.primary,
     borderRadius: radius.md,
+    minHeight: 48,
+    paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
     alignItems: 'center',
     marginTop: spacing.sm,
@@ -265,6 +273,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.borderStrong,
     borderRadius: radius.md,
+    minHeight: 48,
+    paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
     alignItems: 'center',
     marginTop: spacing.sm,
@@ -278,6 +288,8 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   linkButton: {
+    minHeight: 44,
+    justifyContent: 'center',
     marginTop: spacing.md,
     alignItems: 'center',
     padding: spacing.sm,

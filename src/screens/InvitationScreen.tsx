@@ -98,7 +98,7 @@ export default function InvitationScreen({
       <ScrollView contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }}>
         <Title>Review invitation</Title>
         <Subtitle>Signed in as {user.email}</Subtitle>
-        {error ? <Text accessibilityRole="alert">{error}</Text> : null}
+        {error ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite">{error}</Text> : null}
         {!view && !error ? <Subtitle>Checking invitation…</Subtitle> : null}
         {view?.status === "pending" ? (
           <>

@@ -244,7 +244,7 @@ export default function CalendarSubscriptionsScreen({
   return (
     <View>
       <Button label="Back to household" onPress={onBack} />
-      <Text style={styles.heading}>Calendar subscriptions</Text>
+      <Text accessibilityRole="header" style={styles.heading}>Calendar subscriptions</Text>
       <Text style={styles.copy}>{calendarPrivacy}</Text>
       <Text style={styles.copy}>{calendarCoverage}</Text>
       {!teams && !error ? (
@@ -256,7 +256,7 @@ export default function CalendarSubscriptionsScreen({
           approved schedule access.
         </Text>
       ) : null}
-      <Text style={styles.heading}>Create a subscription</Text>
+      <Text accessibilityRole="header" style={styles.heading}>Create a subscription</Text>
       {teams?.map((t) => (
         <Check
           key={t.id}
@@ -309,7 +309,7 @@ export default function CalendarSubscriptionsScreen({
           }}
         />
       ))}
-      <Text style={styles.heading}>Event types</Text>
+      <Text accessibilityRole="header" style={styles.heading}>Event types</Text>
       {(["practice", "match"] as const).map((t) => (
         <Check
           key={t}
@@ -353,12 +353,12 @@ export default function CalendarSubscriptionsScreen({
         }
       />
       {error ? (
-        <Text accessibilityRole="alert" style={styles.error}>
+        <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>
           {error}
         </Text>
       ) : null}
       {notice ? (
-        <Text accessibilityRole="alert" style={styles.copy}>
+        <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.copy}>
           {notice}
         </Text>
       ) : null}
@@ -371,7 +371,7 @@ export default function CalendarSubscriptionsScreen({
       ) : null}
       {url ? (
         <View style={styles.card}>
-          <Text style={styles.heading}>Your private URL</Text>
+          <Text accessibilityRole="header" style={styles.heading}>Your private URL</Text>
           <Text selectable style={styles.url}>
             {url}
           </Text>
@@ -387,13 +387,13 @@ export default function CalendarSubscriptionsScreen({
           <Text style={styles.copy}>{calendarInstructions}</Text>
         </View>
       ) : null}
-      <Text style={styles.heading}>Active subscriptions</Text>
+      <Text accessibilityRole="header" style={styles.heading}>Active subscriptions</Text>
       {items?.length === 0 ? (
         <Text style={styles.copy}>No active subscriptions.</Text>
       ) : null}
       {items?.map((row, i) => (
         <View key={row.id} style={styles.card}>
-          <Text style={styles.heading}>Subscription {i + 1}</Text>
+          <Text accessibilityRole="header" style={styles.heading}>Subscription {i + 1}</Text>
           <Text style={styles.copy}>
             {row.scope.teamIds.length}{" "}
             {row.scope.teamIds.length === 1 ? "team" : "teams"} ·{" "}

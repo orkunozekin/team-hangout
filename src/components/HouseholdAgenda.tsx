@@ -25,17 +25,19 @@ function Action({
   label,
   selected = false,
   disabled = false,
+  expanded,
   onPress,
 }: {
   label: string;
   selected?: boolean;
   disabled?: boolean;
+  expanded?: boolean;
   onPress: () => void;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityState={{ selected, disabled }}
+      accessibilityState={{ selected, disabled, expanded }}
       disabled={disabled}
       onPress={onPress}
       style={[
@@ -234,7 +236,7 @@ export default function HouseholdAgenda({
   }
   return (
     <View style={styles.section}>
-      <Text style={styles.heading}>Household calendar</Text>
+      <Text accessibilityRole="header" style={styles.heading}>Household calendar</Text>
       <Text style={styles.copy}>
         {day} through {addDays(day, 29)}
       </Text>
@@ -244,6 +246,7 @@ export default function HouseholdAgenda({
         use the display timezone below.
       </Text>
       <Action
+        expanded={showFilters}
         label={showFilters ? "Hide calendar filters" : "Calendar filters"}
         onPress={() => setShowFilters((value) => !value)}
       />
@@ -364,7 +367,7 @@ export default function HouseholdAgenda({
         </View>
       ) : null}
       {error ? (
-        <Text accessibilityRole="alert" style={styles.error}>
+        <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>
           {error}
         </Text>
       ) : null}

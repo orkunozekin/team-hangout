@@ -198,7 +198,7 @@ export function CalendarSubscriptions({
     ).values(),
   ];
   return (
-    <main className="page calendar-subscriptions">
+    <main id="main-content" tabIndex={-1} className="page calendar-subscriptions">
       <a
         href="/"
         onClick={(e) => {

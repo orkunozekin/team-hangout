@@ -55,7 +55,7 @@ export function OrganizationPicker({
     };
   }, [services]);
   return (
-    <main className="page">
+    <main id="main-content" tabIndex={-1} className="page">
       <p className="eyebrow">Your workspace</p>
       <div className="page-heading">
         <div>
@@ -279,13 +279,13 @@ export function Workspace({
   };
   if (error)
     return (
-      <main className="page">
+      <main id="main-content" tabIndex={-1} className="page">
         <ErrorState text={error} />
       </main>
     );
   if (!data)
     return (
-      <main className="page">
+      <main id="main-content" tabIndex={-1} className="page">
         <p role="status">Authorizing workspace and loading current records…</p>
       </main>
     );
@@ -367,7 +367,7 @@ export function Workspace({
           Make room for every team.
         </div>
       </aside>
-      <main className="workspace-main">
+      <main id="main-content" tabIndex={-1} className="workspace-main">
         <p className="eyebrow">Organization / {labels[section]}</p>
         <div className="page-heading">
           <div>
@@ -454,14 +454,14 @@ export function Workspace({
             </p>
           </div>
         ) : (
-          <div className="table-wrap">
+          <div className="table-wrap" role="region" aria-label="Records table" tabIndex={0}>
             <table>
               <thead>
                 <tr>
-                  <th>{section === "staff" ? "Account UID" : "Name"}</th>
-                  <th>Scope / details</th>
-                  <th>Status</th>
-                  <th>
+                  <th scope="col">{section === "staff" ? "Account UID" : "Name"}</th>
+                  <th scope="col">Scope / details</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">
                     <span className="sr-only">Actions</span>
                   </th>
                 </tr>

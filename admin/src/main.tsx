@@ -8,7 +8,7 @@ try {
   root.render(<App services={initializeBrowserFirebase()} />);
 } catch (error) {
   root.render(
-    <main className="auth-card">
+    <main id="main-content" tabIndex={-1} className="auth-card">
       <h1>Workspace setup required</h1>
       <p role="alert">
         {error instanceof Error

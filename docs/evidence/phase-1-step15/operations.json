@@ -1,0 +1,60 @@
+{
+  "environment": {
+    "kind": "local-emulator",
+    "scope": "operations",
+    "scriptSha256": "f86046b49e6eabf0fb92d1f8a2977e20af4e8cc462fa0ad2797332aee6ba5c6a",
+    "project": "demo-team-hangout",
+    "region": "none, loopback; handler default us-central1 unmeasured",
+    "node": "v26.3.0",
+    "os": "darwin 25.5.0 arm64",
+    "cpu": "Apple M5 Pro",
+    "cores": 18,
+    "memoryGiB": 24,
+    "commit": "24892431fe95a0493cfa7c66fba3a0e597449ec2",
+    "dirty": false,
+    "recordedAt": "2026-10-13T15:35:18.605Z",
+    "invocation": "real callable .run and service workers in one local Node process; excludes HTTP/auth/network/cold start and scheduled wait",
+    "readMetric": "transaction snapshot requests; includes retries, missing documents and repeated reads; excludes index-entry/billing accounting, setup/poll reconciliation reads and worker reads outside transactions"
+  },
+  "gates": {
+    "staging": "not run",
+    "ownerAcceptance": "pending",
+    "pilotReady": false
+  },
+  "scenarios": {
+    "migration": {
+      "ms": 257.17495799999995,
+      "transactionReads": {
+        "requests": 30,
+        "documents": 88,
+        "emptyQueries": 0
+      },
+      "checksum": "a1bec9595c47bd979539ee104e3bfb8cfb8757064c5dd38acfeb576f9be5a494",
+      "operationCount": 6,
+      "counts": {
+        "events": 1,
+        "inviteCodes": 1,
+        "participants": 1,
+        "teamMembers": 1,
+        "teams": 1,
+        "roster": 1
+      },
+      "resumed": true,
+      "replayPostimagesIdentical": true,
+      "unmappedPreserved": true,
+      "noEmail": true
+    },
+    "revokeAndDeletion": {
+      "ms": 2252.9165839999996,
+      "transactionReads": {
+        "requests": 1011,
+        "documents": 2106,
+        "emptyQueries": 33
+      },
+      "feed": "200 then 404 without event data",
+      "email": "development mailbox sent to other guardian, revoked parent cancelled before send",
+      "deletion": "deny first, one-page interruption, service resume, Auth deleted, other guardian and organization history survive"
+    }
+  },
+  "passed": true
+}

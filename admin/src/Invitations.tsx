@@ -110,7 +110,7 @@ export function Invitations({
     setVersion((v) => v + 1);
   };
   return (
-    <main className="invitation-page">
+    <main id="main-content" tabIndex={-1} className="invitation-page">
       <a
         className="back-link"
         href={routeUrl(orgId, "participant")}
@@ -216,16 +216,16 @@ export function Invitations({
             {rows.length === 0 ? (
               <p>No invitations yet.</p>
             ) : (
-              <div className="table-scroll">
+              <div className="table-scroll" role="region" aria-label="Records table" tabIndex={0}>
                 <table>
                   <thead>
                     <tr>
-                      <th>Recipient</th>
-                      <th>Relationship</th>
-                      <th>Status</th>
-                      <th>Delivery</th>
-                      <th>Expires</th>
-                      <th>Actions</th>
+                      <th scope="col">Recipient</th>
+                      <th scope="col">Relationship</th>
+                      <th scope="col">Status</th>
+                      <th scope="col">Delivery</th>
+                      <th scope="col">Expires</th>
+                      <th scope="col">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -338,7 +338,7 @@ export function InvitationAcceptance({
     }
   };
   return (
-    <main className="auth-card invitation-acceptance">
+    <main id="main-content" tabIndex={-1} className="auth-card invitation-acceptance">
       <p className="eyebrow">Household invitation</p>
       <h1>Review your invitation</h1>
       <p>Signed in as {services.auth.currentUser?.email}</p>

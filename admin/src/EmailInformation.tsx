@@ -70,7 +70,7 @@ export function PrivateEventInformation({
   );
   const { value: event, error } = usePrivateRead<PrivateEvent>(load);
   return (
-    <main className="auth-card">
+    <main id="main-content" tabIndex={-1} className="auth-card">
       <p className="eyebrow">Private schedule information</p>
       <h1>Event information</h1>
       <p>
@@ -124,7 +124,7 @@ export function EmailPreferences({ services }: { services: BrowserServices }) {
     setVersion((n) => n + 1);
   };
   return (
-    <main className="auth-card">
+    <main id="main-content" tabIndex={-1} className="auth-card">
       <h1>Essential email preferences</h1>
       <p>
         These messages cover invitations and published schedule information.
@@ -219,14 +219,14 @@ export function EmailDeliveryStatus({
           {!items.length ? (
             <p>No essential mail queued.</p>
           ) : (
-            <div className="table-scroll">
+            <div className="table-scroll" role="region" aria-label="Records table" tabIndex={0}>
               <table>
                 <thead>
                   <tr>
-                    <th>Purpose</th>
-                    <th>Delivery status</th>
-                    <th>Attempts</th>
-                    <th>Next action</th>
+                    <th scope="col">Purpose</th>
+                    <th scope="col">Delivery status</th>
+                    <th scope="col">Attempts</th>
+                    <th scope="col">Next action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -267,7 +267,7 @@ export function EmailDeliveryStatus({
 }
 export function EmailHelp() {
   return (
-    <main className="auth-card">
+    <main id="main-content" tabIndex={-1} className="auth-card">
       <h1>Help with team information</h1>
       <p>
         Use the email address your organization invited. Existing native
