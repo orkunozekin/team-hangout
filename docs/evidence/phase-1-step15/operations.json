@@ -1,0 +1,59 @@
+{
+  "environment": {
+    "kind": "local-emulator",
+    "scope": "operations",
+    "project": "demo-team-hangout",
+    "region": "none, loopback; handler default us-central1 unmeasured",
+    "node": "v26.3.0",
+    "os": "darwin 25.5.0 arm64",
+    "cpu": "Apple M5 Pro",
+    "cores": 18,
+    "memoryGiB": 24,
+    "commit": "992a13308e4a43f18b627ddee30232434106619b",
+    "dirty": true,
+    "recordedAt": "2026-10-13T15:12:15.361Z",
+    "invocation": "real callable .run and service workers in one local Node process; excludes HTTP/auth/network/cold start and scheduled wait",
+    "readMetric": "transaction snapshot requests; includes retries, missing documents and repeated reads; excludes index-entry/billing accounting, setup/poll reconciliation reads and worker reads outside transactions"
+  },
+  "gates": {
+    "staging": "not run",
+    "ownerAcceptance": "pending",
+    "pilotReady": false
+  },
+  "scenarios": {
+    "migration": {
+      "ms": 272.4903330000001,
+      "transactionReads": {
+        "requests": 30,
+        "documents": 88,
+        "emptyQueries": 0
+      },
+      "checksum": "3946f55d75dc6d72e2cea5d6719d29104a29e9a58810623dc6cc4e10e9d99924",
+      "operationCount": 6,
+      "counts": {
+        "events": 1,
+        "inviteCodes": 1,
+        "participants": 1,
+        "teamMembers": 1,
+        "teams": 1,
+        "roster": 1
+      },
+      "resumed": true,
+      "replayPostimagesIdentical": true,
+      "unmappedPreserved": true,
+      "noEmail": true
+    },
+    "revokeAndDeletion": {
+      "ms": 2264.544083,
+      "transactionReads": {
+        "requests": 1011,
+        "documents": 2106,
+        "emptyQueries": 33
+      },
+      "feed": "200 then 404 without event data",
+      "email": "development mailbox sent to other guardian, revoked parent cancelled before send",
+      "deletion": "deny first, one-page interruption, service resume, Auth deleted, other guardian and organization history survive"
+    }
+  },
+  "passed": true
+}
