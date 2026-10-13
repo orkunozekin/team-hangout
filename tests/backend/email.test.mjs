@@ -414,3 +414,72 @@ test("organization rollout disabled preserves queued mail and bounce terminal fa
   assert.equal(await processOutbox(await queue()), "cancelled");
   await db.doc(`emailSuppressions/${contactKey(orgId, email(uid))}`).delete();
 });
+
+test("private event response and staff summaries are scoped, denied to outsiders and unavailable for staged/deleted records", async () => {
+  const privateEvent = await db.runTransaction((tx) =>
+    eventInformation(tx, "email-event", uid),
+  );
+  assert.equal(privateEvent.title, "Evening practice");
+  assert.ok(!JSON.stringify(privateEvent).includes("Private child"));
+  await assert.rejects(
+    db.runTransaction((tx) =>
+      eventInformation(tx, "email-event", "email-outsider"),
+    ),
+    { code: "permission-denied" },
+  );
+  for (const patch of [
+    { publicationState: "staged" },
+    { deletedAt: Timestamp.now() },
+    { publicationOperationId: "pending-operation" },
+  ]) {
+    await db.doc("events/email-event").update(patch);
+    await assert.rejects(
+      db.runTransaction((tx) => eventInformation(tx, "email-event", uid)),
+      { code: "permission-denied" },
+    );
+    await db
+      .doc("events/email-event")
+      .update({
+        publicationState: "published",
+        deletedAt: null,
+        publicationOperationId: null,
+      });
+  }
+  const { listEssentialEmail } = require("./lib/email/commands.js");
+  const result = await listEssentialEmail.run({
+    auth: { uid: "email-admin" },
+    data: { orgId, pageSize: 2 },
+  });
+  assert.equal(result.items.length, 2);
+  assert.ok(result.nextCursor);
+  assert.ok(!JSON.stringify(result).includes("@example.test"));
+  await assert.rejects(
+    listEssentialEmail.run({ auth: { uid }, data: { orgId } }),
+    { code: "permission-denied" },
+  );
+  await assert.rejects(
+    listEssentialEmail.run({
+      auth: { uid: "email-admin" },
+      data: { orgId: "unrelated-org" },
+    }),
+    { code: "permission-denied" },
+  );
+});
+test("account deletion removes transactional preference and fences mail during cleanup", async () => {
+  const {
+    beginDeletion,
+    resumeDeletion,
+  } = require("./lib/accounts/deletion.js");
+  await db
+    .doc(`users/${other}/communication/essential`)
+    .set({ suppressed: false });
+  const key = await queue(other);
+  await beginDeletion(other);
+  assert.equal(await processOutbox(key), "cancelled");
+  await resumeDeletion(other, 100, { deleteUser: async () => {} });
+  assert.equal(
+    (await db.doc(`users/${other}/communication/essential`).get()).exists,
+    false,
+  );
+  assert.equal((await db.doc(`users/${other}`).get()).exists, false);
+});
