@@ -611,3 +611,23 @@ td strong {
 .invitation-actions-menu button { width: 100%; text-align: left; margin: 0; background: transparent; color: #234c3a; border: none; }
 .invitation-actions-menu button:hover, .invitation-actions-menu button:focus-visible { background: #edf3ed; }
 .table-scroll { overflow-x: auto; }
+
+.calendar-subscriptions .panel {
+  background: #fff;
+  border: 1px solid #d5dfd9;
+  border-radius: 14px;
+  padding: 24px;
+  margin: 20px 0;
+}
+.calendar-subscriptions label:has(input[type="checkbox"]) {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+}
+.calendar-subscriptions input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+}

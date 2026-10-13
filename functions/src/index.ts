@@ -14,3 +14,5 @@ export { listMyParticipants } from './participants/policy';
 export { createInvitation, resendInvitation, revokeInvitation, listInvitations, inspectInvitation, acceptInvitation } from './invitations/commands';
 
 export { listHouseholdAgenda } from './calendar/agenda';
+
+export { createCalendarSubscription, listCalendarSubscriptions, revokeCalendarSubscription, rotateCalendarSubscription, calendarSubscriptionOptions, calendarFeed } from './calendar/subscriptions';

@@ -66,7 +66,7 @@ export type TeamInput = {
     status: "active" | "archived";
   };
 };
-export type AdminCommands = import("./participants").ParticipantCommands & import("./invitations").InvitationCommands & {
+export type AdminCommands = import("./calendarSubscriptions").CalendarCommands & import("./participants").ParticipantCommands & import("./invitations").InvitationCommands & {
   listMyOrganizations: {
     input: { cursor?: string; pageSize?: number };
     output: Page<OrganizationLink>;
