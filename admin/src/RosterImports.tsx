@@ -76,12 +76,22 @@ export function RosterImports({
   const jobId = job?.id;
   function failure(e: unknown) {
     const code = (e as { code?: string }).code;
+    const domain = (e as { details?: { domainCode?: string } }).details
+      ?.domainCode;
+    if (
+      domain === "SCHEDULE_DRAFT_CHANGED" ||
+      domain === "SCHEDULE_RECIPIENTS_CHANGED"
+    ) {
+      setPublication(null);
+      setPublishConfirmed(false);
+    }
     if (
       code === "functions/permission-denied" ||
       code === "functions/unauthenticated"
     ) {
       generation.current++;
       revoked.current = true;
+      setNotice("");
       setWorkspace(null);
       setJob(null);
       setRows([]);
@@ -797,7 +807,7 @@ export function RosterImports({
                     Pending plan: create {job.previewCreates}, update{" "}
                     {job.previewUpdates}, skip {job.previewSkips}. Confirm all{" "}
                     {job.count - job.checkpoint} pending rows using their
-                    current resolutions. Unresolved rows block commit.
+                    current resolutions. Unresolved rows block commit.{" "}
                     {schedule
                       ? "Drafts remain unpublished. Essential updates: none until separate publication."
                       : "Invitations: none."}

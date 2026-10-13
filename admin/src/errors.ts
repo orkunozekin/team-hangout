@@ -13,6 +13,10 @@ export function message(error: unknown): string {
     details && typeof details === "object" && "domainCode" in details
       ? details.domainCode
       : null;
+  if (domain === "SCHEDULE_DRAFT_CHANGED")
+    return "This draft changed or was already published. Upload a fresh schedule preview to review current events before committing and publishing again.";
+  if (domain === "SCHEDULE_RECIPIENTS_CHANGED")
+    return "Notification contacts changed. Review selected publication again before confirming.";
   if (domain === "STALE_REVISION")
     return "This record changed while you were editing. Reload the workspace and review the latest version before saving.";
   if (domain === "ADMIN_WORKSPACE_DISABLED")

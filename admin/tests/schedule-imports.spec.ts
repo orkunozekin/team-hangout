@@ -29,7 +29,7 @@ async function capture(page: Page, name: string) {
     });
     await page.screenshot({
       path: path.join(process.env.ADMIN_EVIDENCE_DIR, `${name}.png`),
-      fullPage: true,
+      fullPage: (page.viewportSize()?.width || 1440) > 500,
     });
   }
 }
@@ -292,6 +292,17 @@ test("schedule drafts require a separate publication confirmation and retained p
     ),
   ).toBe(true);
   await capture(page, "08-schedule-mobile");
+  await page
+    .getByRole("heading", { name: "Separately publish selected drafts" })
+    .scrollIntoViewIfNeeded();
+  if (process.env.ADMIN_EVIDENCE_DIR)
+    await page.screenshot({
+      path: path.join(
+        process.env.ADMIN_EVIDENCE_DIR,
+        "11-schedule-mobile-publication.png",
+      ),
+      fullPage: false,
+    });
   await page.reload();
   await page.getByLabel("Import job ID").fill(jobId);
   await page.getByRole("button", { name: "Open saved import" }).click();
@@ -323,7 +334,12 @@ test("schedule stale publication and permission loss leave drafts private", asyn
   await page
     .getByRole("button", { name: "Confirm publication and queue updates" })
     .click();
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.getByRole("alert")).toContainText(
+    "Upload a fresh schedule preview",
+  );
+  await expect(
+    page.getByRole("button", { name: "Confirm publication and queue updates" }),
+  ).toHaveCount(0);
   expect(
     (await db.doc(`events/${row.eventId}`).get()).data().publicationState,
   ).toBe("staged");

@@ -183,7 +183,8 @@ async function prepare(tx: Transaction, job: Data, numbers: number[]) {
     )
       throw new HttpsError(
         "aborted",
-        "A draft changed or is already published. Reload and review its current import.",
+        "A draft changed or is already published. Upload a fresh schedule preview to review current events.",
+        { domainCode: "SCHEDULE_DRAFT_CHANGED" },
       );
     const team = (await tx.get(db.doc(`teams/${event.teamId}`))).data();
     if (
@@ -278,7 +279,8 @@ export const publishScheduleImport = command(
     if (prepared.binding !== payload.binding)
       throw new HttpsError(
         "aborted",
-        "Drafts or recipients changed. Review publication again.",
+        "Notification contacts changed. Review publication again.",
+        { domainCode: "SCHEDULE_RECIPIENTS_CHANGED" },
       );
     let queued = 0;
     // All reads finish before any event/outbox writes. Transaction retries cannot send mail.
