@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { PrivateEvent, EmailDelivery } from "../../shared/email";
 import type { BrowserServices } from "./firebase";
 import { Mutation } from "./Mutation";
@@ -37,7 +37,6 @@ function usePrivateRead<T>(load: () => Promise<T>) {
   }, [load]);
   return { value, error };
 }
-import { useCallback } from "react";
 export function PrivateEventInformation({
   services,
   eventId,
@@ -116,7 +115,6 @@ export function EmailPreferences({ services }: { services: BrowserServices }) {
         <>
           <p role="status">
             Essential email is {value.suppressed ? "suppressed" : "allowed"}.
-            Live delivery requires approved sender and privacy configuration.
           </p>
           <Mutation
             label={

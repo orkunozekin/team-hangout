@@ -38,19 +38,17 @@ const config = {
 const email = (id) => `${id}@example.test`;
 async function queue(recipientUid = uid) {
   const key = `email-${++n}`;
-  await db
-    .doc(`emailOutbox/${key}`)
-    .set({
-      kind: "publishedEvent",
-      orgId,
-      eventId: "email-event",
-      eventRevision: 1,
-      recipientUid,
-      recipientEmail: email(recipientUid),
-      status: "queued",
-      attemptCount: 0,
-      nextAttemptAt: Timestamp.now(),
-    });
+  await db.doc(`emailOutbox/${key}`).set({
+    kind: "publishedEvent",
+    orgId,
+    eventId: "email-event",
+    eventRevision: 1,
+    recipientUid,
+    recipientEmail: email(recipientUid),
+    status: "queued",
+    attemptCount: 0,
+    nextAttemptAt: Timestamp.now(),
+  });
   return key;
 }
 const row = async (key) => (await db.doc(`emailOutbox/${key}`).get()).data();
@@ -65,42 +63,38 @@ async function invitation() {
       iv,
     );
   const ciphertext = Buffer.concat([cipher.update(raw), cipher.final()]);
-  await db
-    .doc(`organizations/${orgId}/invitations/${key}`)
-    .set({
-      ...meta,
-      status: "pending",
-      outboxId: key,
-      tokenHash,
-      invitedBy: "email-admin",
-      recipientEmail: email(uid),
-      participantId: "email-child",
-      participantAccessRevision: 0,
-      relationship: "guardian",
-      permissions: { viewSchedule: true, viewProfile: true },
-      teamId: "email-team",
-      expiresAt: Timestamp.fromMillis(Date.now() + 86400000),
-    });
+  await db.doc(`organizations/${orgId}/invitations/${key}`).set({
+    ...meta,
+    status: "pending",
+    outboxId: key,
+    tokenHash,
+    invitedBy: "email-admin",
+    recipientEmail: email(uid),
+    participantId: "email-child",
+    participantAccessRevision: 0,
+    relationship: "guardian",
+    permissions: { viewSchedule: true, viewProfile: true },
+    teamId: "email-team",
+    expiresAt: Timestamp.fromMillis(Date.now() + 86400000),
+  });
   await db
     .doc(`invitationTokens/${tokenHash}`)
     .set({ status: "active", orgId, invitationId: key });
-  await db
-    .doc(`emailOutbox/${key}`)
-    .set({
-      kind: "invitation",
-      invitationId: key,
-      invitationRevision: 1,
-      orgId,
-      recipientUid: uid,
-      recipientEmail: email(uid),
-      status: "queued",
-      payload: {
-        version: 1,
-        iv: iv.toString("base64"),
-        tag: cipher.getAuthTag().toString("base64"),
-        ciphertext: ciphertext.toString("base64"),
-      },
-    });
+  await db.doc(`emailOutbox/${key}`).set({
+    kind: "invitation",
+    invitationId: key,
+    invitationRevision: 1,
+    orgId,
+    recipientUid: uid,
+    recipientEmail: email(uid),
+    status: "queued",
+    payload: {
+      version: 1,
+      iv: iv.toString("base64"),
+      tag: cipher.getAuthTag().toString("base64"),
+      ciphertext: ciphertext.toString("base64"),
+    },
+  });
   return { key, raw };
 }
 before(async () => {
@@ -114,13 +108,11 @@ before(async () => {
     });
     await db.doc(`users/${id}`).set({ uid: id, appRole: "user" });
   }
-  await db
-    .doc(`organizations/${orgId}`)
-    .set({
-      ...meta,
-      name: "Cedar Park Athletics",
-      features: { organizationV2: true, households: true },
-    });
+  await db.doc(`organizations/${orgId}`).set({
+    ...meta,
+    name: "Cedar Park Athletics",
+    features: { organizationV2: true, households: true, essentialEmail: true },
+  });
   await db
     .doc(`organizations/${orgId}/members/email-admin`)
     .set({ ...meta, roles: ["orgAdmin"], programIds: [] });
@@ -131,23 +123,19 @@ before(async () => {
   await db
     .doc(`organizations/${orgId}/divisions/email-division`)
     .set({ ...meta, programId: "email-program", seasonId: "email-season" });
-  await db
-    .doc("teams/email-team")
-    .set({
-      ...meta,
-      name: "Falcons",
-      programId: "email-program",
-      seasonId: "email-season",
-      divisionId: "email-division",
-    });
-  await db
-    .doc(`organizations/${orgId}/participants/email-child`)
-    .set({
-      ...meta,
-      displayName: "Private child",
-      linkedUserId: null,
-      kind: "youth",
-    });
+  await db.doc("teams/email-team").set({
+    ...meta,
+    name: "Falcons",
+    programId: "email-program",
+    seasonId: "email-season",
+    divisionId: "email-division",
+  });
+  await db.doc(`organizations/${orgId}/participants/email-child`).set({
+    ...meta,
+    displayName: "Private child",
+    linkedUserId: null,
+    kind: "youth",
+  });
   for (const id of [uid, other])
     await db
       .doc(`organizations/${orgId}/participants/email-child/guardians/${id}`)
@@ -160,26 +148,24 @@ before(async () => {
   await db
     .doc("teams/email-team/roster/email-child")
     .set({ ...meta, participantId: "email-child" });
-  await db
-    .doc("events/email-event")
-    .set({
-      ...meta,
-      programId: "email-program",
-      seasonId: "email-season",
-      divisionId: "email-division",
-      teamId: "email-team",
-      teamIds: ["email-team"],
-      title: "Evening practice",
-      type: "practice",
-      startsAt: Timestamp.fromDate(new Date("2026-10-20T22:00:00Z")),
-      endsAt: Timestamp.fromDate(new Date("2026-10-20T23:00:00Z")),
-      timeZone: "America/Chicago",
-      location: { name: "Cedar Park field", address: "123 Example Lane" },
-      status: "scheduled",
-      publicationState: "published",
-      publicationOperationId: null,
-      deletedAt: null,
-    });
+  await db.doc("events/email-event").set({
+    ...meta,
+    programId: "email-program",
+    seasonId: "email-season",
+    divisionId: "email-division",
+    teamId: "email-team",
+    teamIds: ["email-team"],
+    title: "Evening practice",
+    type: "practice",
+    startsAt: Timestamp.fromDate(new Date("2026-10-20T22:00:00Z")),
+    endsAt: Timestamp.fromDate(new Date("2026-10-20T23:00:00Z")),
+    timeZone: "America/Chicago",
+    location: { name: "Cedar Park field", address: "123 Example Lane" },
+    status: "scheduled",
+    publicationState: "published",
+    publicationOperationId: null,
+    deletedAt: null,
+  });
 });
 after(async () => deleteApp(app));
 test("mailbox proves two separate guardians, safe time/place and private/help fallbacks, without child names", async () => {
@@ -252,13 +238,11 @@ test("pre-send failures use bounded retries, concurrent lease prevents duplicate
   assert.equal((await row(terminal)).status, "failed");
   assert.equal((await row(terminal)).attemptCount, 5);
   const crashed = await queue();
-  await db
-    .doc(`emailOutbox/${crashed}`)
-    .update({
-      status: "sending",
-      lease: "lost",
-      leaseUntil: Timestamp.fromMillis(0),
-    });
+  await db.doc(`emailOutbox/${crashed}`).update({
+    status: "sending",
+    lease: "lost",
+    leaseUntil: Timestamp.fromMillis(0),
+  });
   assert.equal(await processOutbox(crashed), "skipped");
   assert.equal((await row(crashed)).failureCode, "AMBIGUOUS");
 });
@@ -403,4 +387,30 @@ test("production sender gate is closed by default and adapter sanitizes results 
     globalThis.fetch = original;
     process.env.FUNCTIONS_EMULATOR = "true";
   }
+});
+
+test("organization rollout disabled preserves queued mail and bounce terminal failure is suppressed", async () => {
+  const key = await queue();
+  await db
+    .doc(`organizations/${orgId}`)
+    .update({ "features.essentialEmail": false });
+  assert.equal(await processOutbox(key), "disabled");
+  assert.equal((await row(key)).status, "queued");
+  assert.equal((await row(key)).attemptCount, 0);
+  await db
+    .doc(`organizations/${orgId}`)
+    .update({ "features.essentialEmail": true });
+  assert.equal(
+    await processOutbox(key, {
+      transport: {
+        send: async () => {
+          throw new DeliveryFailure("BOUNCE");
+        },
+      },
+    }),
+    "failed",
+  );
+  assert.equal((await row(key)).failureCode, "BOUNCE");
+  assert.equal(await processOutbox(await queue()), "cancelled");
+  await db.doc(`emailSuppressions/${contactKey(orgId, email(uid))}`).delete();
 });

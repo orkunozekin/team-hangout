@@ -92,7 +92,11 @@ export function App({ services }: { services: BrowserServices }) {
         >
           <span className="brand-mark">th</span>Team Hangout{" "}
           <span className="workspace-label">
-            {pendingToken ? "Household invitation" : "Admin workspace"}
+            {pendingToken
+              ? "Household invitation"
+              : /^\/events\//.test(location.pathname)
+                ? "Team information"
+                : "Admin workspace"}
           </span>
         </a>
         {session.user && (
@@ -144,7 +148,11 @@ export function App({ services }: { services: BrowserServices }) {
               confirmation.
             </p>
           )}
-          <SignIn services={services} invitation={!!pendingToken} />
+          <SignIn
+            services={services}
+            invitation={!!pendingToken}
+            information={/^\/events\//.test(location.pathname)}
+          />
         </>
       ) : (
         <div
@@ -205,9 +213,11 @@ export function App({ services }: { services: BrowserServices }) {
 function SignIn({
   services,
   invitation = false,
+  information = false,
 }: {
   services: BrowserServices;
   invitation?: boolean;
+  information?: boolean;
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -242,7 +252,9 @@ function SignIn({
       <p className="muted">
         {invitation
           ? "Use the email address that received the invitation."
-          : "Manage your organization, seasons and staff in one place."}
+          : information
+            ? "Sign in to read your private team schedule. No app installation needed."
+            : "Manage your organization, seasons and staff in one place."}
       </p>
       <form
         onSubmit={(e) => {

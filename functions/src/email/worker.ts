@@ -1,6 +1,11 @@
 import { createDecipheriv, createHash, randomUUID } from "node:crypto";
 import { getAuth } from "firebase-admin/auth";
-import { getFirestore, Timestamp, Transaction } from "firebase-admin/firestore";
+import {
+  FieldPath,
+  getFirestore,
+  Timestamp,
+  Transaction,
+} from "firebase-admin/firestore";
 import { defineSecret } from "firebase-functions/params";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { HttpsError } from "firebase-functions/v2/https";
@@ -108,6 +113,11 @@ async function prepareMail(
   config: SenderConfig,
 ): Promise<Mail | null> {
   try {
+    if (
+      (await tx.get(getFirestore().doc(`organizations/${row.orgId}`))).data()
+        ?.features?.essentialEmail !== true
+    )
+      return null;
     if (!(await contact(tx, row))) return null;
     const links = `No app installation needed. Sign in with your own account.\nHelp: ${config.browserOrigin}/help\nEmail preferences: ${config.browserOrigin}/email-preferences\nPrivacy: ${config.privacyPolicyUrl}\nReply to: ${config.replyTo}`;
     if (row.kind === "invitation") {
@@ -249,6 +259,15 @@ export async function processOutbox(
 ) {
   const config = options.config ?? senderConfig();
   if (!config) return "disabled";
+  const candidate = (
+    await getFirestore().doc(`emailOutbox/${key}`).get()
+  ).data();
+  if (
+    !candidate ||
+    (await getFirestore().doc(`organizations/${candidate.orgId}`).get()).data()
+      ?.features?.essentialEmail !== true
+  )
+    return "disabled";
   const transport =
     options.transport ??
     (demoRuntime()
@@ -372,17 +391,22 @@ export const resumeEssentialEmail = onSchedule(
   async () => {
     if (!senderConfig()) return;
     const db = getFirestore();
-    // Separate bounded queries stop terminal records starving due work. Each tick drains up to 25 per state.
+    // Persist scan positions so disabled organizations or future retries cannot starve later rows.
     for (const state of ["queued", "pending", "sending"]) {
-      const query = db.collection("emailOutbox").where("status", "==", state);
-      const rows = await (
-        state === "queued"
-          ? query
-          : query.orderBy(state === "sending" ? "leaseUntil" : "nextAttemptAt")
-      )
-        .limit(25)
-        .get();
+      const scan = db.doc(`emailWorkerScans/${state}`);
+      const cursor = (await scan.get()).data()?.cursor;
+      let query = db
+        .collection("emailOutbox")
+        .where("status", "==", state)
+        .orderBy(FieldPath.documentId())
+        .limit(25);
+      if (cursor) query = query.startAfter(cursor);
+      const rows = await query.get();
       for (const row of rows.docs) await processOutbox(row.id);
+      await scan.set({
+        cursor: rows.size === 25 ? rows.docs[24].id : null,
+        updatedAt: Timestamp.now(),
+      });
     }
   },
 );
