@@ -113,6 +113,7 @@ test("delayed earlier filter response cannot restore old cards; unavailable sele
       }),
   );
   await fireEvent.press(screen.getByText("Jamie"));
+  expect(screen.getByLabelText("Loading household agenda")).toBeTruthy();
   api.mockResolvedValue({ ...page, items: [], teams: [] });
   await fireEvent.press(screen.getByText("Reset calendar filters"));
   await screen.findByText(
@@ -133,4 +134,29 @@ test("loading, connection failure, empty and setup-required states stay distinct
     "No published events match this date window and these filters.",
   );
   expect(screen.getByText(/Some legacy schedules need setup/)).toBeTruthy();
+});
+
+test("successful calendar-only reload refreshes surrounding discovery without requiring an error", async () => {
+  const refreshed = jest.fn(),
+    denied = jest.fn();
+  await render(
+    <HouseholdAgenda
+      refresh={0}
+      onAccessRefreshed={refreshed}
+      onAccessDenied={denied}
+    />,
+  );
+  await screen.findByText("Jamie · Casey");
+  expect(refreshed).toHaveBeenCalledTimes(1);
+  api.mockResolvedValue({
+    ...page,
+    accessVersion: "revoked-jamie",
+    teams: [{ ...team, participants: [participants[1]] }],
+    items: [{ ...event, participants: [participants[1]] }],
+  });
+  await fireEvent.press(screen.getByText("Reload calendar"));
+  await screen.findByText("Casey");
+  expect(refreshed).toHaveBeenCalledTimes(2);
+  expect(denied).not.toHaveBeenCalled();
+  expect(screen.queryByText("Jamie · Casey")).toBeNull();
 });

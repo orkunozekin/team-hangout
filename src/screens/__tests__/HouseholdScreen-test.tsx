@@ -10,12 +10,20 @@ import {
 import HouseholdScreen from "../HouseholdScreen";
 import { httpsCallable } from "firebase/functions";
 import { runCommand } from "../../firebase/commands";
+let mockAgendaRefreshed: (() => void) | undefined;
 let mockAgendaDenied: (() => void) | undefined;
 jest.mock(
   "../../components/HouseholdAgenda",
   () =>
-    ({ onAccessDenied }: { onAccessDenied: () => void }) => {
+    ({
+      onAccessDenied,
+      onAccessRefreshed,
+    }: {
+      onAccessDenied: () => void;
+      onAccessRefreshed: () => void;
+    }) => {
       mockAgendaDenied = onAccessDenied;
+      mockAgendaRefreshed = onAccessRefreshed;
       return null;
     },
 );
@@ -176,4 +184,14 @@ test("delayed participant discovery cannot repopulate household after agenda den
   );
   expect(screen.queryByText("Jamie")).toBeNull();
   expect(screen.queryByText("Casey")).toBeNull();
+});
+
+test("successful calendar refresh reauthorizes participant discovery after an individual grant is revoked", async () => {
+  await render(<HouseholdScreen user={user} onTeams={jest.fn()} />);
+  await screen.findByText("Jamie");
+  revoked = true;
+  await act(async () => mockAgendaRefreshed?.());
+  await screen.findByText("Casey");
+  expect(screen.queryByText("Jamie")).toBeNull();
+  expect(screen.queryByLabelText("View Jamie, guardian access")).toBeNull();
 });

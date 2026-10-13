@@ -59,12 +59,16 @@ const emptyFilters = {
 export default function HouseholdAgenda({
   refresh,
   onAccessDenied,
+  onAccessRefreshed,
 }: {
   refresh: number;
   onAccessDenied?: () => void;
+  onAccessRefreshed?: () => void;
 }) {
   const deniedCallback = useRef(onAccessDenied);
   deniedCallback.current = onAccessDenied;
+  const refreshedCallback = useRef(onAccessRefreshed);
+  refreshedCallback.current = onAccessRefreshed;
   const defaultZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const [zone, setZone] = useState(defaultZone);
   const [zoneInput, setZoneInput] = useState(defaultZone);
@@ -106,6 +110,7 @@ export default function HouseholdAgenda({
     void listHouseholdAgenda(input)
       .then((result) => {
         if (generation.current !== token) return;
+        refreshedCallback.current?.();
         // A preference for a removed grant cannot stay selected or masquerade as current access.
         const valid = { ...filters };
         if (

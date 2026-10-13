@@ -72,6 +72,7 @@ export default function HouseholdScreen({
   const [items, setItems] = useState<HouseholdParticipant[] | null>(null);
   const [selected, setSelected] = useState<HouseholdParticipant | null>(null);
   const [version, setVersion] = useState(0);
+  const [discoveryVersion, setDiscoveryVersion] = useState(0);
   const [focused, setFocused] = useState(false);
   const [appActive, setAppActive] = useState(
     AppState.currentState !== "background" &&
@@ -130,7 +131,7 @@ export default function HouseholdScreen({
     return () => {
       active = false;
     };
-  }, [user.uid, version, focused, appActive]);
+  }, [user.uid, version, discoveryVersion, focused, appActive]);
   function reload() {
     householdGeneration.current++;
     setSelected(null);
@@ -172,6 +173,12 @@ export default function HouseholdScreen({
               <HouseholdAgenda
                 key={user.uid}
                 refresh={version}
+                onAccessRefreshed={() => {
+                  householdGeneration.current++;
+                  setItems(null);
+                  setError("");
+                  setDiscoveryVersion((n) => n + 1);
+                }}
                 onAccessDenied={() => {
                   householdGeneration.current++;
                   setSelected(null);
