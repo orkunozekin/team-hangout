@@ -56,3 +56,10 @@ firebase-service-account.json
 # Browser test artifacts
 admin/test-results/
 admin/playwright-report/
+
+# Project-specific backend configuration
+functions/.env.*
+!functions/.env.example
+
+# Local Firebase deployment cache
+.firebase/
