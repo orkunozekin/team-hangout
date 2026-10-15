@@ -1,0 +1,121 @@
+import { before, after, test } from 'node:test';
+import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import { initializeApp, deleteApp } from 'firebase/app';
+import { getAuth, connectAuthEmulator, signInWithEmailAndPassword } from 'firebase/auth';
+import { getFunctions, connectFunctionsEmulator, httpsCallable } from 'firebase/functions';
+import { getFirestore as clientDb, connectFirestoreEmulator, doc, getDoc, setDoc } from 'firebase/firestore';
+import { projectId, requireEmulators, operationalEventFields as fields } from './fixtures.mjs';
+const require = createRequire(new URL('../../functions/package.json', import.meta.url));
+const { initializeApp: adminApp, deleteApp: deleteAdmin } = require('firebase-admin/app');
+const { getAuth: adminAuth } = require('firebase-admin/auth');
+const { getFirestore, Timestamp } = require('firebase-admin/firestore');
+requireEmulators();
+let admin, db, seq = 0; const apps = {};
+const call = async (uid, name, data = {}) => (await httpsCallable(getFunctions(apps[uid]), name)(data)).data;
+const req = payload => ({ requestId: `p202-${++seq}`, ...payload });
+const deny = promise => assert.rejects(promise, { code: 'functions/permission-denied' });
+const scope = { orgId: 'p202-org', programId: 'p202-program', seasonId: 'p202-season', divisionId: 'p202-division' };
+const meta = { schemaVersion: 2, revision: 1, status: 'active', createdAt: Timestamp.now(), updatedAt: Timestamp.now() };
+async function create(extra = {}) {
+  return call('p202-admin', 'createEvent', req({ teamId: 'p202-a', event: { ...fields, title: 'Falcons vs Comets', type: 'match', teamIds: ['p202-a', 'p202-b'], publicationState: 'published', ...extra } }));
+}
+const mutate = (event, action, patch = {}, extra = {}) => call('p202-admin', 'mutateEventSchedule', req({ eventId: event.id, expectedRevision: event.revision, action, patch, reason: 'Synthetic scheduling change', ...extra }));
+before(async () => {
+  admin = adminApp({ projectId }); db = getFirestore(admin);
+  for (const uid of ['p202-admin', 'p202-a-coach', 'p202-b-coach', 'p202-guardian', 'p202-self', 'p202-outsider', 'p202-support']) {
+    const app = initializeApp({ projectId, apiKey: 'demo-key' }, uid); apps[uid] = app;
+    connectAuthEmulator(getAuth(app), 'http://127.0.0.1:9099', { disableWarnings: true });
+    connectFunctionsEmulator(getFunctions(app), '127.0.0.1', 5001);
+    connectFirestoreEmulator(clientDb(app), '127.0.0.1', 8080);
+    await adminAuth(admin).createUser({ uid, email: `${uid}@example.test`, password: 'SyntheticPassword123!' });
+    await db.doc(`users/${uid}`).set({ uid, appRole: uid === 'p202-support' ? 'superAdmin' : 'user' });
+    await signInWithEmailAndPassword(getAuth(app), `${uid}@example.test`, 'SyntheticPassword123!');
+  }
+  await db.doc('organizations/p202-org').set({ ...meta, name: 'Synthetic league', features: { organizationV2: true, households: true } });
+  for (const [kind, name] of [['programs', 'p202-program'], ['seasons', 'p202-season'], ['divisions', 'p202-division']]) await db.doc(`organizations/p202-org/${kind}/${name}`).set({ ...meta, ...scope, name });
+  await db.doc('organizations/p202-org/members/p202-admin').set({ ...meta, orgId: 'p202-org', roles: ['orgAdmin'], programIds: [] });
+  for (const [teamId, name, uid] of [['p202-a', 'Falcons', 'p202-a-coach'], ['p202-b', 'Comets', 'p202-b-coach']]) {
+    await db.doc(`teams/${teamId}`).set({ ...meta, ...scope, name });
+    await db.doc(`teamMembers/${teamId}_${uid}`).set({ ...meta, orgId: 'p202-org', teamId, userId: uid, role: 'coach', roles: ['coach'] });
+  }
+  await db.doc('organizations/p202-org/participants/p202-child').set({ ...meta, orgId: 'p202-org', displayName: 'Synthetic child', linkedUserId: 'p202-self' });
+  await db.doc('organizations/p202-org/participants/p202-child/guardians/p202-guardian').set({ ...meta, orgId: 'p202-org', participantId: 'p202-child', userId: 'p202-guardian', permissions: { viewSchedule: true, respond: false } });
+  await db.doc('teams/p202-b/roster/p202-child').set({ ...meta, orgId: 'p202-org', participantId: 'p202-child' });
+});
+after(async () => { await Promise.all(Object.values(apps).map(deleteApp)); await deleteAdmin(admin); });
+test('one canonical match is visible from either team and live household grants, but only every-team management can mutate', async () => {
+  const event = await create();
+  assert.equal(event.homeTeamId, 'p202-a'); assert.equal(event.awayTeamId, 'p202-b');
+  for (const [uid, teamId] of [['p202-a-coach', 'p202-a'], ['p202-b-coach', 'p202-b'], ['p202-guardian', 'p202-b'], ['p202-self', 'p202-b']]) {
+    const rows = await call(uid, 'listCanonicalTeamEvents', { teamId });
+    assert.ok(rows.items.some(row => row.id === event.id));
+    const loaded = await call(uid, 'getCanonicalEvent', { eventId: event.id });
+    assert.equal(loaded.canManage, false); assert.equal(loaded.teams.length, 2);
+    await deny(call(uid, 'mutateEventSchedule', req({ eventId: event.id, expectedRevision: 1, action: 'cancel', reason: 'Bad' })));
+  }
+  for (const uid of ['p202-outsider', 'p202-support']) {
+    await deny(call(uid, 'getCanonicalEvent', { eventId: event.id }));
+    await deny(call(uid, 'getNativeTeam', { teamId: 'p202-a' }));
+  }
+  const choices = await call('p202-admin', 'listEventTeamChoices', { teamId: 'p202-a' });
+  assert.deepEqual(choices.items.map(row => row.id), ['p202-a', 'p202-b']);
+  assert.deepEqual((await call('p202-a-coach', 'listEventTeamChoices', { teamId: 'p202-a' })).items.map(row => row.id), ['p202-a']);
+  await db.doc('organizations/p202-org/participants/p202-child/guardians/p202-guardian').update({ status: 'revoked' });
+  await deny(call('p202-guardian', 'getCanonicalEvent', { eventId: event.id }));
+  await db.doc('teams/p202-b/roster/p202-child').update({ status: 'removed' });
+  await deny(call('p202-self', 'getCanonicalEvent', { eventId: event.id }));
+});
+test('staging and every non-null operation remain invisible and client rules cannot expose canonical events', async () => {
+  const staged = await create({ publicationState: 'staged' });
+  await deny(call('p202-admin', 'getCanonicalEvent', { eventId: staged.id }));
+  await assert.rejects(mutate(staged, 'cancel'), { code: 'functions/failed-precondition' });
+  const event = await create();
+  for (const state of ['running', 'committed']) {
+    await db.doc('organizations/p202-org/scheduleOperations/p202-bulk').set({ state });
+    await db.doc(`events/${event.id}`).update({ publicationOperationId: 'p202-bulk' });
+    await deny(call('p202-admin', 'getCanonicalEvent', { eventId: event.id }));
+    assert.ok(!(await call('p202-admin', 'listCanonicalTeamEvents', { teamId: 'p202-a' })).items.some(row => row.id === event.id));
+    await assert.rejects(mutate(event, 'edit', { title: 'Cannot clear marker' }), { code: 'functions/invalid-argument' });
+  }
+  await assert.rejects(getDoc(doc(clientDb(apps['p202-admin']), 'events', event.id)), { code: 'permission-denied' });
+  await assert.rejects(setDoc(doc(clientDb(apps['p202-admin']), 'events', event.id), { publicationOperationId: null }, { merge: true }), { code: 'permission-denied' });
+});
+test('postpone, reschedule, cancellation and completion preserve identity, history and distinct lifecycle', async () => {
+  const event = await create();
+  const postpone = await mutate(event, 'postpone');
+  let stored = (await db.doc(`events/${event.id}`).get()).data();
+  assert.equal(stored.status, 'postponed'); assert.equal(stored.deletedAt, null); assert.equal(stored.scheduleVersion, 1);
+  const interval = { startsAt: '2026-10-21T23:00:00.000Z', endsAt: '2026-10-22T00:00:00.000Z', timeZone: 'America/Chicago' };
+  const moved = await mutate(postpone, 'reschedule', interval);
+  stored = (await db.doc(`events/${event.id}`).get()).data();
+  assert.equal(moved.id, event.id); assert.equal(stored.status, 'scheduled'); assert.equal(stored.scheduleVersion, 2);
+  assert.equal(stored.rescheduledFromRevision, 2); assert.equal(stored.originalInterval.startsAt.toDate().toISOString(), fields.startsAt);
+  await mutate(moved, 'cancel');
+  stored = (await db.doc(`events/${event.id}`).get()).data(); assert.equal(stored.status, 'cancelled'); assert.equal(stored.deletedAt, null);
+  const loaded = await call('p202-b-coach', 'getCanonicalEvent', { eventId: event.id });
+  assert.deepEqual(loaded.history.map(row => row.action), ['cancel', 'reschedule', 'postpone']);
+  await assert.rejects(mutate({ id: event.id, revision: 4 }, 'reschedule', interval), { code: 'functions/failed-precondition' });
+  const complete = await create(); await mutate(complete, 'complete');
+  assert.equal((await db.doc(`events/${complete.id}`).get()).data().status, 'completed');
+  assert.equal((await db.collection(`events/${complete.id}/attendance`).get()).size, 0);
+});
+test('revision concurrency, idempotency, immutable references, revoked replay and deleting accounts fail closed', async () => {
+  const event = await create();
+  const payload = req({ eventId: event.id, expectedRevision: 1, action: 'edit', patch: { title: 'Updated' }, reason: 'Title correction' });
+  const [a, b] = await Promise.all([call('p202-admin', 'mutateEventSchedule', payload), call('p202-admin', 'mutateEventSchedule', payload)]);
+  assert.deepEqual(a, b); assert.equal((await db.collection(`events/${event.id}/scheduleHistory`).get()).size, 1);
+  await assert.rejects(call('p202-admin', 'mutateEventSchedule', { ...payload, reason: 'Changed' }), error => error.details.domainCode === 'REQUEST_ID_REUSED');
+  await assert.rejects(mutate(event, 'cancel'), error => error.details.domainCode === 'STALE_REVISION');
+  for (const patch of [{ teamIds: ['foreign'] }, { orgId: 'foreign' }, { publicationOperationId: null }, { startsAt: fields.startsAt }]) {
+    await assert.rejects(mutate(a, 'edit', patch), { code: 'functions/invalid-argument' });
+  }
+  const concurrent = await Promise.allSettled(['One', 'Two'].map(title => mutate(a, 'edit', { title })));
+  assert.equal(concurrent.filter(row => row.status === 'fulfilled').length, 1);
+  await db.doc('organizations/p202-org/members/p202-admin').update({ status: 'revoked' });
+  await deny(call('p202-admin', 'mutateEventSchedule', payload));
+  await db.doc('organizations/p202-org/members/p202-admin').update({ status: 'active' });
+  await db.doc('accountDeletionJobs/p202-admin').set({ status: 'pending' });
+  await assert.rejects(call('p202-admin', 'mutateEventSchedule', payload));
+  await db.doc('accountDeletionJobs/p202-admin').delete();
+});

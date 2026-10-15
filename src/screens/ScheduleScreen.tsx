@@ -1,6 +1,7 @@
 import React, {
   useCallback,
   useState,
+  useRef,
 } from 'react';
 
 import {
@@ -85,29 +86,33 @@ export default function ScheduleScreen({
   appRole,
   navigation,
 }: Props) {
+  const generation = useRef(0);
   const [events, setEvents] = useState<TeamEvent[]>([]);
   const [filter, setFilter] = useState<EventTypeFilter>('all');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
 
   const load = useCallback(async () => {
+    const token = ++generation.current;
+    setError('');
     const data = await listTeamEvents(teamId);
-    setEvents(data);
+    if (token === generation.current) setEvents(data);
   }, [teamId]);
 
   useFocusEffect(
     useCallback(() => {
       let active = true;
       (async () => {
-        setLoading(true);
+        setLoading(true); setEvents([]);
         try {
           await load();
-        } finally {
+        } catch (error) { setEvents([]); setError(error instanceof Error ? error.message : 'Schedule unavailable.'); } finally {
           if (active) setLoading(false);
         }
       })();
       return () => {
-        active = false;
+        active = false; generation.current++;
       };
     }, [load]),
   );
@@ -116,7 +121,7 @@ export default function ScheduleScreen({
     setRefreshing(true);
     try {
       await load();
-    } finally {
+    } catch (error) { setEvents([]); setError(error instanceof Error ? error.message : 'Schedule unavailable.'); } finally {
       setRefreshing(false);
     }
   }
@@ -172,7 +177,7 @@ export default function ScheduleScreen({
         contentContainerStyle={styles.list}
         ListEmptyComponent={
           loading ? null : (
-            <EmptyState message="No events yet. Coaches can add practices and matches." />
+            <EmptyState message={error || "No events yet. Coaches can add practices and matches."} />
           )
         }
         renderItem={({ item }) => (
@@ -205,6 +210,8 @@ export default function ScheduleScreen({
               <Text style={styles.time}>{item.time}</Text>
             </View>
             <Text style={styles.cardTitle}>{item.title}</Text>
+            {item.status ? <Text style={styles.meta}>{item.status} · Schedule version {item.scheduleVersion}</Text> : null}
+            {item.teams ? <Text style={styles.meta}>{item.teams.map(team => team.name).join(' vs ')}</Text> : null}
             <Text style={styles.meta}>
               {formatEventDateLabel(item.date)}
               {item.location?.name ? ` · ${item.location.name}` : ''}

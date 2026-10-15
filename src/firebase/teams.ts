@@ -1,3 +1,5 @@
+import { httpsCallable } from 'firebase/functions';
+import { functions } from './config';
 import {
   collection,
   doc,
@@ -54,6 +56,7 @@ export function mapTeamDoc(
 ): Team {
   return {
     id,
+    schemaVersion: typeof data.schemaVersion === 'number' ? data.schemaVersion : undefined,
     name: String(data.name ?? ''),
     sport: data.sport == null ? null : String(data.sport),
     inviteCode: String(data.inviteCode ?? ''),
@@ -71,7 +74,7 @@ export function mapMemberDoc(
     id,
     teamId: String(data.teamId ?? ''),
     userId: String(data.userId ?? ''),
-    role: (data.role === 'coach' ? 'coach' : 'player') as TeamRole,
+    role: (data.schemaVersion === 2 ? data.status === 'active' && Array.isArray(data.roles) && data.roles.includes('coach') : data.role === 'coach') ? 'coach' : 'player',
     displayName: String(data.displayName ?? ''),
     joinedAt: toDate(data.joinedAt),
   };
@@ -80,7 +83,13 @@ export function mapMemberDoc(
 export async function getTeam(
   teamId: string,
 ): Promise<Team | null> {
-  const snap = await getDoc(doc(db, 'teams', teamId));
+  let snap;
+  try { snap = await getDoc(doc(db, 'teams', teamId)); }
+  catch (error) {
+    if ((error as { code?: string }).code !== 'permission-denied') throw error;
+    const result = (await httpsCallable<{ teamId: string }, Record<string, unknown>>(functions, 'getNativeTeam')({ teamId })).data;
+    return mapTeamDoc(teamId, result);
+  }
   if (!snap.exists()) {
     return null;
   }

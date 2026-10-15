@@ -1,3 +1,5 @@
+const mockNativeTeam = jest.fn();
+jest.mock('firebase/functions', () => ({ httpsCallable: () => mockNativeTeam }));
 const mockRunCommand = jest.fn();
 jest.mock('../commands', () => ({ runCommand: (...args: unknown[]) => mockRunCommand(...args) }));
 const mockGetDoc = jest.fn();
@@ -284,3 +286,13 @@ describe('firebase/teams', () => {
     expect(mockUpdateDoc).not.toHaveBeenCalled();
     expect(mockWriteBatch).not.toHaveBeenCalled();
   });
+
+test('canonical teams use authorized callable fallback and revoked roles do not become coach', async () => {
+  mockGetDoc.mockRejectedValueOnce({ code: 'permission-denied' });
+  mockNativeTeam.mockResolvedValue({ data: { id: 'canonical', name: 'Falcons', schemaVersion: 2 } });
+  expect((await getTeam('canonical'))?.schemaVersion).toBe(2);
+  mockGetDoc.mockRejectedValueOnce(new Error('Offline'));
+  await expect(getTeam('canonical')).rejects.toThrow('Offline');
+  expect(mapMemberDoc('member', { schemaVersion: 2, role: 'coach', roles: ['coach'], status: 'revoked' }).role).toBe('player');
+  expect(mapMemberDoc('member', { schemaVersion: 2, roles: ['coach'], status: 'active' }).role).toBe('coach');
+});

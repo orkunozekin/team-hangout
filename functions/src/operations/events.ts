@@ -1,0 +1,146 @@
+import { FieldPath, getFirestore, Timestamp, Transaction } from 'firebase-admin/firestore';
+import { HttpsError } from 'firebase-functions/v2/https';
+import { command, Data, id, invalid, keys, object, revision, text } from '../commandSupport';
+import { checkRevision, denied, eventScope, hierarchy, staffScope, requireProgram } from './access';
+import { storageFields, teamIds, v2Fields, validateStoredEvent, eventAudit } from '../organizations/events';
+import { readCommand, page } from '../participants/policy';
+import { readAgenda } from '../calendar/agenda';
+
+const visible = (event: Data) => event.deletedAt == null && event.publicationState === 'published' && event.publicationOperationId === null;
+// Reuse the existing live staff/coach/participant/guardian reader; navigation pointers grant nothing.
+async function readableTeam(tx: Transaction, teamId: string, uid: string) {
+  const team = (await tx.get(getFirestore().doc(`teams/${teamId}`))).data();
+  if (!team || team.schemaVersion !== 2) denied();
+  const parents = await hierarchy(tx, team.orgId, team.programId, team.seasonId, team.divisionId, false);
+  if (parents.org.features?.organizationV2 !== true) denied();
+  try { const staff = await staffScope(tx, team.orgId, uid); requireProgram(staff, team.programId); return team; }
+  catch (error) { if (!(error instanceof HttpsError) || error.code !== 'permission-denied') throw error; }
+  const member = (await tx.get(getFirestore().doc(`teamMembers/${teamId}_${uid}`))).data();
+  if (member?.schemaVersion === 2 && member.orgId === team.orgId && member.teamId === teamId && member.userId === uid
+    && member.status === 'active' && Array.isArray(member.roles) && member.roles.some((role: string) => ['coach', 'captain'].includes(role))) return team;
+  const access = await readAgenda(tx, {}, uid, { events: false });
+  if (!access.teams.some((row: Data) => row.id === teamId && row.orgId === team.orgId)) denied();
+  return team;
+}
+async function canonical(tx: Transaction, event: Data) {
+  const db = getFirestore();
+  const ids = teamIds(event.teamIds);
+  const rows = await tx.getAll(...ids.map(teamId => db.doc(`teams/${teamId}`)));
+  if (event.teamId !== ids[0] || rows.some(row => row.data()?.schemaVersion !== 2
+    || row.data()?.orgId !== event.orgId || row.data()?.programId !== event.programId
+    || row.data()?.seasonId !== event.seasonId || (event.divisionId !== null && row.data()?.divisionId !== event.divisionId))) denied();
+  for (const row of rows) await hierarchy(tx, event.orgId, event.programId, event.seasonId, row.data()!.divisionId, false);
+  return rows.map(row => ({ id: row.id, name: row.data()!.name }));
+}
+async function result(tx: Transaction, eventId: string, event: Data, uid: string) {
+  const teams = await canonical(tx, event);
+  let canManage = false;
+  try { await eventScope(tx, event.teamIds, uid); canManage = true; }
+  catch (error) { if (!(error instanceof HttpsError) || !['permission-denied', 'failed-precondition'].includes(error.code)) throw error; }
+  const fields = ['schemaVersion', 'orgId', 'programId', 'seasonId', 'divisionId', 'teamId', 'teamIds', 'title', 'type',
+    'startsAt', 'endsAt', 'timeZone', 'status', 'publicationState', 'publicationOperationId', 'revision',
+    'scheduleVersion', 'rescheduledFromRevision', 'homeTeamId', 'awayTeamId', 'completedAt', 'createdBy', 'updatedBy',
+    'createdAt', 'updatedAt', 'deletedAt'];
+  const safe = Object.fromEntries(fields.filter(field => event[field] !== undefined).map(field => [field, event[field]]));
+  return { id: eventId, ...safe, location: event.location ? { name: event.location.name,
+    ...(event.location.address ? { address: event.location.address } : {}) } : null, notes: event.notes ?? null, teams, canManage };
+}
+export const getNativeTeam = readCommand(data => {
+  keys(data, ['teamId']); return { teamId: id(data.teamId, 'teamId') };
+}, async (tx, data, uid) => ({ id: data.teamId, ...await readableTeam(tx, data.teamId, uid) }));
+export const listEventTeamChoices = readCommand(data => {
+  keys(data, ['teamId', 'pageSize', 'cursor']); return { teamId: id(data.teamId, 'teamId'), ...page(data) };
+}, async (tx, data, uid) => {
+  const base = await readableTeam(tx, data.teamId, uid);
+  // Mutating any combination requires the same every-team grant used by creation.
+  await eventScope(tx, [data.teamId], uid);
+  let query = getFirestore().collection('teams').where('orgId', '==', base.orgId).where('programId', '==', base.programId)
+    .where('seasonId', '==', base.seasonId).orderBy(FieldPath.documentId());
+  if (data.cursor) query = query.startAfter(data.cursor);
+  const rows = await tx.get(query.limit(data.pageSize + 1));
+  const items: Data[] = [];
+  for (const row of rows.docs.slice(0, data.pageSize)) {
+    try { await eventScope(tx, row.id === data.teamId ? [data.teamId] : [data.teamId, row.id], uid); items.push({ id: row.id, name: row.data().name }); }
+    catch (error) { if (!(error instanceof HttpsError) || !['permission-denied', 'failed-precondition'].includes(error.code)) throw error; }
+  }
+  return { items, nextCursor: rows.size > data.pageSize ? rows.docs[data.pageSize - 1].id : null };
+});
+export const listCanonicalTeamEvents = readCommand(data => {
+  keys(data, ['teamId', 'pageSize', 'cursor']); return { teamId: id(data.teamId, 'teamId'), ...page(data) };
+}, async (tx, data, uid) => {
+  const team = await readableTeam(tx, data.teamId, uid);
+  let query = getFirestore().collection('events').where('orgId', '==', team.orgId)
+    .where('teamIds', 'array-contains', data.teamId).where('publicationState', '==', 'published')
+    .where('publicationOperationId', '==', null).where('deletedAt', '==', null).orderBy(FieldPath.documentId());
+  if (data.cursor) query = query.startAfter(data.cursor);
+  const rows = await tx.get(query.limit(data.pageSize + 1));
+  const items: Data[] = [];
+  for (const row of rows.docs.slice(0, data.pageSize)) {
+    const event = row.data();
+    if (event.schemaVersion === 2 && visible(event)) items.push(await result(tx, row.id, event, uid));
+  }
+  return { items, nextCursor: rows.size > data.pageSize ? rows.docs[data.pageSize - 1].id : null };
+});
+export const getCanonicalEvent = readCommand(data => {
+  keys(data, ['eventId']); return { eventId: id(data.eventId, 'eventId') };
+}, async (tx, data, uid) => {
+  const event = (await tx.get(getFirestore().doc(`events/${data.eventId}`))).data();
+  if (!event || event.schemaVersion !== 2 || !visible(event)) denied();
+  let allowed = false;
+  for (const teamId of teamIds(event.teamIds)) {
+    try { await readableTeam(tx, teamId, uid); allowed = true; break; }
+    catch (error) { if (!(error instanceof HttpsError) || error.code !== 'permission-denied') throw error; }
+  }
+  if (!allowed) denied();
+  const item = await result(tx, data.eventId, event, uid);
+  // Bounded recent history is safe schedule metadata only, never private notes or actor identity.
+  const rows = await tx.get(getFirestore().collection(`events/${data.eventId}/scheduleHistory`).orderBy('revision', 'desc').limit(20));
+  return { ...item, history: rows.docs.map(row => row.data()), historyHasMore: rows.size === 20 };
+});
+
+export const mutateEventSchedule = command('mutateEventSchedule', data => {
+  keys(data, ['requestId', 'eventId', 'expectedRevision', 'action', 'patch', 'reason']);
+  const action = text(data.action, 'action');
+  if (!['edit', 'postpone', 'cancel', 'reschedule', 'complete'].includes(action)) invalid('Invalid lifecycle action.');
+  const patch = object(data.patch ?? {});
+  if (['postpone', 'cancel', 'complete'].includes(action)) keys(patch, []);
+  else keys(patch, action === 'edit' ? ['title', 'type', 'location', 'notes'] : ['startsAt', 'endsAt', 'timeZone']);
+  if (action === 'reschedule' && ['startsAt', 'endsAt', 'timeZone'].some(field => patch[field] === undefined)) invalid('Supply the complete new interval and timeZone.');
+  return { eventId: id(data.eventId, 'eventId'), expectedRevision: revision(data.expectedRevision), action,
+    patch: ['edit', 'reschedule'].includes(action) ? v2Fields(patch, true) : {}, reason: text(data.reason, 'reason', 500) };
+}, async (tx, data, uid, _actor, replay) => {
+  const db = getFirestore(); const ref = db.doc(`events/${data.eventId}`);
+  const event = (await tx.get(ref)).data();
+  if (!event || event.schemaVersion !== 2) denied();
+  const scope = await eventScope(tx, teamIds(event.teamIds), uid, !replay);
+  validateStoredEvent(event, scope);
+  if (replay) return replay;
+  checkRevision(event, data.expectedRevision);
+  if (!visible(event)) throw new HttpsError('failed-precondition', 'Only published single events can be changed.');
+  if (event.status === 'completed' || event.status === 'cancelled'
+    || (['postpone', 'complete'].includes(data.action) && event.status !== 'scheduled')) {
+    throw new HttpsError('failed-precondition', 'This action is unavailable for the current event status.');
+  }
+  const now = Timestamp.now(); const nextRevision = event.revision + 1;
+  const changes: Data = { ...data.patch };
+  if (data.patch.type !== undefined) Object.assign(changes, {
+    homeTeamId: data.patch.type === 'match' && event.teamIds.length === 2 ? event.teamIds[0] : null,
+    awayTeamId: data.patch.type === 'match' && event.teamIds.length === 2 ? event.teamIds[1] : null });
+  if (data.action === 'reschedule') {
+    if (event.startsAt.toMillis() === Date.parse(data.patch.startsAt) && event.endsAt.toMillis() === Date.parse(data.patch.endsAt)
+      && event.timeZone === data.patch.timeZone) invalid('Choose a different schedule.');
+    Object.assign(changes, storageFields({ ...data.patch }), { status: 'scheduled', scheduleVersion: (event.scheduleVersion ?? 1) + 1,
+      rescheduledFromRevision: event.revision, originalInterval: event.originalInterval ?? { startsAt: event.startsAt, endsAt: event.endsAt, timeZone: event.timeZone } });
+  } else if (data.action !== 'edit') changes.status = { postpone: 'postponed', cancel: 'cancelled', complete: 'completed' }[data.action as string];
+  if (data.action === 'complete') changes.completedAt = now;
+  if (data.action === 'postpone') changes.postponementReason = data.reason;
+  // History is immutable and retains the previous interval and status for each committed transition.
+  tx.create(ref.collection('scheduleHistory').doc(String(nextRevision)), { schemaVersion: 2, revision: nextRevision,
+    action: data.action, reason: data.reason, previousStatus: event.status, status: changes.status ?? event.status,
+    previousTimeZone: event.timeZone, timeZone: changes.timeZone ?? event.timeZone,
+    previousStartsAt: event.startsAt, previousEndsAt: event.endsAt, startsAt: changes.startsAt ?? event.startsAt,
+    endsAt: changes.endsAt ?? event.endsAt, createdAt: now });
+  tx.update(ref, { ...changes, revision: nextRevision, updatedAt: now, updatedBy: uid });
+  eventAudit(tx, event, uid, `event:${data.action}`, ref.id, nextRevision);
+  return { id: ref.id, revision: nextRevision };
+});

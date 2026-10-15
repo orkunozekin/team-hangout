@@ -18,6 +18,7 @@ export interface AppUser {
 }
 
 export interface Team {
+  schemaVersion?: number;
   id: string;
   name: string;
   sport: string | null;
@@ -49,6 +50,16 @@ export interface EventLocation {
 }
 
 export interface TeamEvent {
+  schemaVersion?: number;
+  startsAt?: string;
+  endsAt?: string;
+  timeZone?: string;
+  status?: import('../../shared/operations').EventStatus;
+  scheduleVersion?: number;
+  teams?: { id: string; name: string }[];
+  canManage?: boolean;
+  history?: { revision: number; action: string; reason: string; previousStatus: string; status: string; previousStartsAt: string; startsAt: string; previousTimeZone?: string; timeZone?: string }[];
+  historyHasMore?: boolean;
   id: string;
   revision?: number;
   teamId: string;

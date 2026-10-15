@@ -1,3 +1,7 @@
+const mockRead = jest.fn();
+jest.mock('firebase/functions', () => ({ httpsCallable: () => mockRead }));
+const mockGetTeam = jest.fn();
+jest.mock('../teams', () => ({ getTeam: (...args: unknown[]) => mockGetTeam(...args) }));
 const mockRunCommand = jest.fn();
 jest.mock('../commands', () => ({ runCommand: (...args: unknown[]) => mockRunCommand(...args) }));
 const mockGetDoc = jest.fn();
@@ -34,11 +38,16 @@ import {
   mapEventDoc,
   softDeleteEvent,
   updateEvent,
+  mutateEventSchedule,
+  createCanonicalEvent,
+  listEventTeamChoices,
 } from '../events';
 
 describe('firebase/events', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockRead.mockRejectedValue({ code: 'functions/permission-denied' });
+    mockGetTeam.mockResolvedValue({ id: 't1' });
   });
 
   it('maps event documents with date variants', () => {
@@ -179,5 +188,36 @@ describe('legacy event compatibility contract', () => {
     const event = mapEventDoc('legacy-b', { revision: 4, deletedAt, status: 'cancelled', date: deletedAt, time: '10:00' });
     expect(event.revision).toBe(4); expect(event.deletedAt).toBe(deletedAt);
     expect(event).not.toHaveProperty('status');
+  });
+});
+
+test('canonical adapter renders the event timezone, both team labels and lifecycle without guessing legacy times', () => {
+  const event = mapEventDoc('shared-match', { schemaVersion: 2, revision: 1, orgId: 'org', programId: 'program', seasonId: 'season', divisionId: 'division', teamId: 'a', teamIds: ['a'], createdBy: 'actor', updatedBy: 'actor', createdAt: '2026-10-01T00:00:00.000Z', updatedAt: '2026-10-01T00:00:00.000Z', title: 'Match', type: 'match', publicationState: 'published', publicationOperationId: null, deletedAt: null, startsAt: '2026-10-20T23:00:00.000Z', endsAt: '2026-10-21T00:00:00.000Z', timeZone: 'America/Chicago', status: 'postponed', scheduleVersion: 2, teams: [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }] });
+  expect(event.time).toBe('18:00'); expect(event.date.toISOString().slice(0, 10)).toBe('2026-10-20');
+  expect(event.status).toBe('postponed'); expect(event.teams).toHaveLength(2);
+});
+
+describe('canonical callable readers and writers', () => {
+  beforeEach(() => { jest.clearAllMocks(); });
+  const event = { id: 'shared', schemaVersion: 2, revision: 1, orgId: 'org', programId: 'program', seasonId: 'season', divisionId: 'division', teamId: 'a', teamIds: ['a'], createdBy: 'actor', updatedBy: 'actor', createdAt: '2026-10-01T00:00:00.000Z', updatedAt: '2026-10-01T00:00:00.000Z', title: 'Match', type: 'match', publicationState: 'published', publicationOperationId: null, deletedAt: null, startsAt: '2026-10-20T23:00:00.000Z', endsAt: '2026-10-21T00:00:00.000Z', timeZone: 'America/Chicago', status: 'scheduled', teams: [{ id: 'a', name: 'A' }], canManage: true };
+  it('opens a canonical event and does not use legacy Firestore reads', async () => {
+    mockRead.mockResolvedValue({ data: event });
+    expect((await getEvent('shared'))?.time).toBe('18:00');
+    expect(mockGetDoc).not.toHaveBeenCalled();
+    mockRead.mockRejectedValue(new Error('Network unavailable'));
+    await expect(getEvent('shared')).rejects.toThrow('Network unavailable');
+  });
+  it('paginates canonical team events and choices', async () => {
+    mockGetTeam.mockResolvedValue({ schemaVersion: 2 });
+    mockRead.mockResolvedValueOnce({ data: { items: [event], nextCursor: 'shared' } }).mockResolvedValueOnce({ data: { items: [{ ...event, id: 'second' }], nextCursor: null } });
+    expect((await listTeamEvents('a')).map(event => event.id)).toEqual(['shared', 'second']);
+    mockRead.mockResolvedValueOnce({ data: { items: [{ id: 'a', name: 'A' }], nextCursor: 'a' } }).mockResolvedValueOnce({ data: { items: [{ id: 'b', name: 'B' }], nextCursor: null } });
+    expect(await listEventTeamChoices('a')).toHaveLength(2);
+  });
+  it('sends revisioned lifecycle commands and canonical creation', async () => {
+    await mutateEventSchedule('shared', 3, 'postpone', {}, 'Rain');
+    expect(mockRunCommand).toHaveBeenLastCalledWith('mutateEventSchedule', { eventId: 'shared', expectedRevision: 3, action: 'postpone', patch: {}, reason: 'Rain' });
+    await createCanonicalEvent('a', { teamIds: ['a', 'b'], title: 'Shared match' });
+    expect(mockRunCommand).toHaveBeenLastCalledWith('createEvent', { teamId: 'a', event: { teamIds: ['a', 'b'], title: 'Shared match' } });
   });
 });
