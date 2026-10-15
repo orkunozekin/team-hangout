@@ -159,3 +159,25 @@ describe('firebase/events', () => {
     expect(mockUpdateDoc).not.toHaveBeenCalled();
   });
 });
+
+describe('legacy event compatibility contract', () => {
+  it.each([
+    ['Date', new Date('2026-10-11T00:00:00.000Z')],
+    ['callable ISO', '2026-10-11T00:00:00.000Z'],
+    ['Firestore Timestamp', { toDate: () => new Date('2026-10-11T00:00:00.000Z') }],
+    ['epoch milliseconds', Date.parse('2026-10-11T00:00:00.000Z')],
+  ])('preserves split date/time from %s without timezone or duration inference', (_label, date) => {
+    const event = mapEventDoc('legacy-a', { teamId: 'team-a', type: 'match', title: 'Legacy match', date,
+      time: '18:30', createdAt: date, updatedAt: date, deletedAt: null });
+    expect(event.date.toISOString()).toBe('2026-10-11T00:00:00.000Z');
+    expect(event.time).toBe('18:30'); expect(event.revision).toBe(0);
+    expect(event).not.toHaveProperty('startsAt'); expect(event).not.toHaveProperty('endsAt');
+    expect(event).not.toHaveProperty('status'); expect(event.deletedAt).toBeNull();
+  });
+  it('preserves revisioned migrated records and soft deletion independently of lifecycle', () => {
+    const deletedAt = new Date('2026-10-12T00:00:00.000Z');
+    const event = mapEventDoc('legacy-b', { revision: 4, deletedAt, status: 'cancelled', date: deletedAt, time: '10:00' });
+    expect(event.revision).toBe(4); expect(event.deletedAt).toBe(deletedAt);
+    expect(event).not.toHaveProperty('status');
+  });
+});

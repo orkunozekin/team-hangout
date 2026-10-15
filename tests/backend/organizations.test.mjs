@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, connectAuthEmulator, signInWithEmailAndPassword } from 'firebase/auth';
 import { getFunctions, connectFunctionsEmulator, httpsCallable } from 'firebase/functions';
-import { projectId, requireEmulators } from './fixtures.mjs';
+import { projectId, requireEmulators, operationalEventFields } from './fixtures.mjs';
 const require = createRequire(new URL('../../functions/package.json', import.meta.url));
 const { initializeApp: adminApp, deleteApp: deleteAdmin } = require('firebase-admin/app');
 const { getAuth: adminAuth } = require('firebase-admin/auth');
@@ -15,7 +15,7 @@ const apps = {}; let sequence = 0;
 const req = payload => ({ requestId: `org-request-${++sequence}`, ...payload });
 const call = async (uid, name, data = {}) => (await httpsCallable(getFunctions(apps[uid]), name)(data)).data;
 const deny = promise => assert.rejects(promise, { code: 'functions/permission-denied' });
-const fields = { title: 'Synthetic practice', type: 'practice', startsAt: '2026-10-11T23:00:00.000Z', endsAt: '2026-10-12T00:00:00.000Z', timeZone: 'America/Chicago', status: 'scheduled', publicationState: 'staged' };
+const fields = operationalEventFields;
 async function entity(orgId, kind, fields, uid = 'org-owner', extra = {}) {
   return (await call(uid, 'saveHierarchyEntity', req({ orgId, kind, fields, expectedRevision: 0, ...extra }))).entity;
 }
@@ -281,4 +281,38 @@ test('browser workspace entry requires rollout and live staff; staff lists are a
   await deny(call('org-staff', 'getAdminWorkspace', { orgId }));
   await db.doc(`organizations/${orgId}`).update({ status: 'archived' });
   assert.equal((await call('org-owner', 'getAdminWorkspace', { orgId })).organization.status, 'archived');
+});
+
+
+test('operational foundations reject spoofed actors, malformed grants and cross-org receipt reuse', async () => {
+  const f = await fixture('Operational boundary');
+  const payload = req({ teamId: f.team.id, event: { ...fields, teamIds: [f.team.id] } });
+  for (const patch of [{ userId: 'org-owner' }, { actorUid: 'org-owner' }, { orgId: f.orgId }]) {
+    await assert.rejects(call('org-outsider', 'createEvent', { ...payload, ...patch }), { code: 'functions/invalid-argument' });
+  }
+  const grant = db.doc(`organizations/${f.orgId}/members/org-outsider`);
+  for (const roles of ['orgAdmin', '[orgAdmin]', { orgAdmin: true }]) {
+    await grant.set({ orgId: f.orgId, status: 'active', roles, programIds: [] });
+    await deny(call('org-outsider', 'createEvent', payload));
+  }
+  await grant.delete();
+  const coach = db.doc(`teamMembers/${f.team.id}_org-coach`);
+  await coach.set({ orgId: f.orgId, teamId: f.team.id, userId: 'org-coach', roles: 'coach', status: 'active' });
+  await deny(call('org-coach', 'createEvent', payload));
+  await coach.update({ roles: ['coach'] });
+  const saved = await call('org-coach', 'createEvent', payload);
+  const spoofed = { ...payload, event: { ...payload.event, createdBy: 'org-owner' } };
+  await assert.rejects(call('org-coach', 'createEvent', spoofed), { code: 'functions/invalid-argument' });
+  await assert.rejects(call('org-coach', 'createEvent', { ...payload, teamId: b.team.id,
+    event: { ...fields, teamIds: [b.team.id] } }), error => error.details.domainCode === 'REQUEST_ID_REUSED');
+  const edit = req({ eventId: saved.id, expectedRevision: 1, patch: { title: 'Saved once' } });
+  const results = await Promise.allSettled(['First', 'Second'].map(title => call('org-coach', 'updateEvent', req({ ...edit,
+    requestId: `operational-${title}`, patch: { title } }))));
+  assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
+  assert.equal(results.find(result => result.status === 'rejected').reason.details.domainCode, 'STALE_REVISION');
+  await coach.update({ status: 'revoked' });
+  await deny(call('org-coach', 'createEvent', payload));
+  await db.doc('users/org-coach').update({ accountState: 'deleting' });
+  await deny(call('org-coach', 'createEvent', payload));
+  await db.doc('users/org-coach').update({ accountState: 'active' });
 });
