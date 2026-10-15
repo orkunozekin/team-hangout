@@ -11,7 +11,19 @@ import { Mutation } from "./Mutation";
 import { errorCode, message } from "./errors";
 
 type Props = { services: BrowserServices; orgId: string };
+function useReadEpoch() {
+  const epoch = useRef(0);
+  useEffect(
+    () => () => {
+      epoch.current++;
+    },
+    [],
+  );
+  return epoch;
+}
 export function Facilities({ services, orgId }: Props) {
+  const epoch = useReadEpoch();
+  const capabilityRead = useRef(0);
   const [items, setItems] = useState<Facility[] | null>(null),
     [cursor, setCursor] = useState<string | null>(null);
   const [canManage, setCanManage] = useState(false),
@@ -20,6 +32,8 @@ export function Facilities({ services, orgId }: Props) {
     [error, setError] = useState(""),
     [version, setVersion] = useState(0);
   const denied = () => {
+    epoch.current++;
+    setCursor(null);
     setItems(null);
     setSelected(null);
     setEditing(null);
@@ -34,6 +48,8 @@ export function Facilities({ services, orgId }: Props) {
       : setError(message(e));
   useEffect(() => {
     let alive = true;
+    const request = epoch.current;
+    const capabilityRequest = ++capabilityRead.current;
     setItems(null);
     setError("");
     setSelected(null);
@@ -41,14 +57,15 @@ export function Facilities({ services, orgId }: Props) {
     services
       .call("listFacilities", { orgId })
       .then((result) => {
-        if (alive) {
+        if (alive && request === epoch.current) {
           setItems(result.items);
           setCursor(result.nextCursor);
-          setCanManage(result.canManage);
+          if (capabilityRequest === capabilityRead.current)
+            setCanManage(result.canManage);
         }
       })
       .catch((e) => {
-        if (alive) failed(e);
+        if (alive && request === epoch.current) failed(e);
       });
     return () => {
       alive = false;
@@ -56,28 +73,37 @@ export function Facilities({ services, orgId }: Props) {
   }, [services, orgId, version]);
   useEffect(() => {
     let alive = true;
-    const check = () =>
-      services
+    const check = () => {
+      const request = epoch.current;
+      const capabilityRequest = ++capabilityRead.current;
+      return services
         .call("listFacilities", { orgId, pageSize: 1 })
         .then((result) => {
-          if (alive) {
+          if (
+            alive &&
+            request === epoch.current &&
+            capabilityRequest === capabilityRead.current
+          ) {
             setCanManage(result.canManage);
             if (!result.canManage) {
               setEditing(null);
-              setSelected(null);
             }
           }
         })
         .catch((e) => {
-          if (alive) failed(e);
+          if (alive && request === epoch.current) failed(e);
         });
+    };
     window.addEventListener("focus", check);
     return () => {
       alive = false;
       window.removeEventListener("focus", check);
     };
   }, [services, orgId]);
-  const saved = () => setVersion((n) => n + 1);
+  const saved = () => {
+    epoch.current++;
+    setVersion((n) => n + 1);
+  };
   return (
     <main id="main-content" tabIndex={-1} className="page facilities">
       <a href={`/organizations/${orgId}/program`}>Back to workspace</a>
@@ -136,20 +162,26 @@ export function Facilities({ services, orgId }: Props) {
         <button
           onClick={() => {
             const boundary = cursor;
+            const request = epoch.current;
+            const capabilityRequest = ++capabilityRead.current;
             void services
               .call("listFacilities", { orgId, cursor: boundary })
               .then((result) => {
+                if (request !== epoch.current) return;
                 setItems((old) => [...(old || []), ...result.items]);
                 setCursor(result.nextCursor);
-                setCanManage(result.canManage);
+                if (capabilityRequest === capabilityRead.current)
+                  setCanManage(result.canManage);
               })
-              .catch(failed);
+              .catch((e) => {
+                if (request === epoch.current) failed(e);
+              });
           }}
         >
           Load more facilities
         </button>
       )}
-      {editing && (
+      {canManage && editing && (
         <FacilityEditor
           key={typeof editing === "string" ? editing : editing.id}
           {...{ services, orgId }}
@@ -280,12 +312,16 @@ function FacilityDetails({
   canManage,
   onDenied,
 }: Props & { facility: Facility; canManage: boolean; onDenied: () => void }) {
+  const epoch = useReadEpoch();
   const [resources, setResources] = useState<Resource[] | null>(null),
     [cursor, setCursor] = useState<string | null>(null),
     [error, setError] = useState("");
   const [editing, setEditing] = useState<Resource | "new" | null>(null),
     [selected, setSelected] = useState<Resource | null>(null),
     [version, setVersion] = useState(0);
+  useEffect(() => {
+    if (!canManage) setEditing(null);
+  }, [canManage]);
   const failed = (e: unknown) =>
     ["functions/permission-denied", "functions/unauthenticated"].includes(
       errorCode(e),
@@ -313,7 +349,10 @@ function FacilityDetails({
       alive = false;
     };
   }, [services, orgId, facility.id, version]);
-  const saved = () => setVersion((n) => n + 1);
+  const saved = () => {
+    epoch.current++;
+    setVersion((n) => n + 1);
+  };
   const map =
     facility.latitude !== null && facility.longitude !== null
       ? `${facility.latitude},${facility.longitude}`
@@ -372,6 +411,7 @@ function FacilityDetails({
       {cursor && (
         <button
           onClick={() => {
+            const request = epoch.current;
             void services
               .call("listFacilityResources", {
                 orgId,
@@ -379,10 +419,13 @@ function FacilityDetails({
                 cursor,
               })
               .then((result) => {
+                if (request !== epoch.current) return;
                 setResources((old) => [...(old || []), ...result.items]);
                 setCursor(result.nextCursor);
               })
-              .catch(failed);
+              .catch((e) => {
+                if (request === epoch.current) failed(e);
+              });
           }}
         >
           Load more resources
@@ -391,7 +434,7 @@ function FacilityDetails({
       {canManage && (
         <button onClick={() => setEditing("new")}>New field or court</button>
       )}
-      {editing && (
+      {canManage && editing && (
         <ResourceEditor
           key={typeof editing === "string" ? editing : editing.id}
           {...{ services, orgId, facility, onDenied }}
@@ -532,6 +575,7 @@ function ResourceAvailability({
   onSaved: () => void;
   onDenied: () => void;
 }) {
+  const epoch = useReadEpoch();
   const [items, setItems] = useState<Availability[] | null>(null),
     [cursor, setCursor] = useState<string | null>(null),
     [error, setError] = useState("");
@@ -623,6 +667,7 @@ function ResourceAvailability({
       {cursor && (
         <button
           onClick={() => {
+            const request = epoch.current;
             void services
               .call("listResourceAvailability", {
                 orgId,
@@ -631,10 +676,13 @@ function ResourceAvailability({
                 cursor,
               })
               .then((result) => {
+                if (request !== epoch.current) return;
                 setItems((old) => [...(old || []), ...result.items]);
                 setCursor(result.nextCursor);
               })
-              .catch(failed);
+              .catch((e) => {
+                if (request === epoch.current) failed(e);
+              });
           }}
         >
           Load older availability
@@ -723,7 +771,16 @@ function ResourceAvailability({
               setLoadedEvent(row);
             })
             .catch((e) => {
-              if (request === eventRequest.current) failed(e);
+              if (request !== eventRequest.current) return;
+              if (
+                ["functions/permission-denied", "functions/not-found"].includes(
+                  errorCode(e),
+                )
+              )
+                setError(
+                  "Event unavailable. Check its ID and your event access; your facility view is still open.",
+                );
+              else setError(message(e));
             })
             .finally(() => {
               if (request === eventRequest.current) setLoadingEvent(false);
@@ -744,7 +801,12 @@ function ResourceAvailability({
                 setLoadedEvent(null);
                 setNotice("Assignment saved.");
               }}
-              {...{ onDenied }}
+              onDenied={() => {
+                setLoadedEvent(null);
+                setError(
+                  "Event assignment unavailable. Reload the event to recheck its current access.",
+                );
+              }}
               label={`Assign to ${resource.label}`}
               action={() => {
                 const payload = {

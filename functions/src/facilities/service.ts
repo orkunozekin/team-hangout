@@ -25,6 +25,7 @@ function minutes(value: unknown, field: string) {
 }
 function zone(value: unknown) {
   const result = text(value, 'timeZone', 100);
+  if (!/^[A-Za-z][A-Za-z0-9_+\/-]*$/.test(result)) invalid('Supply an IANA timeZone, not a numeric offset.');
   try { new Intl.DateTimeFormat('en', { timeZone: result }); } catch { invalid('Invalid timeZone.'); }
   return result;
 }

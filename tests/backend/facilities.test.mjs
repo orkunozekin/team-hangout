@@ -141,6 +141,7 @@ test('immutable effective revisions, active states and sports compatibility are 
   const none = await call('p203-admin', 'saveFacilityResource', req({ orgId, facilityId: c.facilityId, expectedRevision: 0, fields: resourceFields }));
   await conflict(create({ facilityId: c.facilityId, resourceId: none.resource.id }));
   await assert.rejects(call('p203-admin', 'saveFacility', req({ orgId, expectedRevision: 0, fields: { ...facilityFields, latitude: 91 } })), { code: 'functions/invalid-argument' });
+  await assert.rejects(call('p203-admin', 'saveFacility', req({ orgId, expectedRevision: 0, fields: { ...facilityFields, timeZone: '+01:00' } })), { code: 'functions/invalid-argument' });
 });
 
 test('availability changes protect cleanup crossing the effective boundary and reject stale resource writes', async () => {

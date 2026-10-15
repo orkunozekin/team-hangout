@@ -38,74 +38,63 @@ test.beforeAll(async () => {
     });
     await db.doc(`users/${uid}`).set({ uid, appRole: "user" });
   }
-  await db
-    .doc(`organizations/${orgId}`)
-    .set({
-      ...meta,
-      name: "Cedar Park Athletics",
-      timeZone: "America/Chicago",
-      features: { organizationV2: true, adminWorkspace: true },
-    });
+  await db.doc(`organizations/${orgId}`).set({
+    ...meta,
+    name: "Cedar Park Athletics",
+    timeZone: "America/Chicago",
+    features: { organizationV2: true, adminWorkspace: true },
+  });
   await db
     .doc(`organizations/${orgId}/members/facilities-owner`)
     .set({ ...meta, orgId, roles: ["orgAdmin"], programIds: [] });
-  await db
-    .doc(`organizations/${orgId}/members/facilities-staff`)
-    .set({
-      ...meta,
-      orgId,
-      roles: ["programStaff"],
-      programIds: ["facilities-program"],
-    });
+  await db.doc(`organizations/${orgId}/members/facilities-staff`).set({
+    ...meta,
+    orgId,
+    roles: ["programStaff"],
+    programIds: ["facilities-program"],
+  });
   for (const [kind, id] of [
     ["programs", "facilities-program"],
     ["seasons", "facilities-season"],
     ["divisions", "facilities-division"],
   ])
-    await db
-      .doc(`organizations/${orgId}/${kind}/${id}`)
-      .set({
-        ...meta,
-        orgId,
-        programId: "facilities-program",
-        seasonId: "facilities-season",
-        name: id,
-        sportCode: "soccer",
-      });
-  await db
-    .doc("teams/facilities-team")
-    .set({
+    await db.doc(`organizations/${orgId}/${kind}/${id}`).set({
+      ...meta,
+      orgId,
+      programId: "facilities-program",
+      seasonId: "facilities-season",
+      name: id,
+      sportCode: "soccer",
+    });
+  await db.doc("teams/facilities-team").set({
+    ...meta,
+    orgId,
+    programId: "facilities-program",
+    seasonId: "facilities-season",
+    divisionId: "facilities-division",
+    sport: "soccer",
+    name: "Falcons",
+  });
+  for (const id of ["facilities-event", "facilities-conflict"])
+    await db.doc(`events/${id}`).set({
       ...meta,
       orgId,
       programId: "facilities-program",
       seasonId: "facilities-season",
       divisionId: "facilities-division",
-      sport: "soccer",
-      name: "Falcons",
+      teamId: "facilities-team",
+      teamIds: ["facilities-team"],
+      title: id === "facilities-event" ? "Falcons training" : "Comets training",
+      type: "practice",
+      timeZone: "America/Chicago",
+      startsAt: Timestamp.fromDate(new Date("2035-01-02T12:00:00.000Z")),
+      endsAt: Timestamp.fromDate(new Date("2035-01-02T13:00:00.000Z")),
+      publicationState: "published",
+      publicationOperationId: null,
+      status: "scheduled",
+      deletedAt: null,
+      location: null,
     });
-  for (const id of ["facilities-event", "facilities-conflict"])
-    await db
-      .doc(`events/${id}`)
-      .set({
-        ...meta,
-        orgId,
-        programId: "facilities-program",
-        seasonId: "facilities-season",
-        divisionId: "facilities-division",
-        teamId: "facilities-team",
-        teamIds: ["facilities-team"],
-        title:
-          id === "facilities-event" ? "Falcons training" : "Comets training",
-        type: "practice",
-        timeZone: "America/Chicago",
-        startsAt: Timestamp.fromDate(new Date("2035-01-02T12:00:00.000Z")),
-        endsAt: Timestamp.fromDate(new Date("2035-01-02T13:00:00.000Z")),
-        publicationState: "published",
-        publicationOperationId: null,
-        status: "scheduled",
-        deletedAt: null,
-        location: null,
-      });
 });
 test.afterAll(async () => {
   await deleteApp(app);
@@ -245,6 +234,39 @@ test("program staff read shared safe catalog without catalog writes; revocation 
   await expect(
     page.getByRole("button", { name: "New field or court" }),
   ).toHaveCount(0);
+  await page
+    .getByRole("button", {
+      name: "Availability and assignment for Field 2 North",
+    })
+    .click();
+  await expect(
+    page.getByRole("heading", {
+      name: "Field 2 North: availability and assignment",
+    }),
+  ).toBeVisible();
+  const focusRead = page.waitForResponse((response) =>
+    response.url().endsWith("/listFacilities"),
+  );
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await focusRead;
+  await expect(
+    page.getByRole("heading", {
+      name: "Field 2 North: availability and assignment",
+    }),
+  ).toBeVisible();
+  await page.getByLabel("Event ID", { exact: true }).fill("missing-event");
+  await page.getByRole("button", { name: "Load event for assignment" }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Event unavailable. Check its ID",
+  );
+  await expect(
+    page.getByRole("heading", {
+      name: "Field 2 North: availability and assignment",
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Cedar Park: details and resources" }),
+  ).toBeVisible();
   await db
     .doc(`organizations/${orgId}/members/facilities-staff`)
     .update({ status: "revoked" });
@@ -258,4 +280,117 @@ test("outsider direct URL and unavailable load are handled without catalog data"
   await open(page, "facilities-outsider");
   await expect(page.getByRole("alert")).toContainText("Access unavailable");
   await expect(page.getByText("Cedar Park", { exact: true })).toHaveCount(0);
+});
+
+test("late catalog pages cannot restore data after a newer live denial", async ({
+  page,
+}) => {
+  const first = (
+    await db.collection(`organizations/${orgId}/facilities`).limit(1).get()
+  ).docs[0].data();
+  const batch = db.batch();
+  for (let i = 0; i < 51; i++)
+    batch.set(
+      db.doc(
+        `organizations/${orgId}/facilities/zzzz-extra-${String(i).padStart(2, "0")}`,
+      ),
+      { ...first, name: `Extra facility ${i}` },
+    );
+  await batch.commit();
+  await open(page);
+  let release!: () => void, held!: () => void, delivered!: () => void;
+  const releasePromise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const heldPromise = new Promise<void>((resolve) => {
+    held = resolve;
+  });
+  const deliveredPromise = new Promise<void>((resolve) => {
+    delivered = resolve;
+  });
+  await page.route("**/listFacilities", async (route) => {
+    if (!route.request().postDataJSON().data.cursor) {
+      await route.continue();
+      return;
+    }
+    const response = await route.fetch();
+    held();
+    await releasePromise;
+    await route.fulfill({ response });
+    delivered();
+  });
+  await page.getByRole("button", { name: "Load more facilities" }).click();
+  await heldPromise;
+  await db
+    .doc(`organizations/${orgId}/members/facilities-owner`)
+    .update({ status: "revoked" });
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(page.getByRole("alert")).toContainText("Access unavailable");
+  release();
+  await deliveredPromise;
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+  );
+  await expect(
+    page.getByRole("button", { name: /Details and resources for/ }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "New facility", exact: true }),
+  ).toHaveCount(0);
+});
+
+test("an older page cannot restore admin controls after a successful read-only focus check", async ({
+  page,
+}) => {
+  const member = db.doc(`organizations/${orgId}/members/facilities-owner`);
+  await member.update({
+    status: "active",
+    roles: ["orgAdmin"],
+    programIds: [],
+  });
+  await open(page);
+  let release!: () => void, held!: () => void, delivered!: () => void;
+  const releasePromise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const heldPromise = new Promise<void>((resolve) => {
+    held = resolve;
+  });
+  const deliveredPromise = new Promise<void>((resolve) => {
+    delivered = resolve;
+  });
+  await page.route("**/listFacilities", async (route) => {
+    if (!route.request().postDataJSON().data.cursor) {
+      await route.continue();
+      return;
+    }
+    const response = await route.fetch();
+    held();
+    await releasePromise;
+    await route.fulfill({ response });
+    delivered();
+  });
+  await page.getByRole("button", { name: "Load more facilities" }).click();
+  await heldPromise;
+  await member.update({
+    roles: ["programStaff"],
+    programIds: ["facilities-program"],
+  });
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(
+    page.getByRole("button", { name: "New facility", exact: true }),
+  ).toHaveCount(0);
+  release();
+  await deliveredPromise;
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+  );
+  await expect(
+    page.getByRole("button", { name: "New facility", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Details and resources for Cedar Park" }),
+  ).toBeVisible();
 });
