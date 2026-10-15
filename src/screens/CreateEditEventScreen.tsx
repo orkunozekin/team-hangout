@@ -81,6 +81,8 @@ export default function CreateEditEventScreen({
   const [canonical, setCanonical] = useState(false);
   const [duration, setDuration] = useState('60');
   const [timeZone, setTimeZone] = useState(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const [chooseZone, setChooseZone] = useState(false);
+  const [ambiguous, setAmbiguous] = useState(false);
   const [occurrence, setOccurrence] = useState<'earlier' | 'later' | undefined>();
   const [teamChoices, setTeamChoices] = useState<{ id: string; name: string }[]>([]);
   const [opponent, setOpponent] = useState<string | null>(null);
@@ -141,7 +143,7 @@ export default function CreateEditEventScreen({
           reschedule ? interval! : { title, type: eventType, location, notes }, reason);
         else await createCanonicalEvent(teamId, { title, type: eventType, teamIds: eventType === 'match' && opponent ? [teamId, opponent] : [teamId], ...interval!, status: 'scheduled', publicationState: 'published', location, notes });
         navigation.goBack();
-      } catch (error) { setLoadError(error instanceof Error ? error.message : 'Please try again.'); }
+      } catch (error) { const message = error instanceof Error ? error.message : 'Please try again.'; setLoadError(message); setAmbiguous(message.includes('occurs twice')); }
       finally { setLoading(false); }
       return;
     }
@@ -211,18 +213,21 @@ export default function CreateEditEventScreen({
         </> : null}
         {!ready && !loadError ? <Text>Loading event...</Text> : null}
         {canonical && (reschedule || !isEdit) ? <>
-          <FieldLabel>Date (YYYY-MM-DD)</FieldLabel><TextField accessibilityLabel="Event date" value={date} onChangeText={setDate} placeholder="2026-10-20" autoCapitalize="none" />
-          <FieldLabel>Local time (HH:mm)</FieldLabel><TextField accessibilityLabel="Local time" value={time} onChangeText={setTime} placeholder="18:00" autoCapitalize="none" />
+          <FieldLabel>Date (YYYY-MM-DD)</FieldLabel><TextField accessibilityLabel="Event date" value={date} onChangeText={value => { setDate(value); setOccurrence(undefined); setAmbiguous(false); }} placeholder="2026-10-20" autoCapitalize="none" />
+          <FieldLabel>Local time (HH:mm)</FieldLabel><TextField accessibilityLabel="Local time" value={time} onChangeText={value => { setTime(value); setOccurrence(undefined); setAmbiguous(false); }} placeholder="18:00" autoCapitalize="none" />
           <FieldLabel>Duration in minutes</FieldLabel><TextField accessibilityLabel="Duration in minutes" value={duration} onChangeText={setDuration} keyboardType="number-pad" />
           <FieldLabel>Event time zone: {timeZone.replace(/_/g, ' ')}</FieldLabel>
-          {[...new Set([timeZone, Intl.DateTimeFormat().resolvedOptions().timeZone, 'America/Chicago', 'America/New_York', 'America/Denver', 'America/Los_Angeles', 'UTC'])].map(zone =>
-            <Pressable key={zone} accessibilityRole="radio" accessibilityState={{ checked: timeZone === zone }} onPress={() => { setTimeZone(zone); setOccurrence(undefined); }} style={styles.typeChip}>
+          <Pressable accessibilityRole="button" accessibilityState={{ expanded: chooseZone }} onPress={() => setChooseZone(value => !value)} style={styles.typeChip}><Text style={styles.typeChipText}>Change time zone</Text></Pressable>
+          {chooseZone ? [...new Set([timeZone, Intl.DateTimeFormat().resolvedOptions().timeZone, 'America/Chicago', 'America/New_York', 'America/Denver', 'America/Los_Angeles', 'UTC'])].map(zone =>
+            <Pressable key={zone} accessibilityRole="button" accessibilityState={{ selected: timeZone === zone }} onPress={() => { setTimeZone(zone); setOccurrence(undefined); setChooseZone(false); }} style={styles.typeChip}>
               <Text style={styles.typeChipText}>{timeZone === zone ? '✓ ' : ''}{zone.replace(/_/g, ' ')}</Text>
-            </Pressable>)}
+            </Pressable>) : null}
+          {ambiguous ? <>
           <FieldLabel>If clocks repeat this time</FieldLabel>
-          <View style={styles.typeRow}>{(['earlier', 'later'] as const).map(value => <Pressable key={value} accessibilityRole="radio" accessibilityState={{ checked: occurrence === value }} onPress={() => setOccurrence(value)} style={styles.typeChip}>
+          <View style={styles.typeRow}>{(['earlier', 'later'] as const).map(value => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: occurrence === value }} onPress={() => setOccurrence(value)} style={styles.typeChip}>
             <Text style={styles.typeChipText}>{occurrence === value ? '✓ ' : ''}{value === 'earlier' ? 'First occurrence' : 'Second occurrence'}</Text>
           </Pressable>)}</View>
+          </> : null}
         </> : null}
         {canonical && isEdit ? <><FieldLabel>Reason for change</FieldLabel><TextField accessibilityLabel="Reason for change" value={reason} onChangeText={setReason} maxLength={500} /></> : null}
         {!reschedule ? <>
@@ -234,6 +239,8 @@ export default function CreateEditEventScreen({
             return (
               <Pressable
                 key={value}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
                 onPress={() => setEventType(value)}
                 style={[
                   styles.typeChip,
@@ -258,8 +265,8 @@ export default function CreateEditEventScreen({
 
         {canonical && !isEdit && eventType === 'match' ? <>
           <FieldLabel>Opponent (optional)</FieldLabel>
-          <Pressable onPress={() => setOpponent(null)} style={styles.typeChip}><Text style={styles.typeChipText}>{opponent === null ? '✓ ' : ''}Single-team match</Text></Pressable>
-          {teamChoices.filter(team => team.id !== teamId).map(team => <Pressable key={team.id} accessibilityRole="radio" accessibilityState={{ checked: opponent === team.id }} onPress={() => setOpponent(team.id)} style={styles.typeChip}>
+          <Pressable accessibilityRole="button" accessibilityState={{ selected: opponent === null }} onPress={() => setOpponent(null)} style={styles.typeChip}><Text style={styles.typeChipText}>{opponent === null ? '✓ ' : ''}Single-team match</Text></Pressable>
+          {teamChoices.filter(team => team.id !== teamId).map(team => <Pressable key={team.id} accessibilityRole="button" accessibilityState={{ selected: opponent === team.id }} onPress={() => setOpponent(team.id)} style={styles.typeChip}>
             <Text style={styles.typeChipText}>{opponent === team.id ? '✓ ' : ''}{team.name}</Text>
           </Pressable>)}
           <Text>Only teams you can manage in this program and season appear.</Text>

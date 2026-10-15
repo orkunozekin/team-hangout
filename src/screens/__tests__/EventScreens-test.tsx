@@ -25,7 +25,8 @@ test('shared-match creation offers authorized opponents and sends the displayed 
   await fireEvent.press(screen.getByText('Comets'));
   await fireEvent.changeText(screen.getByLabelText('Event date'), '2026-10-20');
   await fireEvent.changeText(screen.getByLabelText('Local time'), '18:00');
-  await fireEvent.press(screen.getByRole('radio', { name: /America\/Chicago/ }));
+  await fireEvent.press(screen.getByText('Change time zone'));
+  await fireEvent.press(screen.getByRole('button', { name: /America\/Chicago/ }));
   await fireEvent.changeText(screen.getByPlaceholderText('Evening practice'), 'Falcons vs Comets');
   await fireEvent.press(screen.getByText('Create event'));
   expect(createCanonicalEvent).toHaveBeenCalledWith('a', expect.objectContaining({ teamIds: ['a', 'b'], startsAt: '2026-10-20T23:00:00.000Z', endsAt: '2026-10-21T00:00:00.000Z' }));

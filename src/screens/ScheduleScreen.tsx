@@ -141,6 +141,8 @@ export default function ScheduleScreen({
             return (
               <Pressable
                 key={item.key}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
                 onPress={() => setFilter(item.key)}
                 style={[
                   styles.chip,
@@ -183,6 +185,7 @@ export default function ScheduleScreen({
         renderItem={({ item }) => (
           <Pressable
             style={styles.card}
+            accessibilityRole="button"
             onPress={() =>
               navigation.navigate('EventDetail', { eventId: item.id })
             }
