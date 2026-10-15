@@ -87,7 +87,9 @@ export const listEventTeamChoices = readCommand(data => {
   return { items, nextCursor: rows.size > data.pageSize ? rows.docs[data.pageSize - 1].id : null };
 });
 export const listCanonicalTeamEvents = readCommand(data => {
-  keys(data, ['teamId', 'pageSize', 'cursor']); return { teamId: id(data.teamId, 'teamId'), ...page(data) };
+  keys(data, ['teamId', 'pageSize', 'cursor']);
+  return { teamId: id(data.teamId, 'teamId'), ...page({ ...data, cursor: null }),
+    cursor: data.cursor == null ? null : text(data.cursor, 'cursor', 2000) };
 }, async (tx, data, uid) => {
   tx = cacheDocumentReads(tx);
   const management = new Map<string, Promise<boolean>>();
@@ -96,10 +98,13 @@ export const listCanonicalTeamEvents = readCommand(data => {
     .where('teamIds', 'array-contains', data.teamId).where('publicationState', '==', 'published')
     .where('publicationOperationId', '==', null).where('deletedAt', '==', null).orderBy('startsAt').orderBy(FieldPath.documentId());
   if (data.cursor) {
-    const cursor = await tx.get(getFirestore().doc(`events/${data.cursor}`));
-    const event = cursor.data();
-    if (!event || event.orgId !== team.orgId || !event.teamIds?.includes(data.teamId) || !visible(event)) invalid('Reload the schedule before loading more.');
-    query = query.startAfter(cursor);
+    let boundary: Data;
+    try { boundary = JSON.parse(Buffer.from(data.cursor, 'base64url').toString('utf8')); }
+    catch { invalid('Invalid schedule cursor.'); }
+    if (!boundary! || boundary.orgId !== team.orgId || boundary.teamId !== data.teamId
+      || typeof boundary.startsAt !== 'string' || !Number.isFinite(Date.parse(boundary.startsAt))
+      || new Date(boundary.startsAt).toISOString() !== boundary.startsAt) invalid('Invalid schedule cursor.');
+    query = query.startAfter(Timestamp.fromDate(new Date(boundary.startsAt)), id(boundary.id, 'cursor eventId'));
   }
   const rows = await tx.get(query.limit(data.pageSize + 1));
   const items: Data[] = [];
@@ -107,7 +112,10 @@ export const listCanonicalTeamEvents = readCommand(data => {
     const event = row.data();
     if (event.schemaVersion === 2 && visible(event)) items.push(await result(tx, row.id, event, uid, management));
   }
-  return { items, nextCursor: rows.size > data.pageSize ? rows.docs[data.pageSize - 1].id : null };
+  const last = rows.docs[data.pageSize - 1];
+  const nextCursor = rows.size > data.pageSize ? Buffer.from(JSON.stringify({ orgId: team.orgId, teamId: data.teamId,
+    startsAt: last.data().startsAt.toDate().toISOString(), id: last.id })).toString('base64url') : null;
+  return { items, nextCursor };
 });
 export const getCanonicalEvent = readCommand(data => {
   keys(data, ['eventId']); return { eventId: id(data.eventId, 'eventId') };

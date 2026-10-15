@@ -217,7 +217,8 @@ describe('canonical callable readers and writers', () => {
     expect((await listTeamEventPage('a', 'shared')).items.map(event => event.id)).toEqual(['second']);
     expect(mockRead).toHaveBeenLastCalledWith({ teamId: 'a', cursor: 'shared', pageSize: 50 });
     mockRead.mockResolvedValueOnce({ data: { items: [{ id: 'a', name: 'A' }], nextCursor: 'a' } }).mockResolvedValueOnce({ data: { items: [{ id: 'b', name: 'B' }], nextCursor: null } });
-    expect(await listEventTeamChoices('a')).toHaveLength(2);
+    expect((await listEventTeamChoices('a')).items).toHaveLength(1);
+    expect((await listEventTeamChoices('a', 'a')).items).toHaveLength(1);
   });
   it('decodes family projections without audit identities while storage readers remain strict', async () => {
     const { createdBy, updatedBy, ...publicEvent } = event;

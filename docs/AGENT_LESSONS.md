@@ -165,3 +165,11 @@
 - **Gap:** Canonical family readers exposed private notes/audit identities and full team documents; the native schedule drained all server pages. Staged type edits preserved stale matchup IDs.
 - **Going forward:** Use explicit role-appropriate event/team projections and keep strict storage decoding separate from public decoding. Reauthorize private fields on live staff/coach/captain grants. Render one ordered page at a time, retain earlier results on later-page errors, and test equal-instant cursor boundaries and team switching. Recompute derived matchup fields on every accepted type-change path.
 - **Pointers:** `functions/src/operations/events.ts`, `functions/src/commands.ts`, `shared/contracts.ts`, `shared/operations.ts`, `src/firebase/events.ts`, `src/screens/ScheduleScreen.tsx` and their regression tests.
+
+
+### 2026-10-15 — Preserve page boundaries and defer opponent discovery
+
+- **Source:** PR #26 · GitHub Codex full-diff re-review
+- **Gap:** Reloading a cursor event after rescheduling shifted the ordering boundary and skipped intervening rows. Opponent discovery still drained all team pages during practice form setup.
+- **Going forward:** Encode the original instant/document ID and authorized scope in schedule cursors rather than reconstructing the boundary from mutable records. Load optional opponent teams only on explicit request, one page per action, with retained choices and retry. Reauthorize each request and test moved boundaries, equal timestamps and grant revocation between pages.
+- **Pointers:** `functions/src/operations/events.ts`, `src/firebase/events.ts`, `src/screens/CreateEditEventScreen.tsx`, operational backend and native event-screen regressions.

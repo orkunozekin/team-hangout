@@ -1,6 +1,7 @@
 import React, {
   useEffect,
   useState,
+  useRef,
 } from 'react';
 
 import {
@@ -85,6 +86,12 @@ export default function CreateEditEventScreen({
   const [ambiguous, setAmbiguous] = useState(false);
   const [occurrence, setOccurrence] = useState<'earlier' | 'later' | undefined>();
   const [teamChoices, setTeamChoices] = useState<{ id: string; name: string }[]>([]);
+  const choicesGeneration = useRef(0);
+  const choicesBusy = useRef(false);
+  const [choicesLoaded, setChoicesLoaded] = useState(false);
+  const [choicesCursor, setChoicesCursor] = useState<string | null>(null);
+  const [choicesLoading, setChoicesLoading] = useState(false);
+  const [choicesError, setChoicesError] = useState('');
   const [opponent, setOpponent] = useState<string | null>(null);
   const [reason, setReason] = useState('');
   const [loadError, setLoadError] = useState('');
@@ -105,14 +112,15 @@ export default function CreateEditEventScreen({
   useEffect(() => {
     let active = true;
     setReady(false); setLoadError('');
+    choicesGeneration.current++; choicesBusy.current = false;
+    setTeamChoices([]); setChoicesLoaded(false); setChoicesCursor(null); setChoicesLoading(false); setChoicesError(''); setOpponent(null);
     (async () => {
       if (!eventId) {
         const team = await getTeam(teamId);
         if (team?.schemaVersion === 2 && !team.timeZone) throw new Error('Organization time zone is unavailable. Reload before creating an event.');
-        const choices = team?.schemaVersion === 2 ? await listEventTeamChoices(teamId) : [];
         if (active) {
           if (team?.schemaVersion === 2) setTimeZone(team.timeZone!);
-          setCanonical(team?.schemaVersion === 2); setTeamChoices(choices); setReady(true);
+          setCanonical(team?.schemaVersion === 2); setReady(true);
         }
         return;
       }
@@ -132,8 +140,24 @@ export default function CreateEditEventScreen({
       setLocationAddress(event.location?.address ?? '');
       setNotes(event.notes ?? '');
     })().catch(error => { if (active) setLoadError(error instanceof Error ? error.message : 'Event unavailable.'); });
-    return () => { active = false; };
+    return () => { active = false; choicesGeneration.current++; };
   }, [eventId, teamId, reloadVersion]);
+
+  async function loadChoices() {
+    if (!ready || choicesBusy.current || (choicesLoaded && !choicesCursor)) return;
+    const token = choicesGeneration.current;
+    choicesBusy.current = true; setChoicesLoading(true); setChoicesError('');
+    try {
+      const page = await listEventTeamChoices(teamId, choicesCursor);
+      if (token !== choicesGeneration.current) return;
+      setTeamChoices(previous => [...new Map([...previous, ...page.items].map(team => [team.id, team])).values()]);
+      setChoicesCursor(page.nextCursor); setChoicesLoaded(true);
+    } catch (error) {
+      if (token === choicesGeneration.current) setChoicesError('Unable to load opponent teams. Please try again.');
+    } finally {
+      if (token === choicesGeneration.current) { choicesBusy.current = false; setChoicesLoading(false); }
+    }
+  }
 
   async function onSubmit() {
     if (!ready || loading) return;
@@ -273,6 +297,8 @@ export default function CreateEditEventScreen({
           {teamChoices.filter(team => team.id !== teamId).map(team => <Pressable key={team.id} accessibilityRole="button" accessibilityState={{ selected: opponent === team.id }} onPress={() => setOpponent(team.id)} style={styles.typeChip}>
             <Text style={styles.typeChipText}>{opponent === team.id ? '✓ ' : ''}{team.name}</Text>
           </Pressable>)}
+          {choicesError ? <Text accessibilityRole="alert">{choicesError}</Text> : null}
+          {!choicesLoaded || choicesCursor ? <Pressable accessibilityRole="button" accessibilityState={{ disabled: choicesLoading }} disabled={choicesLoading} onPress={() => { void loadChoices(); }}><Text>{choicesLoading ? 'Loading opponent teams...' : choicesLoaded ? 'Load more opponent teams' : 'Load opponent teams'}</Text></Pressable> : null}
           <Text>Only teams you can manage in this program and season appear.</Text>
         </> : null}
         <FieldLabel>Title</FieldLabel>

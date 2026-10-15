@@ -14,14 +14,17 @@ const event = { id: 'shared', schemaVersion: 2, revision: 4, title: 'Falcons vs 
 beforeEach(() => {
   jest.clearAllMocks();
   (getTeam as jest.Mock).mockResolvedValue({ schemaVersion: 2, timeZone: 'America/Phoenix' });
-  (listEventTeamChoices as jest.Mock).mockResolvedValue(event.teams);
+  (listEventTeamChoices as jest.Mock).mockResolvedValue({ items: event.teams, nextCursor: null });
   (getEvent as jest.Mock).mockResolvedValue(event);
   (mutateEventSchedule as jest.Mock).mockResolvedValue({});
 });
 test('shared-match creation offers authorized opponents and sends the displayed local interval', async () => {
   await render(<CreateEditEventScreen teamId="a" membership={membership} navigation={navigation} route={{ params: {} } as any} />);
-  await waitFor(() => expect(listEventTeamChoices).toHaveBeenCalled());
+  await screen.findByText('Event time zone: America/Phoenix');
+  expect(listEventTeamChoices).not.toHaveBeenCalled();
   await fireEvent.press(screen.getByText('Match'));
+  await fireEvent.press(screen.getByText('Load opponent teams'));
+  await screen.findByText('Comets');
   await fireEvent.press(screen.getByText('Comets'));
   await fireEvent.changeText(screen.getByLabelText('Event date'), '2026-10-20');
   await fireEvent.changeText(screen.getByLabelText('Local time'), '18:00');
@@ -83,4 +86,25 @@ test('a canonical team without a confirmed organization timezone cannot publish 
   await screen.findByText('Organization time zone is unavailable. Reload before creating an event.');
   expect(screen.getByRole('button', { name: 'Create event' })).toBeDisabled();
   expect(createCanonicalEvent).not.toHaveBeenCalled();
+});
+
+
+test('opponent discovery loads one page per request and preserves choices after an error', async () => {
+  (listEventTeamChoices as jest.Mock).mockResolvedValueOnce({ items: [{ id: 'b', name: 'Comets' }], nextCursor: 'b' })
+    .mockRejectedValueOnce(new Error('Unavailable'))
+    .mockResolvedValueOnce({ items: [{ id: 'c', name: 'Wolves' }], nextCursor: null });
+  await render(<CreateEditEventScreen teamId="a" membership={membership} navigation={navigation} route={{ params: {} } as any} />);
+  await screen.findByText('Event time zone: America/Phoenix');
+  expect(listEventTeamChoices).not.toHaveBeenCalled();
+  await fireEvent.press(screen.getByText('Match'));
+  await fireEvent.press(screen.getByText('Load opponent teams'));
+  await screen.findByText('Comets');
+  expect(listEventTeamChoices).toHaveBeenCalledTimes(1);
+  await fireEvent.press(screen.getByText('Load more opponent teams'));
+  await screen.findByText('Unable to load opponent teams. Please try again.');
+  expect(screen.getByText('Comets')).toBeTruthy();
+  await fireEvent.press(screen.getByText('Load more opponent teams'));
+  await screen.findByText('Wolves');
+  expect(listEventTeamChoices).toHaveBeenNthCalledWith(3, 'a', 'b');
+  expect(screen.queryByText('Load more opponent teams')).toBeNull();
 });

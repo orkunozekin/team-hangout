@@ -283,8 +283,31 @@ test('canonical event pages order by instant and retain equal-instant boundaries
   }
   const first = await call('p202-admin', 'listCanonicalTeamEvents', { teamId, pageSize: 2 });
   assert.deepEqual(first.items.map(row => row.id), ['p202-z-early', 'p202-a-later']);
+  // Moving the boundary after the first page must not move its original cursor position.
+  await db.doc('events/p202-a-later').update({ startsAt: Timestamp.fromDate(new Date('2026-11-02T06:15:00.000Z')), endsAt: Timestamp.fromDate(new Date('2026-11-02T07:15:00.000Z')) });
   const second = await call('p202-admin', 'listCanonicalTeamEvents', { teamId, pageSize: 2, cursor: first.nextCursor });
   assert.deepEqual(second.items.map(row => row.id), ['p202-b-tie', 'p202-c-last']);
-  assert.equal(second.nextCursor, null);
+  assert.notEqual(second.nextCursor, null);
+  const third = await call('p202-admin', 'listCanonicalTeamEvents', { teamId, pageSize: 2, cursor: second.nextCursor });
+  assert.deepEqual(third.items.map(row => row.id), ['p202-a-later']);
+  assert.equal(third.nextCursor, null);
+  await assert.rejects(call('p202-admin', 'listCanonicalTeamEvents', { teamId, cursor: 'invalid' }), { code: 'functions/invalid-argument' });
   await assert.rejects(call('p202-admin', 'listCanonicalTeamEvents', { teamId: 'p202-a', pageSize: 2, cursor: first.nextCursor }), { code: 'functions/invalid-argument' });
+});
+
+
+test('opponent choices expose bounded pages and recheck authority for every request', async () => {
+  const batch = db.batch();
+  for (let i = 0; i < 55; i++) batch.set(db.doc(`teams/p202-choice-${String(i).padStart(2, '0')}`), { ...meta, ...scope, name: `Choice ${i}` });
+  await batch.commit();
+  const first = await call('p202-admin', 'listEventTeamChoices', { teamId: 'p202-a', pageSize: 50 });
+  assert.equal(first.items.length, 50); assert.ok(first.nextCursor);
+  const second = await call('p202-admin', 'listEventTeamChoices', { teamId: 'p202-a', pageSize: 50, cursor: first.nextCursor });
+  assert.ok(second.items.length > 0); assert.equal(second.nextCursor, null);
+  const ids = [...first.items, ...second.items].map(row => row.id);
+  assert.equal(new Set(ids).size, ids.length);
+  const coachPage = await call('p202-a-coach', 'listEventTeamChoices', { teamId: 'p202-a', pageSize: 50 });
+  assert.deepEqual(coachPage.items.map(row => row.id), ['p202-a']); assert.ok(coachPage.nextCursor);
+  await db.doc('teamMembers/p202-a_p202-a-coach').update({ status: 'revoked' });
+  await deny(call('p202-a-coach', 'listEventTeamChoices', { teamId: 'p202-a', cursor: coachPage.nextCursor }));
 });

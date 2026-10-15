@@ -168,12 +168,6 @@ export async function createCanonicalEvent(teamId: string, event: Record<string,
   await runCommand('createEvent', { teamId, event });
 }
 
-export async function listEventTeamChoices(teamId: string): Promise<{ id: string; name: string }[]> {
-  const items: { id: string; name: string }[] = [];
-  let cursor: string | null = null;
-  do {
-    const page: { items: { id: string; name: string }[]; nextCursor: string | null } = await readEventCommand('listEventTeamChoices', { teamId, cursor, pageSize: 50 });
-    items.push(...page.items); cursor = page.nextCursor;
-  } while (cursor);
-  return items;
+export async function listEventTeamChoices(teamId: string, cursor: string | null = null): Promise<{ items: { id: string; name: string }[]; nextCursor: string | null }> {
+  return readEventCommand('listEventTeamChoices', { teamId, cursor, pageSize: 50 });
 }
