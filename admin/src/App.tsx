@@ -1,3 +1,4 @@
+import { Facilities } from "./Facilities";
 import { useEffect, useRef, useState } from "react";
 import {
   onAuthStateChanged,
@@ -198,6 +199,8 @@ export function App({ services }: { services: BrowserServices }) {
               />
             ) : route.section === "invitation" ? (
               <Invitations services={services} orgId={route.orgId} />
+            ) : route.section === "facility" ? (
+              <Facilities services={services} orgId={route.orgId} />
             ) : route.section === "participant" ? (
               <Participants
                 services={services}

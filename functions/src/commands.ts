@@ -1,3 +1,4 @@
+import { validateResourceAssignment, commitResourceAssignment } from './facilities/service';
 import { checkRevision } from './operations/revisions';
 import { eventScope } from './organizations/policy';
 import { v2Fields, teamIds, validateStoredEvent, storageFields, eventAudit } from './organizations/events';
@@ -130,7 +131,7 @@ export const createEvent = command('createEvent', data => {
 }, async (tx, payload, uid, actor, replay) => {
   const team = await tx.get(getFirestore().doc(`teams/${payload.teamId}`));
   if (!team.exists) throw new HttpsError('permission-denied', 'Team is unavailable.');
-  let event: Data; const now = Timestamp.now();
+  let event: Data; let sports: string[] = []; const now = Timestamp.now();
   if (team.data()?.schemaVersion === 2 || team.data()?.orgId != null) {
     if (payload.event.startsAt === undefined) throw new HttpsError('failed-precondition', 'Organization event times are required.');
     const ids = teamIds(payload.event.teamIds);
@@ -141,7 +142,7 @@ export const createEvent = command('createEvent', data => {
       schemaVersion: 2, publicationOperationId: null, teamId: ids[0], scheduleVersion: 1,
       homeTeamId: payload.event.type === 'match' && ids.length === 2 ? ids[0] : null,
       awayTeamId: payload.event.type === 'match' && ids.length === 2 ? ids[1] : null };
-    validateStoredEvent(event, scope);
+    validateStoredEvent(event, scope); sports = scope.teams.map(team => team.sport);
   } else {
     await managedTeam(tx, payload.teamId, uid, actor.appRole === 'superAdmin');
     eventFields(payload.event);
@@ -150,9 +151,14 @@ export const createEvent = command('createEvent', data => {
   if (replay) return replay;
   const ref = getFirestore().collection('events').doc();
   event = { ...event, revision: 1, createdBy: uid, updatedBy: uid, createdAt: now, updatedAt: now, deletedAt: null };
+  if (event.schemaVersion === 2) {
+    const assignment = await validateResourceAssignment(tx, event, ref.id, sports);
+    Object.assign(event, commitResourceAssignment(tx, event, assignment, ref.id, 1));
+  }
   tx.create(ref, event);
   if (event.schemaVersion === 2) eventAudit(tx, event, uid, 'createEvent', ref.id, 1);
-  return { id: ref.id, ...event };
+  const { resourceOccupancy: _occupancy, resourceDetails: _details, ...safeEvent } = event;
+  return { id: ref.id, ...safeEvent };
 });
 function changeEvent(deleting: boolean) {
   return command(deleting ? 'softDeleteEvent' : 'updateEvent', data => {
@@ -163,10 +169,10 @@ function changeEvent(deleting: boolean) {
     if (!snap.exists) throw new HttpsError('permission-denied', 'Event is unavailable.');
     const event = snap.data()!;
     const v2 = event.schemaVersion === 2 || event.orgId != null;
-    let changes: Data = {};
+    let changes: Data = {}; let sports: string[] = [];
     if (v2) {
       const scope = await eventScope(tx, teamIds(event.teamIds), uid, !replay);
-      validateStoredEvent(event, scope);
+      validateStoredEvent(event, scope); sports = scope.teams.map(team => team.sport);
       // Reauthorize against current state, but never reapply an old patch to a later edit.
       if (replay) return replay;
       if (event.publicationState === 'published') {
@@ -194,6 +200,11 @@ function changeEvent(deleting: boolean) {
     if (event.deletedAt != null) throw new HttpsError('failed-precondition', 'This event was deleted. Reload the schedule.');
     const now = Timestamp.now(); const patch: DocumentData = deleting ? { deletedAt: now } : changes;
     if (patch.date) patch.date = Timestamp.fromDate(new Date(patch.date));
+    if (v2 && !deleting) {
+      const next = { ...event, ...patch };
+      const assignment = await validateResourceAssignment(tx, next, ref.id, sports);
+      Object.assign(patch, commitResourceAssignment(tx, next, assignment, ref.id, currentRevision + 1));
+    }
     tx.update(ref, { ...patch, revision: currentRevision + 1, updatedAt: now, updatedBy: uid });
     if (v2) eventAudit(tx, event, uid, deleting ? 'softDeleteEvent' : 'updateEvent', ref.id, currentRevision + 1);
     return { ok: true, revision: currentRevision + 1 };
