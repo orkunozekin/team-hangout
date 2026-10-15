@@ -80,7 +80,7 @@ export default function CreateEditEventScreen({
   const reschedule = route.params?.action === 'reschedule';
   const [canonical, setCanonical] = useState(false);
   const [duration, setDuration] = useState('60');
-  const [timeZone, setTimeZone] = useState(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const [timeZone, setTimeZone] = useState('UTC');
   const [chooseZone, setChooseZone] = useState(false);
   const [ambiguous, setAmbiguous] = useState(false);
   const [occurrence, setOccurrence] = useState<'earlier' | 'later' | undefined>();
@@ -108,8 +108,12 @@ export default function CreateEditEventScreen({
     (async () => {
       if (!eventId) {
         const team = await getTeam(teamId);
+        if (team?.schemaVersion === 2 && !team.timeZone) throw new Error('Organization time zone is unavailable. Reload before creating an event.');
         const choices = team?.schemaVersion === 2 ? await listEventTeamChoices(teamId) : [];
-        if (active) { setCanonical(team?.schemaVersion === 2); setTeamChoices(choices); setReady(true); }
+        if (active) {
+          if (team?.schemaVersion === 2) setTimeZone(team.timeZone!);
+          setCanonical(team?.schemaVersion === 2); setTeamChoices(choices); setReady(true);
+        }
         return;
       }
       const event = await getEvent(eventId);

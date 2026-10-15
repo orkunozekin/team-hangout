@@ -19,6 +19,7 @@ export interface AppUser {
 
 export interface Team {
   schemaVersion?: number;
+  timeZone?: string;
   id: string;
   name: string;
   sport: string | null;

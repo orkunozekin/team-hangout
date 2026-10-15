@@ -57,6 +57,7 @@ export function mapTeamDoc(
   return {
     id,
     schemaVersion: typeof data.schemaVersion === 'number' ? data.schemaVersion : undefined,
+    timeZone: typeof data.timeZone === 'string' ? data.timeZone : undefined,
     name: String(data.name ?? ''),
     sport: data.sport == null ? null : String(data.sport),
     inviteCode: String(data.inviteCode ?? ''),

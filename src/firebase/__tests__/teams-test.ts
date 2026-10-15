@@ -289,8 +289,8 @@ describe('firebase/teams', () => {
 
 test('canonical teams use authorized callable fallback and revoked roles do not become coach', async () => {
   mockGetDoc.mockRejectedValueOnce({ code: 'permission-denied' });
-  mockNativeTeam.mockResolvedValue({ data: { id: 'canonical', name: 'Falcons', schemaVersion: 2 } });
-  expect((await getTeam('canonical'))?.schemaVersion).toBe(2);
+  mockNativeTeam.mockResolvedValue({ data: { id: 'canonical', name: 'Falcons', schemaVersion: 2, timeZone: 'America/Phoenix' } });
+  expect(await getTeam('canonical')).toEqual(expect.objectContaining({ schemaVersion: 2, timeZone: 'America/Phoenix' }));
   mockGetDoc.mockRejectedValueOnce(new Error('Offline'));
   await expect(getTeam('canonical')).rejects.toThrow('Offline');
   expect(mapMemberDoc('member', { schemaVersion: 2, role: 'coach', roles: ['coach'], status: 'revoked' }).role).toBe('player');

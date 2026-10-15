@@ -119,3 +119,38 @@ test('revision concurrency, idempotency, immutable references, revoked replay an
   await assert.rejects(call('p202-admin', 'mutateEventSchedule', payload));
   await db.doc('accountDeletionJobs/p202-admin').delete();
 });
+test('native creation reads the canonical organization timezone instead of team or device defaults', async () => {
+  await db.doc('organizations/p202-org').update({ timeZone: 'America/Phoenix' });
+  await db.doc('teams/p202-a').update({ timeZone: 'America/New_York' });
+  assert.equal((await call('p202-admin', 'getNativeTeam', { teamId: 'p202-a' })).timeZone, 'America/Phoenix');
+  await db.doc('organizations/p202-org').update({ timeZone: 'America/Chicago' });
+  assert.equal((await call('p202-admin', 'getNativeTeam', { teamId: 'p202-a' })).timeZone, 'America/Chicago');
+});
+test('50-event reads reuse transaction-local grants and metadata, then reauthorize the next request', async () => {
+  await db.doc('organizations/p202-org/participants/p202-child/guardians/p202-guardian').update({ status: 'active' });
+  await db.doc('teams/p202-b/roster/p202-child').update({ status: 'active' });
+  const batch = db.batch();
+  for (let i = 0; i < 50; i++) batch.set(db.doc(`events/p202-page-${i}`), { ...meta, ...scope,
+    title: `Synthetic batch match ${i}`, type: 'match', teamId: 'p202-a', teamIds: ['p202-a', 'p202-b'],
+    startsAt: Timestamp.fromDate(new Date(fields.startsAt)), endsAt: Timestamp.fromDate(new Date(fields.endsAt)),
+    timeZone: 'America/Chicago', status: 'scheduled', publicationState: 'published', publicationOperationId: null,
+    createdBy: 'p202-admin', updatedBy: 'p202-admin', deletedAt: null });
+  await batch.commit();
+  const { listCanonicalTeamEvents } = require('./lib/operations/events.js');
+  const transact = db.runTransaction.bind(db);
+  const counts = new Map();
+  const count = ref => counts.set(ref.path, (counts.get(ref.path) ?? 0) + 1);
+  db.runTransaction = (callback, options) => transact(tx => callback(new Proxy(tx, { get(target, name) {
+    if (name === 'getAll') return (...refs) => { refs.forEach(count); return target.getAll(...refs); };
+    if (name === 'get') return ref => { if (typeof ref.collection === 'function') count(ref); return target.get(ref); };
+    const value = Reflect.get(target, name); return typeof value === 'function' ? value.bind(target) : value;
+  } })), options);
+  let page;
+  try { page = await listCanonicalTeamEvents.run({ data: { teamId: 'p202-b', pageSize: 50 }, auth: { uid: 'p202-guardian' } }); }
+  finally { db.runTransaction = transact; }
+  assert.equal(page.items.length, 50); assert.ok(page.items.every(item => item.canManage === false));
+  for (const [path, count] of counts) assert.equal(count, 1, `Repeated document read: ${path}`);
+  assert.ok(counts.size < 30, `Expected bounded shared metadata reads, got ${counts.size}`);
+  await db.doc('organizations/p202-org/participants/p202-child/guardians/p202-guardian').update({ status: 'revoked' });
+  await deny(call('p202-guardian', 'listCanonicalTeamEvents', { teamId: 'p202-b', pageSize: 50 }));
+});

@@ -127,3 +127,10 @@
 - **Gap:** Fixture initialization happened outside the report finalizer, and enlarged-text tests could pass with empty tables or measure scaled targets instead of phone control size.
 - **Going forward:** Include fixture setup in failure-report cleanup and inject a setup failure. Require populated changed states before asserting accessibility, and measure touch targets at an unzoomed phone viewport independently from zoom/reflow.
 - **Pointers:** `scripts/rehearsal/scenarios.mjs`, `tests/backend/rehearsal-guards.test.mjs`, `admin/tests/accessibility.spec.ts`.
+
+### 2026-10-15 — Use canonical timezone defaults and reuse read authority per transaction
+
+- **Source:** PR #26 · GitHub Codex review
+- **Gap:** New native events defaulted to the device timezone, and canonical event lists repeatedly fetched the same hierarchy and grant documents for every result.
+- **Going forward:** Obtain new-event timezone defaults from the authorized canonical organization; preserve that zone as a selectable value even when it is absent from common presets. Reuse document snapshots and identical management checks only within one read transaction attempt, never across requests or retries. Test a 50-event page's document reads and revoke access before the next request.
+- **Pointers:** `functions/src/operations/events.ts`, `functions/src/operations/reads.ts`, `src/screens/CreateEditEventScreen.tsx`, operational backend and native screen tests.

@@ -1,3 +1,4 @@
+import { cacheDocumentReads } from './reads';
 import { FieldPath, getFirestore, Timestamp, Transaction } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { command, Data, id, invalid, keys, object, revision, text } from '../commandSupport';
@@ -8,7 +9,7 @@ import { readAgenda } from '../calendar/agenda';
 
 const visible = (event: Data) => event.deletedAt == null && event.publicationState === 'published' && event.publicationOperationId === null;
 // Reuse the existing live staff/coach/participant/guardian reader; navigation pointers grant nothing.
-async function readableTeam(tx: Transaction, teamId: string, uid: string) {
+async function readableTeam(tx: Transaction, teamId: string, uid: string, household?: () => Promise<Data>) {
   const team = (await tx.get(getFirestore().doc(`teams/${teamId}`))).data();
   if (!team || team.schemaVersion !== 2) denied();
   const parents = await hierarchy(tx, team.orgId, team.programId, team.seasonId, team.divisionId, false);
@@ -18,7 +19,7 @@ async function readableTeam(tx: Transaction, teamId: string, uid: string) {
   const member = (await tx.get(getFirestore().doc(`teamMembers/${teamId}_${uid}`))).data();
   if (member?.schemaVersion === 2 && member.orgId === team.orgId && member.teamId === teamId && member.userId === uid
     && member.status === 'active' && Array.isArray(member.roles) && member.roles.some((role: string) => ['coach', 'captain'].includes(role))) return team;
-  const access = await readAgenda(tx, {}, uid, { events: false });
+  const access = await (household ? household() : readAgenda(tx, {}, uid, { events: false }));
   if (!access.teams.some((row: Data) => row.id === teamId && row.orgId === team.orgId)) denied();
   return team;
 }
@@ -32,11 +33,14 @@ async function canonical(tx: Transaction, event: Data) {
   for (const row of rows) await hierarchy(tx, event.orgId, event.programId, event.seasonId, row.data()!.divisionId, false);
   return rows.map(row => ({ id: row.id, name: row.data()!.name }));
 }
-async function result(tx: Transaction, eventId: string, event: Data, uid: string) {
+async function result(tx: Transaction, eventId: string, event: Data, uid: string, management = new Map<string, Promise<boolean>>()) {
   const teams = await canonical(tx, event);
-  let canManage = false;
-  try { await eventScope(tx, event.teamIds, uid); canManage = true; }
-  catch (error) { if (!(error instanceof HttpsError) || !['permission-denied', 'failed-precondition'].includes(error.code)) throw error; }
+  const key = JSON.stringify(event.teamIds);
+  if (!management.has(key)) management.set(key, (async () => {
+    try { await eventScope(tx, event.teamIds, uid); return true; }
+    catch (error) { if (!(error instanceof HttpsError) || !['permission-denied', 'failed-precondition'].includes(error.code)) throw error; return false; }
+  })());
+  const canManage = await management.get(key)!;
   const fields = ['schemaVersion', 'orgId', 'programId', 'seasonId', 'divisionId', 'teamId', 'teamIds', 'title', 'type',
     'startsAt', 'endsAt', 'timeZone', 'status', 'publicationState', 'publicationOperationId', 'revision',
     'scheduleVersion', 'rescheduledFromRevision', 'homeTeamId', 'awayTeamId', 'completedAt', 'createdBy', 'updatedBy',
@@ -47,10 +51,18 @@ async function result(tx: Transaction, eventId: string, event: Data, uid: string
 }
 export const getNativeTeam = readCommand(data => {
   keys(data, ['teamId']); return { teamId: id(data.teamId, 'teamId') };
-}, async (tx, data, uid) => ({ id: data.teamId, ...await readableTeam(tx, data.teamId, uid) }));
+}, async (tx, data, uid) => {
+  tx = cacheDocumentReads(tx);
+  const team = await readableTeam(tx, data.teamId, uid);
+  const organization = (await tx.get(getFirestore().doc(`organizations/${team.orgId}`))).data();
+  const timeZone = text(organization?.timeZone, 'organization time zone', 100);
+  try { new Intl.DateTimeFormat('en', { timeZone }); } catch { invalid('Organization time zone needs administrator correction.'); }
+  return { id: data.teamId, ...team, timeZone };
+});
 export const listEventTeamChoices = readCommand(data => {
   keys(data, ['teamId', 'pageSize', 'cursor']); return { teamId: id(data.teamId, 'teamId'), ...page(data) };
 }, async (tx, data, uid) => {
+  tx = cacheDocumentReads(tx);
   const base = await readableTeam(tx, data.teamId, uid);
   // Mutating any combination requires the same every-team grant used by creation.
   await eventScope(tx, [data.teamId], uid);
@@ -68,6 +80,8 @@ export const listEventTeamChoices = readCommand(data => {
 export const listCanonicalTeamEvents = readCommand(data => {
   keys(data, ['teamId', 'pageSize', 'cursor']); return { teamId: id(data.teamId, 'teamId'), ...page(data) };
 }, async (tx, data, uid) => {
+  tx = cacheDocumentReads(tx);
+  const management = new Map<string, Promise<boolean>>();
   const team = await readableTeam(tx, data.teamId, uid);
   let query = getFirestore().collection('events').where('orgId', '==', team.orgId)
     .where('teamIds', 'array-contains', data.teamId).where('publicationState', '==', 'published')
@@ -77,18 +91,21 @@ export const listCanonicalTeamEvents = readCommand(data => {
   const items: Data[] = [];
   for (const row of rows.docs.slice(0, data.pageSize)) {
     const event = row.data();
-    if (event.schemaVersion === 2 && visible(event)) items.push(await result(tx, row.id, event, uid));
+    if (event.schemaVersion === 2 && visible(event)) items.push(await result(tx, row.id, event, uid, management));
   }
   return { items, nextCursor: rows.size > data.pageSize ? rows.docs[data.pageSize - 1].id : null };
 });
 export const getCanonicalEvent = readCommand(data => {
   keys(data, ['eventId']); return { eventId: id(data.eventId, 'eventId') };
 }, async (tx, data, uid) => {
+  tx = cacheDocumentReads(tx);
+  let agenda: Promise<Data> | undefined;
+  const household = () => agenda ??= readAgenda(tx, {}, uid, { events: false });
   const event = (await tx.get(getFirestore().doc(`events/${data.eventId}`))).data();
   if (!event || event.schemaVersion !== 2 || !visible(event)) denied();
   let allowed = false;
   for (const teamId of teamIds(event.teamIds)) {
-    try { await readableTeam(tx, teamId, uid); allowed = true; break; }
+    try { await readableTeam(tx, teamId, uid, household); allowed = true; break; }
     catch (error) { if (!(error instanceof HttpsError) || error.code !== 'permission-denied') throw error; }
   }
   if (!allowed) denied();

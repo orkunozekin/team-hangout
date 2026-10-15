@@ -13,7 +13,7 @@ const navigation = { goBack: jest.fn(), navigate: jest.fn() } as any;
 const event = { id: 'shared', schemaVersion: 2, revision: 4, title: 'Falcons vs Comets', type: 'match', date: new Date('2026-10-20T12:00:00Z'), time: '18:00', startsAt: '2026-10-20T23:00:00.000Z', endsAt: '2026-10-21T00:00:00.000Z', timeZone: 'America/Chicago', status: 'scheduled', scheduleVersion: 2, canManage: true, teams: [{ id: 'a', name: 'Falcons' }, { id: 'b', name: 'Comets' }], location: null, notes: null };
 beforeEach(() => {
   jest.clearAllMocks();
-  (getTeam as jest.Mock).mockResolvedValue({ schemaVersion: 2 });
+  (getTeam as jest.Mock).mockResolvedValue({ schemaVersion: 2, timeZone: 'America/Phoenix' });
   (listEventTeamChoices as jest.Mock).mockResolvedValue(event.teams);
   (getEvent as jest.Mock).mockResolvedValue(event);
   (mutateEventSchedule as jest.Mock).mockResolvedValue({});
@@ -64,4 +64,23 @@ test('reschedule edits local date/time independently from other details', async 
   await fireEvent.changeText(screen.getByLabelText('Reason for change'), 'Makeup');
   await fireEvent.press(screen.getByText('Save changes'));
   expect(mutateEventSchedule).toHaveBeenCalledWith('shared', 4, 'reschedule', { startsAt: '2026-10-21T23:00:00.000Z', endsAt: '2026-10-22T00:00:00.000Z', timeZone: 'America/Chicago' }, 'Makeup');
+});
+
+test('new events default to the canonical organization zone even when absent from the preset list', async () => {
+  await render(<CreateEditEventScreen teamId="a" membership={membership} navigation={navigation} route={{ params: {} } as any} />);
+  await screen.findByText('Event time zone: America/Phoenix');
+  await fireEvent.changeText(screen.getByLabelText('Event date'), '2026-10-20');
+  await fireEvent.changeText(screen.getByLabelText('Local time'), '18:00');
+  await fireEvent.changeText(screen.getByPlaceholderText('Evening practice'), 'Organization time');
+  await fireEvent.press(screen.getByText('Change time zone'));
+  expect(screen.getByRole('button', { name: /America\/Phoenix/ })).toBeTruthy();
+  await fireEvent.press(screen.getByText('Create event'));
+  expect(createCanonicalEvent).toHaveBeenCalledWith('a', expect.objectContaining({ timeZone: 'America/Phoenix', startsAt: '2026-10-21T01:00:00.000Z' }));
+});
+test('a canonical team without a confirmed organization timezone cannot publish with a guessed device zone', async () => {
+  (getTeam as jest.Mock).mockResolvedValue({ schemaVersion: 2 });
+  await render(<CreateEditEventScreen teamId="a" membership={membership} navigation={navigation} route={{ params: {} } as any} />);
+  await screen.findByText('Organization time zone is unavailable. Reload before creating an event.');
+  expect(screen.getByRole('button', { name: 'Create event' })).toBeDisabled();
+  expect(createCanonicalEvent).not.toHaveBeenCalled();
 });

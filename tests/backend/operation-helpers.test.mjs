@@ -37,3 +37,16 @@ test('event authority rejects empty/duplicate teams before database reads and va
   validateStoredEvent(event, scope);
   assert.throws(() => validateStoredEvent({ ...event, teamId: 'other', teamIds: ['other'] }, scope), { code: 'permission-denied' });
 });
+test('read caches deduplicate concurrent document batches and never carry snapshots to another transaction attempt', async () => {
+  const { cacheDocumentReads } = require('./lib/operations/reads.js');
+  const { DocumentReference } = require('firebase-admin/firestore');
+  const ref = Object.assign(Object.create(DocumentReference.prototype), {});
+  Object.defineProperty(ref, 'path', { value: 'organizations/cache-fixture' });
+  let reads = 0;
+  const transaction = { getAll: async (...refs) => { reads += refs.length; return refs.map(ref => ({ ref, revision: reads })); } };
+  const first = cacheDocumentReads(transaction);
+  const [single, batch] = await Promise.all([first.get(ref), first.getAll(ref, ref)]);
+  assert.equal(reads, 1); assert.equal(single, batch[0]); assert.equal(batch[0], batch[1]);
+  const next = cacheDocumentReads(transaction);
+  assert.notEqual(await next.get(ref), single); assert.equal(reads, 2);
+});
