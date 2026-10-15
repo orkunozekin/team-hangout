@@ -71,6 +71,7 @@ type RootStackParamList = {
 type Props = {
   teamId: string;
   teamName?: string;
+  teamSchemaVersion?: number;
   membership: TeamMember;
   appRole?: AppRole;
   navigation: NativeStackNavigationProp<RootStackParamList>;
@@ -85,11 +86,13 @@ const FILTERS: { key: EventTypeFilter; label: string }[] = [
 export default function ScheduleScreen({
   teamId,
   teamName,
+  teamSchemaVersion,
   membership,
   appRole,
   navigation,
 }: Props) {
   const generation = useRef(0);
+  const [liveCanManage, setLiveCanManage] = useState(false);
   const [events, setEvents] = useState<TeamEvent[]>([]);
   const [view, setView] = useState<'upcoming' | 'past'>('upcoming');
   const [filter, setFilter] = useState<EventTypeFilter>('all');
@@ -103,11 +106,11 @@ export default function ScheduleScreen({
   const load = useCallback(async () => {
     const token = ++generation.current;
     pendingPage.current = true;
-    setLoadingMore(false); setError('');
+    setLoadingMore(false); setError(''); setLiveCanManage(false);
     try {
-      const page = await listTeamEventPage(teamId, null, view);
+      const page = await listTeamEventPage(teamId, null, view, teamSchemaVersion);
       if (token === generation.current) {
-        setEvents(page.items); setNextCursor(page.nextCursor);
+        setEvents(page.items); setNextCursor(page.nextCursor); setLiveCanManage(page.canManage === true);
       }
     } catch (error) {
       if (token === generation.current) setError(error instanceof Error ? error.message : 'Schedule unavailable.');
@@ -116,7 +119,7 @@ export default function ScheduleScreen({
         pendingPage.current = false; setLoading(false); setRefreshing(false);
       }
     }
-  }, [teamId, view]);
+  }, [teamId, view, teamSchemaVersion]);
 
   useFocusEffect(
     useCallback(() => {
@@ -137,19 +140,19 @@ export default function ScheduleScreen({
     pendingPage.current = true;
     setLoadingMore(true); setError('');
     try {
-      const page = await listTeamEventPage(teamId, nextCursor, view);
+      const page = await listTeamEventPage(teamId, nextCursor, view, teamSchemaVersion);
       if (token !== generation.current) return;
       setEvents(previous => [...new Map([...previous, ...page.items].map(item => [item.id, item])).values()]);
-      setNextCursor(page.nextCursor);
+      setNextCursor(page.nextCursor); setLiveCanManage(page.canManage === true);
     } catch (error) {
-      if (token === generation.current) setError(error instanceof Error ? error.message : 'More events are unavailable. Please try again.');
+      if (token === generation.current) { setLiveCanManage(false); setError(error instanceof Error ? error.message : 'More events are unavailable. Please try again.'); }
     } finally {
       if (token === generation.current) { pendingPage.current = false; setLoadingMore(false); }
     }
   }
 
   const visible = applyScheduleView(events, filter, view === 'past' ? 'desc' : 'asc');
-  const canManage = canManageTeam({ membership, appRole });
+  const canManage = teamSchemaVersion === 2 ? liveCanManage : canManageTeam({ membership, appRole });
 
   return (
     <Screen style={{ paddingHorizontal: 0 }}>

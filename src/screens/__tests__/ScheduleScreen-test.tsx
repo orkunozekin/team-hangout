@@ -18,7 +18,7 @@ test('renders one schedule page immediately and loads the next only on request',
   expect(listTeamEventPage).toHaveBeenCalledTimes(1);
   await fireEvent.press(screen.getByText('Load more events'));
   await screen.findByText('Second match');
-  expect(listTeamEventPage).toHaveBeenLastCalledWith('a', 'first', 'upcoming');
+  expect(listTeamEventPage).toHaveBeenLastCalledWith('a', 'first', 'upcoming', undefined);
   expect(screen.getByText('First match')).toBeTruthy();
   expect(screen.queryByText('Load more events')).toBeNull();
 });
@@ -36,7 +36,7 @@ test('preserves earlier events after a later page fails and retries the same cur
   await screen.findByText('Recovered match');
   expect(screen.getAllByText('Keep this match')).toHaveLength(1);
   expect(screen.queryByRole('alert')).toBeNull();
-  expect(listTeamEventPage).toHaveBeenNthCalledWith(3, 'a', 'first', 'upcoming');
+  expect(listTeamEventPage).toHaveBeenNthCalledWith(3, 'a', 'first', 'upcoming', undefined);
 });
 
 test('ignores a pending old page after changing teams', async () => {
@@ -60,10 +60,21 @@ test('opens upcoming events first and switches to a bounded past view', async ()
     .mockResolvedValueOnce({ items: [event('Recent history')], nextCursor: 'past-page' });
   await render(<ScheduleScreen teamId="a" membership={membership} navigation={navigation} />);
   await screen.findByText('Next practice');
-  expect(listTeamEventPage).toHaveBeenCalledWith('a', null, 'upcoming');
+  expect(listTeamEventPage).toHaveBeenCalledWith('a', null, 'upcoming', undefined);
   await fireEvent.press(screen.getByText('Past events'));
   await screen.findByText('Recent history');
-  expect(listTeamEventPage).toHaveBeenLastCalledWith('a', null, 'past');
+  expect(listTeamEventPage).toHaveBeenLastCalledWith('a', null, 'past', undefined);
   expect(screen.queryByText('Next practice')).toBeNull();
   expect(screen.getByText('Load more events')).toBeTruthy();
+});
+
+
+test('canonical add controls follow live page authority despite stale coach and support roles', async () => {
+  (listTeamEventPage as jest.Mock).mockResolvedValueOnce({ items: [], nextCursor: null, canManage: true })
+    .mockResolvedValueOnce({ items: [], nextCursor: null, canManage: false });
+  await render(<ScheduleScreen teamId="a" teamSchemaVersion={2} membership={membership} appRole="superAdmin" navigation={navigation} />);
+  await screen.findByText('Add event');
+  await fireEvent.press(screen.getByText('Past events'));
+  await waitFor(() => expect(screen.queryByText('Add event')).toBeNull());
+  expect(listTeamEventPage).toHaveBeenLastCalledWith('a', null, 'past', 2);
 });

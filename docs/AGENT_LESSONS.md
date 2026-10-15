@@ -181,3 +181,11 @@
 - **Gap:** Family history still exposed freeform staff reasons, published soft deletion bypassed cancellation history, household calendars omitted lifecycle states, and bounded schedules opened at the oldest archive. CI also caught a cursor variable's definite-assignment error that an unchecked local command sequence missed.
 - **Going forward:** Public history must use an allowlist without freeform staff reasons. Guard both compatibility update and delete paths for published events while preserving authorized receipt replay and staged/legacy compatibility. Show lifecycle status consistently in household calendars, with explicit scheduled-only subscription policy. Open native schedules near current/upcoming events with bounded past navigation. Check every validation command exit and confirm the Functions build succeeds before running tests against its generated output.
 - **Pointers:** canonical event readers/history, `functions/src/commands.ts`, household agenda/subscription callers, native schedule modes and full backend regressions.
+
+
+### 2026-10-15 — Return live capabilities with bounded reads
+
+- **Source:** PR #26 · GitHub Codex full-diff review
+- **Gap:** Canonical Add event controls trusted stale navigation roles, and every page performed team discovery before the authorized page request repeated household discovery.
+- **Going forward:** Return current mutation capability from the same authorized schedule response, including empty pages, and clear it on failed refreshes. Reuse resolved schema only to select the reader; every server page still reauthorizes current grants. Do not use platform support or cached membership as canonical mutation authority.
+- **Pointers:** `functions/src/operations/events.ts`, `src/firebase/events.ts`, `src/screens/ScheduleScreen.tsx`, `App.tsx` and revocation/paging regressions.

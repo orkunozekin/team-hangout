@@ -365,3 +365,18 @@ test('native upcoming pages bypass a large archive and past pages remain availab
   assert.equal(older.items.length, 10); assert.equal(older.nextCursor, null);
   await assert.rejects(call('p202-admin', 'listCanonicalTeamEvents', { teamId, view: 'upcoming', cursor: past.nextCursor }), { code: 'functions/invalid-argument' });
 });
+
+
+test('schedule page management uses live grants even when revoked managers retain household access', async () => {
+  const uid = 'p202-guardian', teamId = 'p202-b';
+  const ref = db.doc(`teamMembers/${teamId}_${uid}`);
+  await db.doc('organizations/p202-org/participants/p202-child/guardians/p202-guardian').update({ status: 'active' });
+  await db.doc('teams/p202-b/roster/p202-child').update({ status: 'active' });
+  await ref.set({ ...meta, orgId: 'p202-org', teamId, userId: uid, roles: ['captain'] });
+  assert.equal((await call(uid, 'listCanonicalTeamEvents', { teamId })).canManage, true);
+  await ref.update({ status: 'revoked' });
+  await db.doc(`users/${uid}`).update({ appRole: 'superAdmin' });
+  assert.equal((await call(uid, 'listCanonicalTeamEvents', { teamId })).canManage, false);
+  await deny(call(uid, 'createEvent', req({ teamId, event: { ...fields, teamIds: [teamId], publicationState: 'published' } })));
+  await db.doc(`users/${uid}`).update({ appRole: 'user' });
+});

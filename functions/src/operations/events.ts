@@ -123,7 +123,10 @@ export const listCanonicalTeamEvents = readCommand(data => {
   const last = rows.docs[data.pageSize - 1];
   const nextCursor = rows.size > data.pageSize ? Buffer.from(JSON.stringify({ orgId: team.orgId, teamId: data.teamId, view: data.view, cutoff,
     startsAt: last.data().startsAt.toDate().toISOString(), id: last.id })).toString('base64url') : null;
-  return { items, nextCursor };
+  let canManage = false;
+  try { await eventScope(tx, [data.teamId], uid); canManage = true; }
+  catch (error) { if (!(error instanceof HttpsError) || !['permission-denied', 'failed-precondition'].includes(error.code)) throw error; }
+  return { items, nextCursor, canManage };
 });
 export const getCanonicalEvent = readCommand(data => {
   keys(data, ['eventId']); return { eventId: id(data.eventId, 'eventId') };

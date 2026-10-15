@@ -116,13 +116,13 @@ export async function getEvent(
   return event;
 }
 
-export type TeamEventPage = { items: TeamEvent[]; nextCursor: string | null };
-export async function listTeamEventPage(teamId: string, cursor: string | null = null, view: 'upcoming' | 'past' = 'upcoming'): Promise<TeamEventPage> {
-  const team = await getTeam(teamId);
-  if (team?.schemaVersion === 2) {
-    const page = await readEventCommand<{ items: (Record<string, unknown> & { id: string })[]; nextCursor: string | null }>(
+export type TeamEventPage = { items: TeamEvent[]; nextCursor: string | null; canManage?: boolean };
+export async function listTeamEventPage(teamId: string, cursor: string | null = null, view: 'upcoming' | 'past' = 'upcoming', teamSchemaVersion?: number): Promise<TeamEventPage> {
+  const schemaVersion = teamSchemaVersion ?? (await getTeam(teamId))?.schemaVersion;
+  if (schemaVersion === 2) {
+    const page = await readEventCommand<{ items: (Record<string, unknown> & { id: string })[]; nextCursor: string | null; canManage: boolean }>(
       'listCanonicalTeamEvents', { teamId, cursor, pageSize: 50, view });
-    return { items: page.items.map(item => mapEventDoc(item.id, item)), nextCursor: page.nextCursor };
+    return { items: page.items.map(item => mapEventDoc(item.id, item)), nextCursor: page.nextCursor, canManage: page.canManage === true };
   }
   const q = query(
     collection(db, 'events'),

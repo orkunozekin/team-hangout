@@ -233,3 +233,15 @@ describe('canonical callable readers and writers', () => {
     expect(mockRunCommand).toHaveBeenLastCalledWith('createEvent', { teamId: 'a', event: { teamIds: ['a', 'b'], title: 'Shared match' } });
   });
 });
+
+
+test('resolved canonical pages use one live callable without repeating team discovery', async () => {
+  jest.clearAllMocks();
+  mockRead.mockResolvedValueOnce({ data: { items: [], nextCursor: 'next', canManage: true } })
+    .mockResolvedValueOnce({ data: { items: [], nextCursor: null, canManage: false } });
+  expect((await listTeamEventPage('a', null, 'upcoming', 2)).canManage).toBe(true);
+  expect((await listTeamEventPage('a', 'next', 'upcoming', 2)).canManage).toBe(false);
+  expect(mockGetTeam).not.toHaveBeenCalled();
+  expect(mockRead).toHaveBeenCalledTimes(2);
+  expect(mockGetDocs).not.toHaveBeenCalled();
+});
