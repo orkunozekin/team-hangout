@@ -154,3 +154,33 @@ test('50-event reads reuse transaction-local grants and metadata, then reauthori
   await db.doc('organizations/p202-org/participants/p202-child/guardians/p202-guardian').update({ status: 'revoked' });
   await deny(call('p202-guardian', 'listCanonicalTeamEvents', { teamId: 'p202-b', pageSize: 50 }));
 });
+test('legacy update cannot bypass published history, but single-event draft promotion still replays safely', async () => {
+  const event = await create();
+  for (const patch of [{ title: 'Bypass' }, { type: 'practice' }, { location: { name: 'Changed' } }, { notes: 'Changed' }]) {
+    await assert.rejects(call('p202-admin', 'updateEvent', req({ eventId: event.id, expectedRevision: 1, patch })),
+      error => error.code === 'functions/failed-precondition' && error.details.domainCode === 'LIFECYCLE_COMMAND_REQUIRED');
+  }
+  assert.equal((await db.doc(`events/${event.id}`).get()).data().revision, 1);
+  assert.equal((await db.collection(`events/${event.id}/scheduleHistory`).get()).size, 0);
+  await mutate(event, 'edit', { title: 'Audited correction' });
+  assert.equal((await db.collection(`events/${event.id}/scheduleHistory`).get()).size, 1);
+  const staged = await create({ publicationState: 'staged' });
+  const promotion = req({ eventId: staged.id, expectedRevision: 1, patch: { publicationState: 'published', title: 'Reviewed single-event publication' } });
+  const first = await call('p202-admin', 'updateEvent', promotion);
+  assert.deepEqual(await call('p202-admin', 'updateEvent', promotion), first);
+  assert.equal((await db.doc(`events/${staged.id}`).get()).data().revision, 2);
+  assert.equal((await call('p202-admin', 'getCanonicalEvent', { eventId: staged.id })).publicationOperationId, null);
+});
+test('recent history uses an extra row to distinguish 19, exactly 20, and 21 records', async () => {
+  let event = await create();
+  for (let i = 1; i <= 21; i++) {
+    event = await mutate(event, 'edit', { title: `History edit ${i}` });
+    if (i >= 19) {
+      const loaded = await call('p202-admin', 'getCanonicalEvent', { eventId: event.id });
+      assert.equal(loaded.history.length, Math.min(i, 20));
+      assert.equal(loaded.historyHasMore, i > 20);
+      assert.equal(loaded.history[0].revision, i + 1);
+      assert.equal(loaded.history.at(-1).revision, i > 20 ? 3 : 2);
+    }
+  }
+});

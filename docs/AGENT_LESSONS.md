@@ -134,3 +134,10 @@
 - **Gap:** New native events defaulted to the device timezone, and canonical event lists repeatedly fetched the same hierarchy and grant documents for every result.
 - **Going forward:** Obtain new-event timezone defaults from the authorized canonical organization; preserve that zone as a selectable value even when it is absent from common presets. Reuse document snapshots and identical management checks only within one read transaction attempt, never across requests or retries. Test a 50-event page's document reads and revoke access before the next request.
 - **Pointers:** `functions/src/operations/events.ts`, `functions/src/operations/reads.ts`, `src/screens/CreateEditEventScreen.tsx`, operational backend and native screen tests.
+
+### 2026-10-15 — Enforce published event history across compatibility commands
+
+- **Source:** PR #26 · GitHub Codex re-review
+- **Gap:** The new lifecycle command recorded reasons/history, but the still-exported compatibility update command could edit published canonical details without those records.
+- **Going forward:** Check every callable entry point when introducing a canonical mutation invariant. Route new published edits through the lifecycle command while preserving authorized, non-mutating replay and server-owned draft promotion. Test both endpoints, not only the new writer.
+- **Pointers:** `functions/src/commands.ts`, `functions/src/operations/events.ts`, `tests/backend/operational-events.test.mjs`.

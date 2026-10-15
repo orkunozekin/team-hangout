@@ -170,12 +170,15 @@ function changeEvent(deleting: boolean) {
       // Reauthorize against current state, but never reapply an old patch to a later edit.
       if (replay) return replay;
       if (!deleting) {
+        if (event.publicationState === 'published') {
+          throw new HttpsError('failed-precondition', 'Use the event lifecycle command to edit published events.', { domainCode: 'LIFECYCLE_COMMAND_REQUIRED' });
+        }
         if (['startsAt', 'endsAt', 'timeZone', 'status'].some(field => payload.patch[field] !== undefined)) {
           invalid('Use the revisioned event lifecycle command for schedule changes.');
         }
         changes = v2Fields(payload.patch, true);
         if (changes.publicationState !== undefined && changes.publicationState !== 'published') invalid('Published events cannot be staged again.');
-        // Lifecycle controls and fenced publication are reserved for Phase 2.
+        // Compatibility edits are restricted to unpublished, server-owned single-event drafts.
         if (event.status !== 'scheduled') throw new HttpsError('failed-precondition', 'This lifecycle is not editable yet.');
         changes = storageFields({ ...event, ...changes });
       }

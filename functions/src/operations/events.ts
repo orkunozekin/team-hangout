@@ -111,8 +111,8 @@ export const getCanonicalEvent = readCommand(data => {
   if (!allowed) denied();
   const item = await result(tx, data.eventId, event, uid);
   // Bounded recent history is safe schedule metadata only, never private notes or actor identity.
-  const rows = await tx.get(getFirestore().collection(`events/${data.eventId}/scheduleHistory`).orderBy('revision', 'desc').limit(20));
-  return { ...item, history: rows.docs.map(row => row.data()), historyHasMore: rows.size === 20 };
+  const rows = await tx.get(getFirestore().collection(`events/${data.eventId}/scheduleHistory`).orderBy('revision', 'desc').limit(21));
+  return { ...item, history: rows.docs.slice(0, 20).map(row => row.data()), historyHasMore: rows.size > 20 };
 });
 
 export const mutateEventSchedule = command('mutateEventSchedule', data => {

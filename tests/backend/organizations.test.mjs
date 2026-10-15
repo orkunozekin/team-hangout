@@ -147,7 +147,7 @@ test('v2 event create/update/delete validate every team and deny unrelated/progr
   const edit = req({ eventId: event.id, expectedRevision: 1, patch: { title: 'Published practice', publicationState: 'published' } });
   assert.equal((await call('org-staff', 'updateEvent', edit)).revision, 2);
   assert.equal((await call('org-staff', 'updateEvent', edit)).revision, 2);
-  await assert.rejects(call('org-owner', 'updateEvent', req({ eventId: event.id, expectedRevision: 1, patch: { title: 'Stale' } })), error => error.details.domainCode === 'STALE_REVISION');
+  await assert.rejects(call('org-owner', 'mutateEventSchedule', req({ eventId: event.id, expectedRevision: 1, action: 'edit', reason: 'Stale edit', patch: { title: 'Stale' } })), error => error.details.domainCode === 'STALE_REVISION');
   await db.doc(`events/${event.id}`).update({ orgId: b.orgId });
   await deny(call('org-owner', 'softDeleteEvent', req({ eventId: event.id, expectedRevision: 2 })));
   await db.doc(`events/${event.id}`).update({ orgId: a.orgId });
