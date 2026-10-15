@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, connectAuthEmulator, signInWithEmailAndPassword } from 'firebase/auth';
 import { getFunctions, connectFunctionsEmulator, httpsCallable } from 'firebase/functions';
-import { getFirestore as clientDb, connectFirestoreEmulator, doc, getDoc, setDoc } from 'firebase/firestore';
+import { getFirestore as clientDb, connectFirestoreEmulator, doc, getDoc, setDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { projectId, requireEmulators, operationalEventFields as fields } from './fixtures.mjs';
 const require = createRequire(new URL('../../functions/package.json', import.meta.url));
 const { initializeApp: adminApp, deleteApp: deleteAdmin } = require('firebase-admin/app');
@@ -211,4 +211,21 @@ test('captain-only grants manage canonical events only with live authority for e
   await deny(call(uid, 'mutateEventSchedule', payload));
   await db.doc(`teamMembers/p202-b_${uid}`).update({ status: 'active', orgId: 'foreign' });
   await deny(call(uid, 'mutateEventSchedule', payload));
+});
+
+
+test('canonical team navigation never grants legacy directory access and live team reads reject revoked assignments', async () => {
+  const uid = 'p202-outsider';
+  for (const [teamId, status] of [['p202-a', 'revoked'], ['p202-b', 'active']]) {
+    await db.doc(`teamMembers/${teamId}_${uid}`).set({ ...meta, orgId: 'p202-org', teamId, userId: uid, roles: ['coach'], status });
+  }
+  const memberships = await getDocs(query(collection(clientDb(apps[uid]), 'teamMembers'), where('userId', '==', uid)));
+  assert.equal(memberships.size, 2); // Self-owned revoked assignments remain readable, so native discovery must filter them.
+  await deny(call(uid, 'getNativeTeam', { teamId: 'p202-a' }));
+  assert.equal((await call(uid, 'getNativeTeam', { teamId: 'p202-b' })).name, 'Comets');
+  for (const actor of [uid, 'p202-b-coach', 'p202-guardian', 'p202-admin']) {
+    await assert.rejects(getDocs(query(collection(clientDb(apps[actor]), 'teamMembers'), where('teamId', '==', 'p202-b'))), { code: 'permission-denied' });
+  }
+  await db.doc(`teamMembers/p202-b_${uid}`).update({ status: 'revoked' });
+  await deny(call(uid, 'getNativeTeam', { teamId: 'p202-b' }));
 });

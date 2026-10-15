@@ -149,3 +149,11 @@
 - **Gap:** The native schedule sorted display wall times rather than canonical instants, and canonical event authority omitted the captain role explicitly approved in the product plan.
 - **Going forward:** Sort canonical events by `startsAt`, including cross-zone and repeated-hour cases. Check proposed role changes against the approved plan, then apply the same accepted roles to live server grants and native control mapping; retain every-team authority, tenant checks and revocation on replay.
 - **Pointers:** `src/lib/eventSort.ts`, `functions/src/operations/access.ts`, `src/firebase/teams.ts`, `docs/plans/product-plan.md` approved product structure.
+
+
+### 2026-10-15 — Trace navigation through existing readers and revoked assignments
+
+- **Source:** PR #26 · GitHub Codex re-review
+- **Gap:** Enabling canonical active teams exposed a Team tab that still queried the legacy member directory. Revoked canonical assignments also remained preferred navigation candidates and blocked other valid teams.
+- **Going forward:** Follow newly enabled navigation through every existing screen. Keep canonical teams out of legacy roster/invite flows without expanding household directory access. Filter inactive canonical assignments before choosing a team, recheck the live team read, and fall back on denied/missing candidates while surfacing service failures. Test rendered canonical and legacy tabs, retry/switching states and live revocation.
+- **Pointers:** `src/screens/TeamScreen.tsx`, `src/firebase/teams.ts`, TeamScreen and membership tests, `tests/backend/operational-events.test.mjs`.
