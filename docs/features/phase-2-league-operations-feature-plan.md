@@ -310,9 +310,9 @@ Before pilot the owner must approve youth posting/history policy, data retention
 ### Done so far
 
 - P2.01 baseline verified against fetched remote `main` at `eec291f452374743701eb6fed25a0bb8fe629a8e` (merged PR #24), including final Phase 1 PR #22. Open PR #23 staging acceptance was not adopted or modified.
-- Existing canonical event commands, staff/program/coach scopes, participant/guardian and roster boundaries, household agenda/calendar, email and deletion interfaces inspected. The source inventory above is historical; direct client event writes were already replaced in Phase 1.
+- Existing canonical event commands, staff/program/coach scopes, participant/guardian and roster boundaries, household agenda/calendar, email and deletion interfaces inspected. Phase 1 deliberately rejects `respond: true` guardian grants; P2.09 must enable response policy explicitly. Agenda/feed currently accept published null-marker events and reject non-null operation markers; P2.07 must add committed-marker reads. ICS uses stable event ID UIDs and event revisions. The source inventory above is historical; direct client event writes were already replaced in Phase 1.
 - P2.01 adds operational JSON/native reader contracts, reusable server access/revision/receipt helpers, malformed-grant and identity defenses, and explicit legacy reader compatibility tests. Existing receipt hashes/storage and deletion coverage are preserved. No new user-linked storage, UI behavior, lifecycle command, deployment or production access.
-- Local Node 22 validation passed: native typecheck, 25 unit suites / 132 tests with coverage, Functions build, 7 pure contracts, 3 helper tests, and the full isolated backend suite (132 tests including deletion).
+- Local Node 22 validation passed: native typecheck, 25 unit suites / 132 tests with coverage, Functions build, 7 pure contracts, 3 helper tests, the full isolated backend suite (132 tests including deletion), and the focused operations gate (39 tests including deletion).
 - Focused `yarn test:operations` reuses isolated emulator configuration and includes deletion tests; full backend CI retains all suites. See `docs/backend-testing.md` for contracts and boundary details.
 
 - Product scope translated into contracts, bounded PR steps, feasibility evidence, explicit prototype gates and external release dependencies.
