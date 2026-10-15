@@ -106,9 +106,9 @@ service cloud.firestore {
     }
 
     match /events/{eventId} {
-      allow get: if legacyTeam(resource.data.teamId) && (isTeamMember(resource.data.teamId) || isSuperAdmin())
+      allow get: if isLegacy(resource.data) && legacyTeam(resource.data.teamId) && (isTeamMember(resource.data.teamId) || isSuperAdmin())
         && resource.data.deletedAt == null;
-      allow list: if legacyTeam(resource.data.teamId) && (isTeamMember(resource.data.teamId) || isSuperAdmin())
+      allow list: if isLegacy(resource.data) && legacyTeam(resource.data.teamId) && (isTeamMember(resource.data.teamId) || isSuperAdmin())
         && resource.data.deletedAt == null;
       // Update Team Hangout: event writes now require revisioned callable commands.
       allow create, update, delete: if false;

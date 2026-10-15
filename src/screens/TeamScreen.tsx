@@ -1,6 +1,7 @@
 import React, {
   useCallback,
   useState,
+  useRef,
 } from 'react';
 
 import {
@@ -67,21 +68,32 @@ export default function TeamScreen({ teamId, membership, appRole }: Props) {
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingCode, setLoadingCode] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const request = useRef(0);
   const canManage = canManageTeam({ membership, appRole });
   const isSuperAdmin = isSuperAdminRole(appRole);
 
   const load = useCallback(async () => {
-    const [teamData, memberData] = await Promise.all([
-      getTeam(teamId),
-      listTeamMembers(teamId),
-    ]);
-    setTeam(teamData);
-    setMembers(memberData);
+    const current = ++request.current;
+    setLoadError(null);
+    setTeam(null);
+    setMembers([]);
+    try {
+      const teamData = await getTeam(teamId);
+      if (!teamData) throw new Error('Team unavailable');
+      const memberData = teamData.schemaVersion === 2 ? [] : await listTeamMembers(teamId);
+      if (current !== request.current) return;
+      setTeam(teamData);
+      setMembers(memberData);
+    } catch {
+      if (current === request.current) setLoadError('Unable to load this team. Please try again.');
+    }
   }, [teamId]);
 
   useFocusEffect(
     useCallback(() => {
-      load();
+      void load();
+      return () => { request.current++; };
     }, [load]),
   );
 
@@ -147,7 +159,7 @@ export default function TeamScreen({ teamId, membership, appRole }: Props) {
           Your role: {displayTeamRole(membership.role, appRole)}
         </Subtitle>
 
-        {canManage && team ? (
+        {canManage && team && team.schemaVersion !== 2 ? (
           <View style={styles.inviteBox}>
             <Text style={styles.inviteLabel}>Invite code</Text>
             <Text style={styles.inviteCode}>{team.inviteCode}</Text>
@@ -161,27 +173,43 @@ export default function TeamScreen({ teamId, membership, appRole }: Props) {
         ) : null}
       </View>
 
-      <Text style={styles.sectionTitle}>Members ({members.length})</Text>
+      {loadError ? (
+        <View style={styles.list}>
+          <Text accessibilityRole="alert">{loadError}</Text>
+          <SecondaryButton label="Retry" onPress={load} />
+        </View>
+      ) : !team ? (
+        <EmptyState message="Loading team..." />
+      ) : team.schemaVersion === 2 ? (
+        <View style={styles.list}>
+          <Text>Your organization manages this team's roster.</Text>
+          <SecondaryButton label="Refresh team" onPress={onRefresh} disabled={refreshing} />
+        </View>
+      ) : (
+        <>
+          <Text style={styles.sectionTitle}>Members ({members.length})</Text>
 
-      <FlatList
-        data={members}
-        keyExtractor={(item) => item.id}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-        contentContainerStyle={styles.list}
-        ListEmptyComponent={
-          <EmptyState message="No members yet." />
-        }
-        renderItem={({ item }) => (
-          <View style={styles.memberRow}>
-            <View>
-              <Text style={styles.memberName}>{item.displayName}</Text>
-              <Text style={styles.memberRole}>{item.role}</Text>
-            </View>
-          </View>
-        )}
-      />
+          <FlatList
+            data={members}
+            keyExtractor={(item) => item.id}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            }
+            contentContainerStyle={styles.list}
+            ListEmptyComponent={
+              <EmptyState message="No members yet." />
+            }
+            renderItem={({ item }) => (
+              <View style={styles.memberRow}>
+                <View>
+                  <Text style={styles.memberName}>{item.displayName}</Text>
+                  <Text style={styles.memberRole}>{item.role}</Text>
+                </View>
+              </View>
+            )}
+          />
+        </>
+      )}
     </Screen>
   );
 }

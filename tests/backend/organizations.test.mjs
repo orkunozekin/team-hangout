@@ -147,27 +147,27 @@ test('v2 event create/update/delete validate every team and deny unrelated/progr
   const edit = req({ eventId: event.id, expectedRevision: 1, patch: { title: 'Published practice', publicationState: 'published' } });
   assert.equal((await call('org-staff', 'updateEvent', edit)).revision, 2);
   assert.equal((await call('org-staff', 'updateEvent', edit)).revision, 2);
-  await assert.rejects(call('org-owner', 'updateEvent', req({ eventId: event.id, expectedRevision: 1, patch: { title: 'Stale' } })), error => error.details.domainCode === 'STALE_REVISION');
+  await assert.rejects(call('org-owner', 'mutateEventSchedule', req({ eventId: event.id, expectedRevision: 1, action: 'edit', reason: 'Stale edit', patch: { title: 'Stale' } })), error => error.details.domainCode === 'STALE_REVISION');
   await db.doc(`events/${event.id}`).update({ orgId: b.orgId });
   await deny(call('org-owner', 'softDeleteEvent', req({ eventId: event.id, expectedRevision: 2 })));
   await db.doc(`events/${event.id}`).update({ orgId: a.orgId });
-  assert.equal((await call('org-owner', 'softDeleteEvent', req({ eventId: event.id, expectedRevision: 2 }))).revision, 3);
+  assert.equal((await call('org-owner', 'mutateEventSchedule', req({ eventId: event.id, expectedRevision: 2, action: 'cancel', reason: 'Cancelled fixture' }))).revision, 3);
 });
 test('successful time edits replay after later edits but still recheck coach authority', async () => {
   const fixtureData = await fixture('Time retry fixture');
   const memberRef = db.doc(`teamMembers/${fixtureData.team.id}_org-coach`);
   await memberRef.set({ orgId: fixtureData.orgId, teamId: fixtureData.team.id, userId: 'org-coach', roles: ['coach'], role: 'coach', status: 'active', schemaVersion: 2 });
-  const event = await call('org-coach', 'createEvent', req({ teamId: fixtureData.team.id, event: { ...fields, teamIds: [fixtureData.team.id] } }));
-  const firstEdit = req({ eventId: event.id, expectedRevision: 1, patch: { endsAt: '2026-10-12T01:00:00.000Z' } });
-  const saved = await call('org-coach', 'updateEvent', firstEdit);
-  await call('org-coach', 'updateEvent', req({ eventId: event.id, expectedRevision: 2, patch: { startsAt: '2026-10-12T02:00:00.000Z', endsAt: '2026-10-12T03:00:00.000Z' } }));
+  const event = await call('org-coach', 'createEvent', req({ teamId: fixtureData.team.id, event: { ...fields, publicationState: 'published', teamIds: [fixtureData.team.id] } }));
+  const firstEdit = req({ eventId: event.id, expectedRevision: 1, action: 'reschedule', reason: 'Extra time', patch: { startsAt: fields.startsAt, endsAt: '2026-10-12T01:00:00.000Z', timeZone: 'America/Chicago' } });
+  const saved = await call('org-coach', 'mutateEventSchedule', firstEdit);
+  await call('org-coach', 'mutateEventSchedule', req({ eventId: event.id, expectedRevision: 2, action: 'reschedule', reason: 'Later start', patch: { startsAt: '2026-10-12T02:00:00.000Z', endsAt: '2026-10-12T03:00:00.000Z', timeZone: 'America/Chicago' } }));
   const beforeReplay = (await db.doc(`events/${event.id}`).get()).data();
   const auditBefore = await db.collection(`organizations/${fixtureData.orgId}/audit`).get();
-  assert.deepEqual(await call('org-coach', 'updateEvent', firstEdit), saved);
+  assert.deepEqual(await call('org-coach', 'mutateEventSchedule', firstEdit), saved);
   assert.deepEqual((await db.doc(`events/${event.id}`).get()).data(), beforeReplay);
   assert.equal((await db.collection(`organizations/${fixtureData.orgId}/audit`).get()).size, auditBefore.size);
   await memberRef.update({ status: 'revoked' });
-  await deny(call('org-coach', 'updateEvent', firstEdit));
+  await deny(call('org-coach', 'mutateEventSchedule', firstEdit));
 });
 test('multi-team events authorize every coach grant, span divisions canonically and recheck rollout flag', async () => {
   const division = await entity(a.orgId, 'division', { name: 'U14', programId: a.program.id, seasonId: a.season.id, status: 'active' });

@@ -127,3 +127,65 @@
 - **Gap:** Fixture initialization happened outside the report finalizer, and enlarged-text tests could pass with empty tables or measure scaled targets instead of phone control size.
 - **Going forward:** Include fixture setup in failure-report cleanup and inject a setup failure. Require populated changed states before asserting accessibility, and measure touch targets at an unzoomed phone viewport independently from zoom/reflow.
 - **Pointers:** `scripts/rehearsal/scenarios.mjs`, `tests/backend/rehearsal-guards.test.mjs`, `admin/tests/accessibility.spec.ts`.
+
+### 2026-10-15 — Use canonical timezone defaults and reuse read authority per transaction
+
+- **Source:** PR #26 · GitHub Codex review
+- **Gap:** New native events defaulted to the device timezone, and canonical event lists repeatedly fetched the same hierarchy and grant documents for every result.
+- **Going forward:** Obtain new-event timezone defaults from the authorized canonical organization; preserve that zone as a selectable value even when it is absent from common presets. Reuse document snapshots and identical management checks only within one read transaction attempt, never across requests or retries. Test a 50-event page's document reads and revoke access before the next request.
+- **Pointers:** `functions/src/operations/events.ts`, `functions/src/operations/reads.ts`, `src/screens/CreateEditEventScreen.tsx`, operational backend and native screen tests.
+
+### 2026-10-15 — Enforce published event history across compatibility commands
+
+- **Source:** PR #26 · GitHub Codex re-review
+- **Gap:** The new lifecycle command recorded reasons/history, but the still-exported compatibility update command could edit published canonical details without those records.
+- **Going forward:** Check every callable entry point when introducing a canonical mutation invariant. Route new published edits through the lifecycle command while preserving authorized, non-mutating replay and server-owned draft promotion. Test both endpoints, not only the new writer.
+- **Pointers:** `functions/src/commands.ts`, `functions/src/operations/events.ts`, `tests/backend/operational-events.test.mjs`.
+
+
+### 2026-10-15 — Preserve canonical instants and approved management roles
+
+- **Source:** PR #26 · GitHub Codex re-review
+- **Gap:** The native schedule sorted display wall times rather than canonical instants, and canonical event authority omitted the captain role explicitly approved in the product plan.
+- **Going forward:** Sort canonical events by `startsAt`, including cross-zone and repeated-hour cases. Check proposed role changes against the approved plan, then apply the same accepted roles to live server grants and native control mapping; retain every-team authority, tenant checks and revocation on replay.
+- **Pointers:** `src/lib/eventSort.ts`, `functions/src/operations/access.ts`, `src/firebase/teams.ts`, `docs/plans/product-plan.md` approved product structure.
+
+
+### 2026-10-15 — Trace navigation through existing readers and revoked assignments
+
+- **Source:** PR #26 · GitHub Codex re-review
+- **Gap:** Enabling canonical active teams exposed a Team tab that still queried the legacy member directory. Revoked canonical assignments also remained preferred navigation candidates and blocked other valid teams.
+- **Going forward:** Follow newly enabled navigation through every existing screen. Keep canonical teams out of legacy roster/invite flows without expanding household directory access. Filter inactive canonical assignments before choosing a team, recheck the live team read, and fall back on denied/missing candidates while surfacing service failures. Test rendered canonical and legacy tabs, retry/switching states and live revocation.
+- **Pointers:** `src/screens/TeamScreen.tsx`, `src/firebase/teams.ts`, TeamScreen and membership tests, `tests/backend/operational-events.test.mjs`.
+
+
+### 2026-10-15 — Separate public projections and expose bounded schedule pages
+
+- **Source:** PR #26 · GitHub Codex full-diff review
+- **Gap:** Canonical family readers exposed private notes/audit identities and full team documents; the native schedule drained all server pages. Staged type edits preserved stale matchup IDs.
+- **Going forward:** Use explicit role-appropriate event/team projections and keep strict storage decoding separate from public decoding. Reauthorize private fields on live staff/coach/captain grants. Render one ordered page at a time, retain earlier results on later-page errors, and test equal-instant cursor boundaries and team switching. Recompute derived matchup fields on every accepted type-change path.
+- **Pointers:** `functions/src/operations/events.ts`, `functions/src/commands.ts`, `shared/contracts.ts`, `shared/operations.ts`, `src/firebase/events.ts`, `src/screens/ScheduleScreen.tsx` and their regression tests.
+
+
+### 2026-10-15 — Preserve page boundaries and defer opponent discovery
+
+- **Source:** PR #26 · GitHub Codex full-diff re-review
+- **Gap:** Reloading a cursor event after rescheduling shifted the ordering boundary and skipped intervening rows. Opponent discovery still drained all team pages during practice form setup.
+- **Going forward:** Encode the original instant/document ID and authorized scope in schedule cursors rather than reconstructing the boundary from mutable records. Load optional opponent teams only on explicit request, one page per action, with retained choices and retry. Reauthorize each request and test moved boundaries, equal timestamps and grant revocation between pages.
+- **Pointers:** `functions/src/operations/events.ts`, `src/firebase/events.ts`, `src/screens/CreateEditEventScreen.tsx`, operational backend and native event-screen regressions.
+
+
+### 2026-10-15 — Trace lifecycle privacy through history and compatibility views
+
+- **Source:** PR #26 · GitHub Codex full-diff re-review and CI
+- **Gap:** Family history still exposed freeform staff reasons, published soft deletion bypassed cancellation history, household calendars omitted lifecycle states, and bounded schedules opened at the oldest archive. CI also caught a cursor variable's definite-assignment error that an unchecked local command sequence missed.
+- **Going forward:** Public history must use an allowlist without freeform staff reasons. Guard both compatibility update and delete paths for published events while preserving authorized receipt replay and staged/legacy compatibility. Show lifecycle status consistently in household calendars, with explicit scheduled-only subscription policy. Open native schedules near current/upcoming events with bounded past navigation. Check every validation command exit and confirm the Functions build succeeds before running tests against its generated output.
+- **Pointers:** canonical event readers/history, `functions/src/commands.ts`, household agenda/subscription callers, native schedule modes and full backend regressions.
+
+
+### 2026-10-15 — Return live capabilities with bounded reads
+
+- **Source:** PR #26 · GitHub Codex full-diff review
+- **Gap:** Canonical Add event controls trusted stale navigation roles, and every page performed team discovery before the authorized page request repeated household discovery.
+- **Going forward:** Return current mutation capability from the same authorized schedule response, including empty pages, and clear it on failed refreshes. Reuse resolved schema only to select the reader; every server page still reauthorizes current grants. Do not use platform support or cached membership as canonical mutation authority.
+- **Pointers:** `functions/src/operations/events.ts`, `src/firebase/events.ts`, `src/screens/ScheduleScreen.tsx`, `App.tsx` and revocation/paging regressions.

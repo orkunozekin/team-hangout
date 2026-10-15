@@ -35,3 +35,5 @@ export const resumeEssentialEmail: typeof import('./email/worker').resumeEssenti
     : require('./email/worker').resumeEssentialEmail;
 export { getPrivateEventInformation } from "./email/access";
 export { listEssentialEmail, getEssentialEmailPreference, setEssentialEmailPreference } from "./email/commands";
+
+export { getNativeTeam, listEventTeamChoices, listCanonicalTeamEvents, getCanonicalEvent, mutateEventSchedule } from './operations/events';

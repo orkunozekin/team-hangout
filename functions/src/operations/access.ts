@@ -33,7 +33,7 @@ export async function hierarchy(tx: Transaction, orgId: string, programId: strin
   if (writing && docs.some(doc => doc.data()?.status === 'archived')) inactive();
   return { org, program, season, division };
 }
-/** All event teams must have the same tenant/program/season. Coaches need every team's current grant. */
+/** All event teams must have the same tenant/program/season. Coaches and captains need every team's current grant. */
 export async function eventScope(tx: Transaction, teamIds: string[], uid: string, writing = true) {
   if (!Array.isArray(teamIds) || teamIds.length < 1 || teamIds.length > 20
     || new Set(teamIds).size !== teamIds.length) denied();
@@ -57,7 +57,7 @@ export async function eventScope(tx: Transaction, teamIds: string[], uid: string
     if (!staff) {
       const coach = coaches[i].data();
       if (coach?.teamId !== teams[i].id || coach.userId !== uid || coach.orgId !== orgId
-        || coach.status !== 'active' || !Array.isArray(coach.roles) || !coach.roles.includes('coach')) denied();
+        || coach.status !== 'active' || !Array.isArray(coach.roles) || !coach.roles.some((role: string) => ['coach', 'captain'].includes(role))) denied();
     }
     await hierarchy(tx, orgId, programId, seasonId, id(team.divisionId, 'stored divisionId'), writing);
     if (writing && team.status !== 'active') inactive();

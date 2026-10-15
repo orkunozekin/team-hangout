@@ -1,6 +1,7 @@
 import React, {
   useCallback,
   useState,
+  useRef,
 } from 'react';
 
 import {
@@ -8,6 +9,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 
@@ -26,6 +28,7 @@ import {
 import {
   getEvent,
   softDeleteEvent,
+  mutateEventSchedule,
 } from '../firebase/events';
 
 import {
@@ -59,7 +62,7 @@ import {
 
 type RootStackParamList = {
   EventDetail: { eventId: string };
-  CreateEditEvent: { eventId?: string };
+  CreateEditEvent: { eventId?: string; action?: 'reschedule' };
 };
 
 type Props = {
@@ -75,31 +78,46 @@ export default function EventDetailScreen({
   navigation,
   route,
 }: Props) {
+  const generation = useRef(0);
   const [event, setEvent] = useState<TeamEvent | null>(null);
   const [loading, setLoading] = useState(true);
-  const canManage = canManageTeam({ membership, appRole });
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const canManage = event?.schemaVersion === 2 ? event.canManage : canManageTeam({ membership, appRole });
 
   const load = useCallback(async () => {
+    const token = ++generation.current;
     const data = await getEvent(route.params.eventId);
-    setEvent(data);
+    if (token === generation.current) setEvent(data);
   }, [route.params.eventId]);
 
   useFocusEffect(
     useCallback(() => {
       let active = true;
       (async () => {
-        setLoading(true);
+        setLoading(true); setEvent(null); setError('');
         try {
           await load();
-        } finally {
+        } catch (error) { setError(error instanceof Error ? error.message : 'Event unavailable.'); setEvent(null); } finally {
           if (active) setLoading(false);
         }
       })();
       return () => {
-        active = false;
+        active = false; generation.current++;
       };
     }, [load]),
   );
+
+  async function lifecycle(action: string) {
+    if (!event) return;
+    setSaving(true); setError('');
+    try {
+      await mutateEventSchedule(event.id, event.revision ?? 0, action, {}, reason);
+      setReason(''); await load();
+    } catch (error) { setError(error instanceof Error ? error.message : 'Please try again.'); }
+    finally { setSaving(false); }
+  }
 
   async function onDelete() {
     Alert.alert(
@@ -135,7 +153,7 @@ export default function EventDetailScreen({
   if (!event) {
     return (
       <Screen edges={['bottom']}>
-        <EmptyState message="Event not found." />
+        <EmptyState message={error || "Event not found."} />
       </Screen>
     );
   }
@@ -162,6 +180,12 @@ export default function EventDetailScreen({
         </View>
 
         <Title>{event.title}</Title>
+        {event.schemaVersion === 2 ? <>
+          <Text style={styles.row}>{event.status} · Schedule version {event.scheduleVersion}</Text>
+          <Text style={styles.row}>{event.teams?.map(team => team.name).join(' vs ')} · {event.timeZone}</Text>
+          {event.status === 'postponed' ? <Text style={styles.row}>Awaiting a new schedule. The previous time is shown below.</Text> : null}
+          {event.status === 'cancelled' ? <Text style={styles.row}>Cancelled. This event is retained in schedule history.</Text> : null}
+        </> : null}
 
         <Text style={styles.row}>
           {formatEventDateLabel(event.date)} at {event.time}
@@ -178,7 +202,17 @@ export default function EventDetailScreen({
           <Text style={styles.notes}>{event.notes}</Text>
         ) : null}
 
-        {canManage ? (
+        {event.history?.length ? <>
+          <Text style={styles.row}>Schedule history{event.historyHasMore ? ' (latest 20)' : ''}</Text>
+          {event.history.map(row => <Text key={row.revision} style={styles.row}>
+            Revision {row.revision}: {row.action} · {row.previousStatus} → {row.status}{row.reason ? `\n${row.reason}` : ''}
+            {row.action === 'reschedule' ? `\n${new Date(row.previousStartsAt).toLocaleString('en-US', { timeZone: row.previousTimeZone ?? event.timeZone })} → ${new Date(row.startsAt).toLocaleString('en-US', { timeZone: row.timeZone ?? event.timeZone })}` : ''}
+          </Text>)}
+        </> : null}
+        {error ? <><Text accessibilityRole="alert" style={styles.row}>{error}</Text>
+          <SecondaryButton label="Reload event" onPress={async () => { try { setError(''); await load(); } catch (error) { setError(error instanceof Error ? error.message : 'Event unavailable.'); } }} />
+        </> : null}
+        {canManage && !['cancelled', 'completed'].includes(event.status ?? '') ? (
           <>
             <PrimaryButton
               label="Edit event"
@@ -188,7 +222,14 @@ export default function EventDetailScreen({
                 })
               }
             />
-            <SecondaryButton label="Delete event" onPress={onDelete} />
+            {event.schemaVersion === 2 ? <>
+              <SecondaryButton label="Reschedule" onPress={() => navigation.navigate('CreateEditEvent', { eventId: event.id, action: 'reschedule' })} />
+              <Text style={styles.row}>Reason for status change</Text>
+              <TextInput accessibilityLabel="Reason for status change" value={reason} onChangeText={setReason} maxLength={500} style={{ ...styles.row, borderWidth: 1, borderColor: colors.border, padding: spacing.sm }} />
+              {event.status === 'scheduled' ? <SecondaryButton label="Postpone" disabled={saving || !reason.trim()} onPress={() => lifecycle('postpone')} /> : null}
+              <SecondaryButton label="Cancel event" disabled={saving || !reason.trim()} onPress={() => lifecycle('cancel')} />
+              {event.status === 'scheduled' ? <SecondaryButton label="Complete event" disabled={saving || !reason.trim()} onPress={() => lifecycle('complete')} /> : null}
+            </> : <SecondaryButton label="Delete event" onPress={onDelete} />}
           </>
         ) : null}
       </ScrollView>

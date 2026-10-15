@@ -1,6 +1,7 @@
 import React, {
   useCallback,
   useState,
+  useRef,
 } from 'react';
 
 import {
@@ -21,12 +22,13 @@ import {
 } from '@react-navigation/native-stack';
 
 import {
-  listTeamEvents,
+  listTeamEventPage,
 } from '../firebase/events';
 
 import {
   EmptyState,
   PrimaryButton,
+  SecondaryButton,
   Screen,
   Subtitle,
   Title,
@@ -68,6 +70,8 @@ type RootStackParamList = {
 
 type Props = {
   teamId: string;
+  teamName?: string;
+  teamSchemaVersion?: number;
   membership: TeamMember;
   appRole?: AppRole;
   navigation: NativeStackNavigationProp<RootStackParamList>;
@@ -81,54 +85,84 @@ const FILTERS: { key: EventTypeFilter; label: string }[] = [
 
 export default function ScheduleScreen({
   teamId,
+  teamName,
+  teamSchemaVersion,
   membership,
   appRole,
   navigation,
 }: Props) {
+  const generation = useRef(0);
+  const [liveCanManage, setLiveCanManage] = useState(false);
   const [events, setEvents] = useState<TeamEvent[]>([]);
+  const [view, setView] = useState<'upcoming' | 'past'>('upcoming');
   const [filter, setFilter] = useState<EventTypeFilter>('all');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const pendingPage = useRef(false);
 
   const load = useCallback(async () => {
-    const data = await listTeamEvents(teamId);
-    setEvents(data);
-  }, [teamId]);
+    const token = ++generation.current;
+    pendingPage.current = true;
+    setLoadingMore(false); setError(''); setLiveCanManage(false);
+    try {
+      const page = await listTeamEventPage(teamId, null, view, teamSchemaVersion);
+      if (token === generation.current) {
+        setEvents(page.items); setNextCursor(page.nextCursor); setLiveCanManage(page.canManage === true);
+      }
+    } catch (error) {
+      if (token === generation.current) setError(error instanceof Error ? error.message : 'Schedule unavailable.');
+    } finally {
+      if (token === generation.current) {
+        pendingPage.current = false; setLoading(false); setRefreshing(false);
+      }
+    }
+  }, [teamId, view, teamSchemaVersion]);
 
   useFocusEffect(
     useCallback(() => {
-      let active = true;
-      (async () => {
-        setLoading(true);
-        try {
-          await load();
-        } finally {
-          if (active) setLoading(false);
-        }
-      })();
-      return () => {
-        active = false;
-      };
+      setLoading(true); setEvents([]); setNextCursor(null);
+      void load();
+      return () => { generation.current++; pendingPage.current = false; };
     }, [load]),
   );
 
   async function onRefresh() {
     setRefreshing(true);
+    await load();
+  }
+
+  async function onLoadMore() {
+    if (!nextCursor || pendingPage.current) return;
+    const token = generation.current;
+    pendingPage.current = true;
+    setLoadingMore(true); setError('');
     try {
-      await load();
+      const page = await listTeamEventPage(teamId, nextCursor, view, teamSchemaVersion);
+      if (token !== generation.current) return;
+      setEvents(previous => [...new Map([...previous, ...page.items].map(item => [item.id, item])).values()]);
+      setNextCursor(page.nextCursor); setLiveCanManage(page.canManage === true);
+    } catch (error) {
+      if (token === generation.current) { setLiveCanManage(false); setError(error instanceof Error ? error.message : 'More events are unavailable. Please try again.'); }
     } finally {
-      setRefreshing(false);
+      if (token === generation.current) { pendingPage.current = false; setLoadingMore(false); }
     }
   }
 
-  const visible = applyScheduleView(events, filter, 'asc');
-  const canManage = canManageTeam({ membership, appRole });
+  const visible = applyScheduleView(events, filter, view === 'past' ? 'desc' : 'asc');
+  const canManage = teamSchemaVersion === 2 ? liveCanManage : canManageTeam({ membership, appRole });
 
   return (
     <Screen style={{ paddingHorizontal: 0 }}>
       <View style={styles.header}>
         <Title>Schedule</Title>
-        <Subtitle>Practices and matches for your team.</Subtitle>
+        <Subtitle>Practices and matches for {teamName || 'your team'}.</Subtitle>
+
+        <View style={styles.filters}>
+          {(['upcoming', 'past'] as const).map(value => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: view === value }} onPress={() => setView(value)} style={[styles.chip, view === value ? styles.chipSelected : null]}><Text style={[styles.chipText, view === value ? styles.chipTextSelected : null]}>{value === 'upcoming' ? 'Upcoming' : 'Past events'}</Text></Pressable>)}
+        </View>
 
         <View style={styles.filters}>
           {FILTERS.map((item) => {
@@ -136,6 +170,8 @@ export default function ScheduleScreen({
             return (
               <Pressable
                 key={item.key}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
                 onPress={() => setFilter(item.key)}
                 style={[
                   styles.chip,
@@ -163,6 +199,8 @@ export default function ScheduleScreen({
         ) : null}
       </View>
 
+      {nextCursor ? <Text style={styles.meta}>More events are available. Load more to include them in this view.</Text> : null}
+
       <FlatList
         data={visible}
         keyExtractor={(item) => item.id}
@@ -172,12 +210,19 @@ export default function ScheduleScreen({
         contentContainerStyle={styles.list}
         ListEmptyComponent={
           loading ? null : (
-            <EmptyState message="No events yet. Coaches can add practices and matches." />
+            <EmptyState message={error || "No events yet. Coaches can add practices and matches."} />
           )
+        }
+        ListFooterComponent={
+          <View>
+            {error && events.length ? <Text accessibilityRole="alert">{error}</Text> : null}
+            {nextCursor ? <SecondaryButton label={loadingMore ? 'Loading events...' : 'Load more events'} onPress={() => { void onLoadMore(); }} disabled={loadingMore || refreshing || loading} /> : null}
+          </View>
         }
         renderItem={({ item }) => (
           <Pressable
             style={styles.card}
+            accessibilityRole="button"
             onPress={() =>
               navigation.navigate('EventDetail', { eventId: item.id })
             }
@@ -205,9 +250,12 @@ export default function ScheduleScreen({
               <Text style={styles.time}>{item.time}</Text>
             </View>
             <Text style={styles.cardTitle}>{item.title}</Text>
+            {item.status ? <Text style={styles.meta}>{item.status} · Schedule version {item.scheduleVersion}</Text> : null}
+            {item.teams ? <Text style={styles.meta}>{item.teams.map(team => team.name).join(' vs ')}</Text> : null}
             <Text style={styles.meta}>
               {formatEventDateLabel(item.date)}
               {item.location?.name ? ` · ${item.location.name}` : ''}
+              {item.timeZone ? ` · ${item.timeZone.replace(/_/g, ' ')}` : ''}
             </Text>
           </Pressable>
         )}

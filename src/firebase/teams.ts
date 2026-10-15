@@ -1,3 +1,5 @@
+import { httpsCallable } from 'firebase/functions';
+import { functions } from './config';
 import {
   collection,
   doc,
@@ -54,6 +56,8 @@ export function mapTeamDoc(
 ): Team {
   return {
     id,
+    schemaVersion: typeof data.schemaVersion === 'number' ? data.schemaVersion : undefined,
+    timeZone: typeof data.timeZone === 'string' ? data.timeZone : undefined,
     name: String(data.name ?? ''),
     sport: data.sport == null ? null : String(data.sport),
     inviteCode: String(data.inviteCode ?? ''),
@@ -71,7 +75,7 @@ export function mapMemberDoc(
     id,
     teamId: String(data.teamId ?? ''),
     userId: String(data.userId ?? ''),
-    role: (data.role === 'coach' ? 'coach' : 'player') as TeamRole,
+    role: (data.schemaVersion === 2 ? data.status === 'active' && Array.isArray(data.roles) && data.roles.some(role => role === 'coach' || role === 'captain') : data.role === 'coach') ? 'coach' : 'player',
     displayName: String(data.displayName ?? ''),
     joinedAt: toDate(data.joinedAt),
   };
@@ -80,7 +84,13 @@ export function mapMemberDoc(
 export async function getTeam(
   teamId: string,
 ): Promise<Team | null> {
-  const snap = await getDoc(doc(db, 'teams', teamId));
+  let snap;
+  try { snap = await getDoc(doc(db, 'teams', teamId)); }
+  catch (error) {
+    if ((error as { code?: string }).code !== 'permission-denied') throw error;
+    const result = (await httpsCallable<{ teamId: string }, Record<string, unknown>>(functions, 'getNativeTeam')({ teamId })).data;
+    return mapTeamDoc(teamId, result);
+  }
   if (!snap.exists()) {
     return null;
   }
@@ -96,7 +106,9 @@ export async function getMembership(
   if (!snap.exists()) {
     return null;
   }
-  return mapMemberDoc(snap.id, snap.data() as Record<string, unknown>);
+  const data = snap.data() as Record<string, unknown>;
+  if (data.schemaVersion === 2 && data.status !== 'active') return null;
+  return mapMemberDoc(snap.id, data);
 }
 
 export async function getMembershipsForUser(
@@ -107,9 +119,9 @@ export async function getMembershipsForUser(
     where('userId', '==', userId),
   );
   const snap = await getDocs(q);
-  return snap.docs.map((d) =>
-    mapMemberDoc(d.id, d.data() as Record<string, unknown>),
-  );
+  return snap.docs
+    .filter(d => d.data().schemaVersion !== 2 || d.data().status === 'active')
+    .map(d => mapMemberDoc(d.id, d.data() as Record<string, unknown>));
 }
 
 export async function listTeamMembers(
@@ -178,58 +190,42 @@ export async function resolveActiveMembership(
 ): Promise<{ team: Team; membership: TeamMember } | null> {
   const memberships = await getMembershipsForUser(userId);
 
-  if (
-    memberships.length === 0 &&
-    options?.isSuperAdmin &&
-    preferredTeamId
-  ) {
-    const team = await getTeam(preferredTeamId);
-    if (!team) {
-      return null;
-    }
-    return {
-      team,
-      membership: buildSyntheticCoachMembership({
-        teamId: team.id,
-        userId,
-        displayName: options.displayName ?? 'Super Admin',
-      }),
-    };
-  }
+  const preferred = preferredTeamId
+    ? memberships.find(member => member.teamId === preferredTeamId)
+    : undefined;
 
-  if (memberships.length === 0) {
-    return null;
-  }
-
-  let membership =
-    preferredTeamId
-      ? memberships.find((m) => m.teamId === preferredTeamId)
-      : undefined;
-
-  if (!membership && options?.isSuperAdmin && preferredTeamId) {
-    const team = await getTeam(preferredTeamId);
-    if (team) {
-      return {
-        team,
-        membership: buildSyntheticCoachMembership({
-          teamId: team.id,
-          userId,
-          displayName: options.displayName ?? 'Super Admin',
-        }),
-      };
+  if (!preferred && options?.isSuperAdmin && preferredTeamId) {
+    try {
+      const team = await getTeam(preferredTeamId);
+      if (team && team.schemaVersion !== 2) {
+        return {
+          team,
+          membership: buildSyntheticCoachMembership({
+            teamId: team.id,
+            userId,
+            displayName: options.displayName ?? 'Super Admin',
+          }),
+        };
+      }
+    } catch (error) {
+      if (!['permission-denied', 'functions/permission-denied'].includes((error as { code?: string }).code ?? '')) throw error;
     }
   }
 
-  if (!membership) {
-    membership = memberships[0];
+  const candidates = preferred
+    ? [preferred, ...memberships.filter(member => member.id !== preferred.id)]
+    : memberships;
+  for (const membership of candidates) {
+    try {
+      const team = await getTeam(membership.teamId);
+      if (team) return { team, membership };
+    } catch (error) {
+      // A live grant can disappear after the membership query. Try the next grant,
+      // but propagate network/service failures so they are not mistaken for onboarding.
+      if (!['permission-denied', 'functions/permission-denied'].includes((error as { code?: string }).code ?? '')) throw error;
+    }
   }
-
-  const team = await getTeam(membership.teamId);
-  if (!team) {
-    return null;
-  }
-
-  return { team, membership };
+  return null;
 }
 
 export async function updateTeamName(
