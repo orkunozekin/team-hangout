@@ -311,3 +311,57 @@ test('opponent choices expose bounded pages and recheck authority for every requ
   await db.doc('teamMembers/p202-a_p202-a-coach').update({ status: 'revoked' });
   await deny(call('p202-a-coach', 'listEventTeamChoices', { teamId: 'p202-a', cursor: coachPage.nextCursor }));
 });
+
+
+test('published soft deletion requires cancellation history while staged deletion stays compatible', async () => {
+  const event = await create();
+  await assert.rejects(call('p202-admin', 'softDeleteEvent', req({ eventId: event.id, expectedRevision: 1 })), error => error.details.domainCode === 'LIFECYCLE_COMMAND_REQUIRED');
+  assert.equal((await db.doc(`events/${event.id}`).get()).data().deletedAt, null);
+  assert.equal((await db.doc(`events/${event.id}`).get()).data().revision, 1);
+  const cancelled = await mutate(event, 'cancel');
+  assert.equal(cancelled.revision, 2);
+  assert.equal((await db.doc(`events/${event.id}/scheduleHistory/2`).get()).data().action, 'cancel');
+  const staged = await create({ publicationState: 'staged' });
+  const deletion = req({ eventId: staged.id, expectedRevision: 1 });
+  assert.deepEqual(await call('p202-admin', 'softDeleteEvent', deletion), await call('p202-admin', 'softDeleteEvent', deletion));
+  assert.ok((await db.doc(`events/${staged.id}`).get()).data().deletedAt);
+});
+
+test('family history excludes staff freeform reasons and keeps safe lifecycle timing', async () => {
+  const event = await create();
+  const edited = await mutate(event, 'edit', { notes: 'Private staff note' }, { reason: 'Private note explanation' });
+  const postponed = await mutate(edited, 'postpone', {}, { reason: 'Private freeform scheduling explanation' });
+  await db.doc(`events/${event.id}/scheduleHistory/3`).update({ privateFutureField: 'secret', actorUid: 'staff' });
+  for (const uid of ['p202-guardian', 'p202-self']) {
+    const loaded = await call(uid, 'getCanonicalEvent', { eventId: event.id });
+    assert.deepEqual(loaded.history.map(row => row.action), ['postpone', 'edit']);
+    for (const row of loaded.history) for (const key of ['reason', 'actorUid', 'privateFutureField']) assert.equal(Object.hasOwn(row, key), false);
+    assert.ok(loaded.history[0].previousStartsAt); assert.equal(loaded.status, 'postponed');
+    const agenda = await call(uid, 'listHouseholdAgenda', { from: '2026-10-01T00:00:00.000Z', to: '2026-11-01T00:00:00.000Z' });
+    assert.equal(agenda.items.find(row => row.id === event.id).status, 'postponed');
+  }
+  assert.equal((await call('p202-admin', 'getCanonicalEvent', { eventId: event.id })).history[0].reason, 'Private freeform scheduling explanation');
+  await mutate(postponed, 'cancel');
+  const agenda = await call('p202-guardian', 'listHouseholdAgenda', { from: '2026-10-01T00:00:00.000Z', to: '2026-11-01T00:00:00.000Z' });
+  assert.equal(agenda.items.find(row => row.id === event.id).status, 'cancelled');
+});
+
+test('native upcoming pages bypass a large archive and past pages remain available', async () => {
+  const teamId = 'p202-current';
+  await db.doc(`teams/${teamId}`).set({ ...meta, ...scope, name: 'Current schedule' });
+  const batch = db.batch();
+  const now = Date.now();
+  for (let i = 0; i < 60; i++) batch.set(db.doc(`events/p202-old-${i}`), { ...meta, ...scope, teamId, teamIds: [teamId],
+    title: `Old ${i}`, type: 'practice', startsAt: Timestamp.fromMillis(now - (i + 1) * 86400000), endsAt: Timestamp.fromMillis(now - (i + 1) * 86400000 + 3600000),
+    timeZone: 'America/Chicago', status: 'completed', publicationState: 'published', publicationOperationId: null, deletedAt: null });
+  batch.set(db.doc('events/p202-next'), { ...meta, ...scope, teamId, teamIds: [teamId], title: 'Next practice', type: 'practice',
+    startsAt: Timestamp.fromMillis(now + 86400000), endsAt: Timestamp.fromMillis(now + 90000000), timeZone: 'America/Chicago', status: 'scheduled', publicationState: 'published', publicationOperationId: null, deletedAt: null });
+  await batch.commit();
+  const upcoming = await call('p202-admin', 'listCanonicalTeamEvents', { teamId, view: 'upcoming' });
+  assert.deepEqual(upcoming.items.map(row => row.id), ['p202-next']); assert.equal(upcoming.nextCursor, null);
+  const past = await call('p202-admin', 'listCanonicalTeamEvents', { teamId, view: 'past' });
+  assert.equal(past.items.length, 50); assert.equal(past.items[0].id, 'p202-old-0'); assert.ok(past.nextCursor);
+  const older = await call('p202-admin', 'listCanonicalTeamEvents', { teamId, view: 'past', cursor: past.nextCursor });
+  assert.equal(older.items.length, 10); assert.equal(older.nextCursor, null);
+  await assert.rejects(call('p202-admin', 'listCanonicalTeamEvents', { teamId, view: 'upcoming', cursor: past.nextCursor }), { code: 'functions/invalid-argument' });
+});

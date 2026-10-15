@@ -215,7 +215,7 @@ describe('canonical callable readers and writers', () => {
     expect((await listTeamEventPage('a')).items.map(event => event.id)).toEqual(['shared']);
     expect(mockRead).toHaveBeenCalledTimes(1);
     expect((await listTeamEventPage('a', 'shared')).items.map(event => event.id)).toEqual(['second']);
-    expect(mockRead).toHaveBeenLastCalledWith({ teamId: 'a', cursor: 'shared', pageSize: 50 });
+    expect(mockRead).toHaveBeenLastCalledWith({ teamId: 'a', cursor: 'shared', pageSize: 50, view: 'upcoming' });
     mockRead.mockResolvedValueOnce({ data: { items: [{ id: 'a', name: 'A' }], nextCursor: 'a' } }).mockResolvedValueOnce({ data: { items: [{ id: 'b', name: 'B' }], nextCursor: null } });
     expect((await listEventTeamChoices('a')).items).toHaveLength(1);
     expect((await listEventTeamChoices('a', 'a')).items).toHaveLength(1);

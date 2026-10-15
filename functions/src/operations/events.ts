@@ -87,25 +87,33 @@ export const listEventTeamChoices = readCommand(data => {
   return { items, nextCursor: rows.size > data.pageSize ? rows.docs[data.pageSize - 1].id : null };
 });
 export const listCanonicalTeamEvents = readCommand(data => {
-  keys(data, ['teamId', 'pageSize', 'cursor']);
-  return { teamId: id(data.teamId, 'teamId'), ...page({ ...data, cursor: null }),
+  keys(data, ['teamId', 'pageSize', 'cursor', 'view']);
+  const view = data.view ?? 'all';
+  if (!['all', 'upcoming', 'past'].includes(view)) invalid('Invalid schedule view.');
+  return { teamId: id(data.teamId, 'teamId'), view, ...page({ ...data, cursor: null }),
     cursor: data.cursor == null ? null : text(data.cursor, 'cursor', 2000) };
 }, async (tx, data, uid) => {
   tx = cacheDocumentReads(tx);
   const management = new Map<string, Promise<boolean>>();
   const team = await readableTeam(tx, data.teamId, uid);
+  let cutoff = Timestamp.now().toDate().toISOString();
+  let boundary: Data | null = null;
+  if (data.cursor) {
+    try { boundary = JSON.parse(Buffer.from(data.cursor, 'base64url').toString('utf8')); } catch { invalid('Invalid schedule cursor.'); }
+    if (!boundary || boundary.orgId !== team.orgId || boundary.teamId !== data.teamId || boundary.view !== data.view
+      || typeof boundary.cutoff !== 'string' || !Number.isFinite(Date.parse(boundary.cutoff))
+      || new Date(boundary.cutoff).toISOString() !== boundary.cutoff
+      || typeof boundary.startsAt !== 'string' || !Number.isFinite(Date.parse(boundary.startsAt))
+      || new Date(boundary.startsAt).toISOString() !== boundary.startsAt) return invalid('Invalid schedule cursor.');
+    cutoff = boundary.cutoff;
+  }
   let query = getFirestore().collection('events').where('orgId', '==', team.orgId)
     .where('teamIds', 'array-contains', data.teamId).where('publicationState', '==', 'published')
-    .where('publicationOperationId', '==', null).where('deletedAt', '==', null).orderBy('startsAt').orderBy(FieldPath.documentId());
-  if (data.cursor) {
-    let boundary: Data;
-    try { boundary = JSON.parse(Buffer.from(data.cursor, 'base64url').toString('utf8')); }
-    catch { invalid('Invalid schedule cursor.'); }
-    if (!boundary! || boundary.orgId !== team.orgId || boundary.teamId !== data.teamId
-      || typeof boundary.startsAt !== 'string' || !Number.isFinite(Date.parse(boundary.startsAt))
-      || new Date(boundary.startsAt).toISOString() !== boundary.startsAt) invalid('Invalid schedule cursor.');
-    query = query.startAfter(Timestamp.fromDate(new Date(boundary.startsAt)), id(boundary.id, 'cursor eventId'));
-  }
+    .where('publicationOperationId', '==', null).where('deletedAt', '==', null);
+  if (data.view !== 'all') query = query.where('startsAt', data.view === 'past' ? '<' : '>=', Timestamp.fromDate(new Date(cutoff)));
+  const direction = data.view === 'past' ? 'desc' : 'asc';
+  query = query.orderBy('startsAt', direction).orderBy(FieldPath.documentId(), direction);
+  if (boundary) query = query.startAfter(Timestamp.fromDate(new Date(boundary.startsAt)), id(boundary.id, 'cursor eventId'));
   const rows = await tx.get(query.limit(data.pageSize + 1));
   const items: Data[] = [];
   for (const row of rows.docs.slice(0, data.pageSize)) {
@@ -113,7 +121,7 @@ export const listCanonicalTeamEvents = readCommand(data => {
     if (event.schemaVersion === 2 && visible(event)) items.push(await result(tx, row.id, event, uid, management));
   }
   const last = rows.docs[data.pageSize - 1];
-  const nextCursor = rows.size > data.pageSize ? Buffer.from(JSON.stringify({ orgId: team.orgId, teamId: data.teamId,
+  const nextCursor = rows.size > data.pageSize ? Buffer.from(JSON.stringify({ orgId: team.orgId, teamId: data.teamId, view: data.view, cutoff,
     startsAt: last.data().startsAt.toDate().toISOString(), id: last.id })).toString('base64url') : null;
   return { items, nextCursor };
 });
@@ -134,7 +142,12 @@ export const getCanonicalEvent = readCommand(data => {
   const item = await result(tx, data.eventId, event, uid);
   // Bounded recent history is safe schedule metadata only, never private notes or actor identity.
   const rows = await tx.get(getFirestore().collection(`events/${data.eventId}/scheduleHistory`).orderBy('revision', 'desc').limit(21));
-  return { ...item, history: rows.docs.slice(0, 20).map(row => row.data()), historyHasMore: rows.size > 20 };
+  const privateHistory = Object.hasOwn(item, 'notes');
+  const historyFields = ['schemaVersion', 'revision', 'action', 'previousStatus', 'status', 'previousTimeZone', 'timeZone',
+    'previousStartsAt', 'previousEndsAt', 'startsAt', 'endsAt', 'createdAt', ...(privateHistory ? ['reason'] : [])];
+  return { ...item, history: rows.docs.slice(0, 20).map(row => {
+    const value = row.data(); return Object.fromEntries(historyFields.filter(field => value[field] !== undefined).map(field => [field, value[field]]));
+  }), historyHasMore: rows.size > 20 };
 });
 
 export const mutateEventSchedule = command('mutateEventSchedule', data => {

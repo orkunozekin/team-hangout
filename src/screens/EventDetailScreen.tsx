@@ -205,7 +205,7 @@ export default function EventDetailScreen({
         {event.history?.length ? <>
           <Text style={styles.row}>Schedule history{event.historyHasMore ? ' (latest 20)' : ''}</Text>
           {event.history.map(row => <Text key={row.revision} style={styles.row}>
-            Revision {row.revision}: {row.action} · {row.previousStatus} → {row.status}{'\n'}{row.reason}
+            Revision {row.revision}: {row.action} · {row.previousStatus} → {row.status}{row.reason ? `\n${row.reason}` : ''}
             {row.action === 'reschedule' ? `\n${new Date(row.previousStartsAt).toLocaleString('en-US', { timeZone: row.previousTimeZone ?? event.timeZone })} → ${new Date(row.startsAt).toLocaleString('en-US', { timeZone: row.timeZone ?? event.timeZone })}` : ''}
           </Text>)}
         </> : null}

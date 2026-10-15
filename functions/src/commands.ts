@@ -169,10 +169,10 @@ function changeEvent(deleting: boolean) {
       validateStoredEvent(event, scope);
       // Reauthorize against current state, but never reapply an old patch to a later edit.
       if (replay) return replay;
+      if (event.publicationState === 'published') {
+        throw new HttpsError('failed-precondition', 'Use the event lifecycle command to change published events.', { domainCode: 'LIFECYCLE_COMMAND_REQUIRED' });
+      }
       if (!deleting) {
-        if (event.publicationState === 'published') {
-          throw new HttpsError('failed-precondition', 'Use the event lifecycle command to edit published events.', { domainCode: 'LIFECYCLE_COMMAND_REQUIRED' });
-        }
         if (['startsAt', 'endsAt', 'timeZone', 'status'].some(field => payload.patch[field] !== undefined)) {
           invalid('Use the revisioned event lifecycle command for schedule changes.');
         }

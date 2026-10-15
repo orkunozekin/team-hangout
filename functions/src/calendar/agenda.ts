@@ -124,7 +124,7 @@ export async function readAgenda(
   tx: Transaction,
   payload: Data,
   uid: string,
-  options: { events?: boolean } = {},
+  options: { events?: boolean; scheduledOnly?: boolean } = {},
 ): Promise<Data> {
   const db = getFirestore();
   const candidates = new Set<string>();
@@ -389,11 +389,11 @@ export async function readAgenda(
       .where("teamIds", "array-contains", team.id)
       .where("deletedAt", "==", null)
       .where("publicationState", "==", "published")
-      .where("status", "==", "scheduled")
       .where("startsAt", ">=", Timestamp.fromDate(new Date(payload.from)))
       .where("startsAt", "<", Timestamp.fromDate(new Date(payload.to)))
       .orderBy("startsAt")
       .orderBy(FieldPath.documentId());
+    if (options.scheduledOnly) query = query.where("status", "==", "scheduled");
     if (after) query = query.startAfter(after.time, after.id);
     let scanned = 0,
       valid = 0;
@@ -404,6 +404,7 @@ export async function readAgenda(
         const event = doc.data();
         if (
           event.schemaVersion !== 2 ||
+          !["scheduled", "postponed", "cancelled", "completed"].includes(event.status) ||
           event.publicationOperationId !== null ||
           event.seasonId !== team.seasonId ||
           !Array.isArray(event.teamIds) ||
@@ -483,6 +484,8 @@ export async function readAgenda(
           orgId: team.orgId,
           title: event.title,
           type: event.type,
+          status: event.status,
+          scheduleVersion: event.scheduleVersion ?? 1,
           startsAt: event.startsAt.toDate().toISOString(),
           endsAt: event.endsAt.toDate().toISOString(),
           timeZone: event.timeZone,

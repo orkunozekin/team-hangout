@@ -151,7 +151,7 @@ test('v2 event create/update/delete validate every team and deny unrelated/progr
   await db.doc(`events/${event.id}`).update({ orgId: b.orgId });
   await deny(call('org-owner', 'softDeleteEvent', req({ eventId: event.id, expectedRevision: 2 })));
   await db.doc(`events/${event.id}`).update({ orgId: a.orgId });
-  assert.equal((await call('org-owner', 'softDeleteEvent', req({ eventId: event.id, expectedRevision: 2 }))).revision, 3);
+  assert.equal((await call('org-owner', 'mutateEventSchedule', req({ eventId: event.id, expectedRevision: 2, action: 'cancel', reason: 'Cancelled fixture' }))).revision, 3);
 });
 test('successful time edits replay after later edits but still recheck coach authority', async () => {
   const fixtureData = await fixture('Time retry fixture');

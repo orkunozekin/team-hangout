@@ -59,7 +59,7 @@ export interface TeamEvent {
   scheduleVersion?: number;
   teams?: { id: string; name: string }[];
   canManage?: boolean;
-  history?: { revision: number; action: string; reason: string; previousStatus: string; status: string; previousStartsAt: string; startsAt: string; previousTimeZone?: string; timeZone?: string }[];
+  history?: { revision: number; action: string; reason?: string; previousStatus: string; status: string; previousStartsAt: string; startsAt: string; previousTimeZone?: string; timeZone?: string }[];
   historyHasMore?: boolean;
   id: string;
   revision?: number;

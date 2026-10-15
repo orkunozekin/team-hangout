@@ -121,7 +121,7 @@ async function authorized(
   selection: Data,
   now?: number,
 ) {
-  const agenda = await readAgenda(tx, query(selection, now), uid);
+  const agenda = await readAgenda(tx, query(selection, now), uid, { scheduledOnly: true });
   const selected = agenda.teams.filter(
     (t: Data) =>
       selection.teamIds.includes(t.id) &&

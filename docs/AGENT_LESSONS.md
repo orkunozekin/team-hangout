@@ -173,3 +173,11 @@
 - **Gap:** Reloading a cursor event after rescheduling shifted the ordering boundary and skipped intervening rows. Opponent discovery still drained all team pages during practice form setup.
 - **Going forward:** Encode the original instant/document ID and authorized scope in schedule cursors rather than reconstructing the boundary from mutable records. Load optional opponent teams only on explicit request, one page per action, with retained choices and retry. Reauthorize each request and test moved boundaries, equal timestamps and grant revocation between pages.
 - **Pointers:** `functions/src/operations/events.ts`, `src/firebase/events.ts`, `src/screens/CreateEditEventScreen.tsx`, operational backend and native event-screen regressions.
+
+
+### 2026-10-15 — Trace lifecycle privacy through history and compatibility views
+
+- **Source:** PR #26 · GitHub Codex full-diff re-review and CI
+- **Gap:** Family history still exposed freeform staff reasons, published soft deletion bypassed cancellation history, household calendars omitted lifecycle states, and bounded schedules opened at the oldest archive. CI also caught a cursor variable's definite-assignment error that an unchecked local command sequence missed.
+- **Going forward:** Public history must use an allowlist without freeform staff reasons. Guard both compatibility update and delete paths for published events while preserving authorized receipt replay and staged/legacy compatibility. Show lifecycle status consistently in household calendars, with explicit scheduled-only subscription policy. Open native schedules near current/upcoming events with bounded past navigation. Check every validation command exit and confirm the Functions build succeeds before running tests against its generated output.
+- **Pointers:** canonical event readers/history, `functions/src/commands.ts`, household agenda/subscription callers, native schedule modes and full backend regressions.

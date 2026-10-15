@@ -91,6 +91,7 @@ export default function ScheduleScreen({
 }: Props) {
   const generation = useRef(0);
   const [events, setEvents] = useState<TeamEvent[]>([]);
+  const [view, setView] = useState<'upcoming' | 'past'>('upcoming');
   const [filter, setFilter] = useState<EventTypeFilter>('all');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -104,7 +105,7 @@ export default function ScheduleScreen({
     pendingPage.current = true;
     setLoadingMore(false); setError('');
     try {
-      const page = await listTeamEventPage(teamId);
+      const page = await listTeamEventPage(teamId, null, view);
       if (token === generation.current) {
         setEvents(page.items); setNextCursor(page.nextCursor);
       }
@@ -115,7 +116,7 @@ export default function ScheduleScreen({
         pendingPage.current = false; setLoading(false); setRefreshing(false);
       }
     }
-  }, [teamId]);
+  }, [teamId, view]);
 
   useFocusEffect(
     useCallback(() => {
@@ -136,7 +137,7 @@ export default function ScheduleScreen({
     pendingPage.current = true;
     setLoadingMore(true); setError('');
     try {
-      const page = await listTeamEventPage(teamId, nextCursor);
+      const page = await listTeamEventPage(teamId, nextCursor, view);
       if (token !== generation.current) return;
       setEvents(previous => [...new Map([...previous, ...page.items].map(item => [item.id, item])).values()]);
       setNextCursor(page.nextCursor);
@@ -147,7 +148,7 @@ export default function ScheduleScreen({
     }
   }
 
-  const visible = applyScheduleView(events, filter, 'asc');
+  const visible = applyScheduleView(events, filter, view === 'past' ? 'desc' : 'asc');
   const canManage = canManageTeam({ membership, appRole });
 
   return (
@@ -155,6 +156,10 @@ export default function ScheduleScreen({
       <View style={styles.header}>
         <Title>Schedule</Title>
         <Subtitle>Practices and matches for {teamName || 'your team'}.</Subtitle>
+
+        <View style={styles.filters}>
+          {(['upcoming', 'past'] as const).map(value => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: view === value }} onPress={() => setView(value)} style={[styles.chip, view === value ? styles.chipSelected : null]}><Text style={[styles.chipText, view === value ? styles.chipTextSelected : null]}>{value === 'upcoming' ? 'Upcoming' : 'Past events'}</Text></Pressable>)}
+        </View>
 
         <View style={styles.filters}>
           {FILTERS.map((item) => {

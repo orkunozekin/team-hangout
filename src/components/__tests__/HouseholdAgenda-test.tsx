@@ -160,3 +160,13 @@ test("successful calendar-only reload refreshes surrounding discovery without re
   expect(denied).not.toHaveBeenCalled();
   expect(screen.queryByText("Jamie · Casey")).toBeNull();
 });
+
+
+test('household calendar labels cancelled, postponed and completed events truthfully', async () => {
+  api.mockResolvedValue({ ...page, items: ['cancelled', 'postponed', 'completed'].map(status => ({ ...event, id: status, title: `${status} practice`, status, scheduleVersion: 3 })) });
+  await render(<HouseholdAgenda refresh={0} />);
+  await screen.findByText('cancelled practice');
+  expect(screen.getByText('Cancelled · Schedule version 3')).toBeTruthy();
+  expect(screen.getByText('Postponed: awaiting a new schedule · Schedule version 3')).toBeTruthy();
+  expect(screen.getByText('Completed · Schedule version 3')).toBeTruthy();
+});

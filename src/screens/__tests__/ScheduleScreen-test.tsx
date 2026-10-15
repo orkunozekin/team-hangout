@@ -18,7 +18,7 @@ test('renders one schedule page immediately and loads the next only on request',
   expect(listTeamEventPage).toHaveBeenCalledTimes(1);
   await fireEvent.press(screen.getByText('Load more events'));
   await screen.findByText('Second match');
-  expect(listTeamEventPage).toHaveBeenLastCalledWith('a', 'first');
+  expect(listTeamEventPage).toHaveBeenLastCalledWith('a', 'first', 'upcoming');
   expect(screen.getByText('First match')).toBeTruthy();
   expect(screen.queryByText('Load more events')).toBeNull();
 });
@@ -36,7 +36,7 @@ test('preserves earlier events after a later page fails and retries the same cur
   await screen.findByText('Recovered match');
   expect(screen.getAllByText('Keep this match')).toHaveLength(1);
   expect(screen.queryByRole('alert')).toBeNull();
-  expect(listTeamEventPage).toHaveBeenNthCalledWith(3, 'a', 'first');
+  expect(listTeamEventPage).toHaveBeenNthCalledWith(3, 'a', 'first', 'upcoming');
 });
 
 test('ignores a pending old page after changing teams', async () => {
@@ -52,4 +52,18 @@ test('ignores a pending old page after changing teams', async () => {
   await act(async () => { resolvePage({ items: [event('Old late page')], nextCursor: null }); });
   await waitFor(() => expect(screen.queryByText('Old late page')).toBeNull());
   expect(screen.queryByText('Old first')).toBeNull();
+});
+
+
+test('opens upcoming events first and switches to a bounded past view', async () => {
+  (listTeamEventPage as jest.Mock).mockResolvedValueOnce({ items: [event('Next practice')], nextCursor: null })
+    .mockResolvedValueOnce({ items: [event('Recent history')], nextCursor: 'past-page' });
+  await render(<ScheduleScreen teamId="a" membership={membership} navigation={navigation} />);
+  await screen.findByText('Next practice');
+  expect(listTeamEventPage).toHaveBeenCalledWith('a', null, 'upcoming');
+  await fireEvent.press(screen.getByText('Past events'));
+  await screen.findByText('Recent history');
+  expect(listTeamEventPage).toHaveBeenLastCalledWith('a', null, 'past');
+  expect(screen.queryByText('Next practice')).toBeNull();
+  expect(screen.getByText('Load more events')).toBeTruthy();
 });

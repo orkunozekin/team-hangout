@@ -117,11 +117,11 @@ export async function getEvent(
 }
 
 export type TeamEventPage = { items: TeamEvent[]; nextCursor: string | null };
-export async function listTeamEventPage(teamId: string, cursor: string | null = null): Promise<TeamEventPage> {
+export async function listTeamEventPage(teamId: string, cursor: string | null = null, view: 'upcoming' | 'past' = 'upcoming'): Promise<TeamEventPage> {
   const team = await getTeam(teamId);
   if (team?.schemaVersion === 2) {
     const page = await readEventCommand<{ items: (Record<string, unknown> & { id: string })[]; nextCursor: string | null }>(
-      'listCanonicalTeamEvents', { teamId, cursor, pageSize: 50 });
+      'listCanonicalTeamEvents', { teamId, cursor, pageSize: 50, view });
     return { items: page.items.map(item => mapEventDoc(item.id, item)), nextCursor: page.nextCursor };
   }
   const q = query(

@@ -346,7 +346,7 @@ test("publication, lifecycle, archive and rollout gates exclude unsafe events", 
   await db.doc("events/agenda-missing-zone").set(missingZone);
   assert.deepEqual(
     (await call("agenda-parent", { orgIds: [f.orgId] })).items.map((e) => e.id),
-    ["agenda-visible"],
+    ["agenda-cancelled", "agenda-completed", "agenda-postponed", "agenda-visible"],
   );
   await db
     .doc(`organizations/${f.orgId}/seasons/fall`)
@@ -359,7 +359,7 @@ test("publication, lifecycle, archive and rollout gates exclude unsafe events", 
     orgIds: [f.orgId],
     includeArchived: true,
   });
-  assert.equal(archived.items.length, 1);
+  assert.equal(archived.items.length, 4);
   assert.equal(archived.items[0].teams[0].archived, true);
   await db
     .doc(`organizations/${f.orgId}`)
