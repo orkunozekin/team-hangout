@@ -23,7 +23,7 @@ async function create(extra = {}) {
 const mutate = (event, action, patch = {}, extra = {}) => call('p202-admin', 'mutateEventSchedule', req({ eventId: event.id, expectedRevision: event.revision, action, patch, reason: 'Synthetic scheduling change', ...extra }));
 before(async () => {
   admin = adminApp({ projectId }); db = getFirestore(admin);
-  for (const uid of ['p202-admin', 'p202-a-coach', 'p202-b-coach', 'p202-guardian', 'p202-self', 'p202-outsider', 'p202-support']) {
+  for (const uid of ['p202-admin', 'p202-a-coach', 'p202-b-coach', 'p202-guardian', 'p202-self', 'p202-outsider', 'p202-support', 'p202-captain']) {
     const app = initializeApp({ projectId, apiKey: 'demo-key' }, uid); apps[uid] = app;
     connectAuthEmulator(getAuth(app), 'http://127.0.0.1:9099', { disableWarnings: true });
     connectFunctionsEmulator(getFunctions(app), '127.0.0.1', 5001);
@@ -54,7 +54,7 @@ test('one canonical match is visible from either team and live household grants,
     assert.equal(loaded.canManage, false); assert.equal(loaded.teams.length, 2);
     await deny(call(uid, 'mutateEventSchedule', req({ eventId: event.id, expectedRevision: 1, action: 'cancel', reason: 'Bad' })));
   }
-  for (const uid of ['p202-outsider', 'p202-support']) {
+  for (const uid of ['p202-outsider', 'p202-support', 'p202-captain']) {
     await deny(call(uid, 'getCanonicalEvent', { eventId: event.id }));
     await deny(call(uid, 'getNativeTeam', { teamId: 'p202-a' }));
   }
@@ -183,4 +183,32 @@ test('recent history uses an extra row to distinguish 19, exactly 20, and 21 rec
       assert.equal(loaded.history.at(-1).revision, i > 20 ? 3 : 2);
     }
   }
+});
+
+
+test('captain-only grants manage canonical events only with live authority for every participating team', async () => {
+  const uid = 'p202-captain';
+  const grant = teamId => ({ ...meta, orgId: 'p202-org', teamId, userId: uid, roles: ['captain'] });
+  await db.doc(`teamMembers/p202-a_${uid}`).set(grant('p202-a'));
+  assert.deepEqual((await call(uid, 'listEventTeamChoices', { teamId: 'p202-a' })).items.map(row => row.id), ['p202-a']);
+  const shared = await create();
+  assert.equal((await call(uid, 'getCanonicalEvent', { eventId: shared.id })).canManage, false);
+  const payload = req({ eventId: shared.id, expectedRevision: 1, action: 'edit', patch: { title: 'Captain correction' }, reason: 'Fixture change' });
+  await deny(call(uid, 'mutateEventSchedule', payload));
+  await deny(call(uid, 'createEvent', req({ teamId: 'p202-a', event: { ...fields, teamIds: ['p202-a', 'p202-b'], publicationState: 'published' } })));
+  await db.doc(`teamMembers/p202-b_${uid}`).set(grant('p202-b'));
+  assert.equal((await call(uid, 'getCanonicalEvent', { eventId: shared.id })).canManage, true);
+  assert.deepEqual((await call(uid, 'listEventTeamChoices', { teamId: 'p202-a' })).items.map(row => row.id), ['p202-a', 'p202-b']);
+  const created = await call(uid, 'createEvent', req({ teamId: 'p202-a', event: { ...fields, teamIds: ['p202-a', 'p202-b'], publicationState: 'published' } }));
+  const edited = await call(uid, 'mutateEventSchedule', payload);
+  const change = (event, action, patch = {}) => call(uid, 'mutateEventSchedule', req({ eventId: event.id, expectedRevision: event.revision, action, patch, reason: 'Captain schedule change' }));
+  const postponed = await change(edited, 'postpone');
+  const moved = await change(postponed, 'reschedule', { startsAt: '2026-10-21T23:00:00.000Z', endsAt: '2026-10-22T00:00:00.000Z', timeZone: fields.timeZone });
+  await change(moved, 'cancel');
+  await change(created, 'complete');
+  await db.doc(`teamMembers/p202-b_${uid}`).update({ status: 'revoked' });
+  assert.equal((await call(uid, 'getCanonicalEvent', { eventId: shared.id })).canManage, false);
+  await deny(call(uid, 'mutateEventSchedule', payload));
+  await db.doc(`teamMembers/p202-b_${uid}`).update({ status: 'active', orgId: 'foreign' });
+  await deny(call(uid, 'mutateEventSchedule', payload));
 });

@@ -296,3 +296,10 @@ test('canonical teams use authorized callable fallback and revoked roles do not 
   expect(mapMemberDoc('member', { schemaVersion: 2, role: 'coach', roles: ['coach'], status: 'revoked' }).role).toBe('player');
   expect(mapMemberDoc('member', { schemaVersion: 2, roles: ['coach'], status: 'active' }).role).toBe('coach');
 });
+
+
+it('maps active canonical captains to native management controls and rejects revoked or legacy spoofed roles', () => {
+  expect(mapMemberDoc('member', { schemaVersion: 2, roles: ['captain'], status: 'active' }).role).toBe('coach');
+  expect(mapMemberDoc('member', { schemaVersion: 2, roles: ['captain'], status: 'revoked' }).role).toBe('player');
+  expect(mapMemberDoc('member', { roles: ['captain'], role: 'player' }).role).toBe('player');
+});

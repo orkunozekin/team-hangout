@@ -92,3 +92,6 @@ P2.02 Codex feedback fixes: `getNativeTeam` returns the validated canonical orga
 
 
 Further P2.02 review fixes reject new published v2 edits through `updateEvent` with `LIFECYCLE_COMMAND_REQUIRED`; use `mutateEventSchedule` with its reason/history contract. Current authorization is still rechecked before returning an old successful receipt, including a completed single-event draft promotion. Unpublished server-owned drafts retain their compatibility edit/promotion path. The history reader queries 21 records, returns the latest 20, and reports older history only when the sentinel exists; real-callable regressions cover 19, exactly 20, and 21 history changes.
+
+
+Canonical schedules sort normalized `startsAt` instants, while legacy schedules retain date/time ordering. Regressions include different zones and a repeated DST hour. Active captain grants are accepted for canonical event management as approved in the product plan; native controls use the existing management role projection. Real-callable tests require every participating team's current grant for create, edit, postpone, reschedule, cancel and complete, and deny missing, revoked or foreign-tenant authority, including receipt replay.

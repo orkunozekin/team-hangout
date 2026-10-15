@@ -75,7 +75,7 @@ export function mapMemberDoc(
     id,
     teamId: String(data.teamId ?? ''),
     userId: String(data.userId ?? ''),
-    role: (data.schemaVersion === 2 ? data.status === 'active' && Array.isArray(data.roles) && data.roles.includes('coach') : data.role === 'coach') ? 'coach' : 'player',
+    role: (data.schemaVersion === 2 ? data.status === 'active' && Array.isArray(data.roles) && data.roles.some(role => role === 'coach' || role === 'captain') : data.role === 'coach') ? 'coach' : 'player',
     displayName: String(data.displayName ?? ''),
     joinedAt: toDate(data.joinedAt),
   };
