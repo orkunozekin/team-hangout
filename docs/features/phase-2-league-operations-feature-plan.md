@@ -8,10 +8,10 @@ Translate the [approved product direction](../plans/product-plan.md#phase-2-depe
 | --- | --- |
 | Status | in-progress |
 | Last updated | 2026-10-14 |
-| Implementation | P2.01 implemented and locally validated in PR #25; current-head review and CI are recorded on the linked PR. P2.02 and later not started. |
+| Implementation | P2.01 merged in PR #25. P2.02 implemented and natively validated in PR #26; current-head AI review is blocked by exhausted Greptile credits. P2.03 and later not started. |
 | Prerequisite | Phase 1 foundations, access-control migration, household agenda and web administration shell |
 | Commercial decision | Business model selection pending; no pricing, advertising, paid messaging, or billing enabled |
-| Related PR | [P2.01 PR #25](https://github.com/orkunozekin/team-hangout/pull/25), `codex/p2-01-operational-contracts` |
+| Related PR | [P2.02 PR #26](https://github.com/orkunozekin/team-hangout/pull/26), `codex/p2-02-canonical-events`; P2.01 [#25](https://github.com/orkunozekin/team-hangout/pull/25) merged |
 
 ## Goals and boundaries
 
@@ -248,8 +248,8 @@ Deny client writes to scheduling operations, canonical schedule fields, occupanc
 
 Each checkbox is a bounded PR, with its own migration/rollback and acceptance evidence. Proposed module names below are not claims that these files exist.
 
-1. [ ] **P2.01 Establish operational contracts and tests.** Extend types/adapters and add shared server authorization, revision/idempotency helpers. Add emulator test scripts/config and fixtures, preserving account deletion tests. Exit: stale writes, spoofed IDs and cross-org access rejected; legacy event readers have explicit compatibility coverage. No UI effect.
-2. [ ] **P2.02 Canonical multi-team event service.** Add callable event mutation/lifecycle and publication visibility rules; adapt existing native event screens. Exit: one match appears for both teams; cancel/postpone/reschedule/history differ; screenshots show each changed state and stale-save error.
+1. [x] **P2.01 Establish operational contracts and tests.** Extend types/adapters and add shared server authorization, revision/idempotency helpers. Add emulator test scripts/config and fixtures, preserving account deletion tests. Exit: stale writes, spoofed IDs and cross-org access rejected; legacy event readers have explicit compatibility coverage. No UI effect.
+2. [ ] **P2.02 Canonical multi-team event service.** Implemented in [PR #26](https://github.com/orkunozekin/team-hangout/pull/26); review blocked, not merged. Add callable event mutation/lifecycle and publication visibility rules; adapt existing native event screens. Exit: one match appears for both teams; cancel/postpone/reschedule/history differ; screenshots show each changed state and stale-save error.
 3. [ ] **P2.03 Facility/resource availability.** Add staff forms, scoped server CRUD and occupancy interval validator. Exit: exact field/court labels, buffers and overlap boundaries tested; screenshots show unavailable resource and accessible map/details. Do not create recurrence yet.
 4. [ ] **P2.04 Recurrence materialization.** Add pure timezone recurrence generator, finite reviewed series draft and stable occurrence IDs. Exit: DST, exclusions, retries and series revision tests; screenshots show preview and ambiguous-time correction. Do not auto-publish.
 5. [ ] **P2.05 Scheduling feasibility spike.** Implement only pure pairing/assignment/independent validation module and seeded benchmark harness. Exit: known-feasible and impossible examples, odd teams, conflicting coaches and budget exhaustion produce truthful results; record runtime/input-size results in PR. No claim of global optimality.
@@ -309,32 +309,38 @@ Before pilot the owner must approve youth posting/history policy, data retention
 
 ### Done so far
 
-- P2.01 baseline verified against fetched remote `main` at `eec291f452374743701eb6fed25a0bb8fe629a8e` (merged PR #24), including final Phase 1 PR #22. Open PR #23 staging acceptance was not adopted or modified.
+- P2.02 started from fetched remote `main` at `db2ca81a072ff1fb5b9d3c9f9ffee18a9f6c4420`, the verified squash of P2.01 PR #25. GitHub confirms final reviewed head `a9fc21ddc5967c7213f5c6e52a29a5b403e08fff`, explicit Greptile 5/5 and all three CI jobs passing. Initial P2.01 foundation baseline was PR #24 at `eec291f452374743701eb6fed25a0bb8fe629a8e`. Open PR #23 staging acceptance was not adopted or modified.
 - Existing canonical event commands, staff/program/coach scopes, participant/guardian and roster boundaries, household agenda/calendar, email and deletion interfaces inspected. Phase 1 deliberately rejects `respond: true` guardian grants; P2.09 must enable response policy explicitly. Agenda/feed currently accept published null-marker events and reject non-null operation markers; P2.07 must add committed-marker reads. ICS uses stable event ID UIDs and event revisions. The source inventory above is historical; direct client event writes were already replaced in Phase 1.
 - P2.01 adds operational JSON/native reader contracts, reusable server access/revision/receipt helpers, malformed-grant and identity defenses, and explicit legacy reader compatibility tests. Existing receipt hashes/storage and deletion coverage are preserved. No new user-linked storage, UI behavior, lifecycle command, deployment or production access.
 - Local Node 22 validation passed: native typecheck, 25 unit suites / 132 tests with coverage, Functions build, 7 pure contracts, 3 helper tests, the full isolated backend suite (132 tests including deletion), and the focused operations gate (39 tests including deletion).
 - Focused `yarn test:operations` reuses isolated emulator configuration and includes deletion tests; full backend CI retains all suites. See `docs/backend-testing.md` for contracts and boundary details.
 
+- P2.02 implements `functions/src/operations/events.ts`: bounded callable native team/event/opponent reads with live staff/coach/household access, every-team mutation authority, published null-marker visibility, and revisioned edit/postpone/cancel/reschedule/complete with immutable safe schedule history. Stable event identity, original interval, schedule version and reschedule revision survive changes; completion does not infer attendance. No new user-linked storage is added; existing receipt deletion coverage remains active.
+- Native existing schedule/detail/form adapters now show canonical events in both teams, use authorized opponent choices, display local date/time/duration and timezone, reject DST gaps and require explicit repeated-hour selection. Stale saves preserve edits, show server conflict guidance and offer explicit reload. Legacy split date/time and soft-deletion behavior remain separate.
+- P2.02 validation: Node 22 native typecheck, Functions build, 27 unit/component suites / 144 tests with coverage thresholds intact, and 136 backend tests including deletion. The full isolated run passed 135/136; its remaining rehearsal failure came from the temporary harness's Git context/local server permission and passed in a focused 3/3 guard rerun. Auth/Firestore/Functions/Storage ports were 9299/8280/5201/9399 because another project's emulators owned the defaults. Production indexes and deployment were not tested.
+- Eleven actual iPhone 17 Pro / iOS 26.5 captures are inspected and attached with captions in PR #26 **UI evidence**: empty filter, opponent picker, both team schedules, scheduled/postponed/rescheduled/cancelled/completed states, local reschedule form and a real stale-save failure. Source `a56a17e4ad50a214d679b6f715565b642fd86449`; the form image is from `bcea905dc9b2fffc5421da6316b81740a18a214b` with identical form source at `a56a17e`. Metro ran from this checkout on 8082 against the synthetic demo emulators. Shared match `mKt9q5vhMjfQQHN2DRXN` was created natively, rescheduled without changing ID, concurrently edited through an authenticated callable to induce stale-save rejection, then cancelled natively. A separate callable-seeded practice was completed natively. Raw captures and SHA-256 manifest remain in `/private/tmp/p202-ui/`; no screenshots are source commits and none may be recaptured after review fixes.
+- P2.02 introduces no migration, deployment, production access or flag changes. Deploy new callable readers/lifecycle endpoints and verify declared query indexes before releasing the native adapter. Facility occupancy is P2.03, recurrence is P2.04, bulk commit-marker visibility/publication is P2.07, responses/reconfirmation are P2.09 and completion roster snapshots are P2.10. Existing agenda/feed scheduled-only behavior and null-marker compatibility remain in place; all operation-marked events stay hidden here.
+
 - Product scope translated into contracts, bounded PR steps, feasibility evidence, explicit prototype gates and external release dependencies.
 - Existing native/server source and owner-app recurrence/RSVP/check-in logic inspected read-only.
-- Official SDK54 and backend documentation reviewed; no phase-2 behavior implemented or deployability claimed.
+- Official SDK54 documentation re-read before P2.02 code. Earlier planning supplied feasibility evidence only; the P2.02 implementation and runtime evidence are now recorded above. No deployability claim is made.
 
 ### Remaining work
 
-- Coordinator must independently verify current-head AI review and relevant CI on P2.01 PR #25 before its gated merge. After verified merge, **P2.02** is the next step; it has not been started.
+- Finish current-head CI and obtain a real current-head Greptile 5/5 for P2.02 PR #26 once review credits are restored; coordinator independently verifies and merges. No merge is authorized in this implementation chat. **P2.03** is next only after that gated merge; do not start it here.
 - At the end of each step record PR, verified test evidence, migration status, next step and blockers here; do not mark later steps complete by association.
 - Preserve current account/team behavior during compatibility migration; update account deletion for all added user/access/device paths before release.
 
 ### Blockers and risks
 
-- Phase-1 contracts are present on verified main. P2.01 remains unmerged; current-head Greptile 5/5 and passing relevant CI are required and must be verified from the linked PR before coordinator merge. Macroscope skips provide no approval evidence.
+- P2.02 review is blocked: [Greptile review](https://github.com/orkunozekin/team-hangout/pull/26#pullrequestreview-5527728097) reports all 50 free-plan credits used for the billing period. It provided no code review or 5/5. Macroscope also skipped for exhausted credits and supplies no approval. Restore review availability, then request review of the final PR head. Current CI and any later review are authoritative on PR #26; do not create ledger-only commits to record a settling gate.
 - Bounded league scheduler feasibility, native binary upload, real push/email, scanner infrastructure and staging indexes require the listed proofs.
 - Database edition, deployment billing/IAM, email service, push credentials and physical device availability were not verified by this planning document.
 - Privacy policy decisions remain explicitly gated; commercial model selection remains pending.
 
 ### Pointers for next agent
 
-- Start with phase-1 merged contracts and existing event adapters/functions; implement the next named PR step only.
+- Start at `functions/src/operations/events.ts`, `src/firebase/events.ts`, `src/lib/eventTime.ts`, existing event screens and `tests/backend/operational-events.test.mjs`. Read PR #26 before advancing; do not mistake implemented/in-review for merged.
 - Do not port account-only RSVP identity, automatic no-show inference, unsupported native persistence/upload assumptions, or claims of exactly-once external delivery.
 - Treat source/API evidence as feasibility support; attach actual runtime/test proof as each capability is implemented.
 
@@ -342,4 +348,11 @@ Before pilot the owner must approve youth posting/history policy, data retention
 
 | Chat | Branch | PR | Head | Review |
 | --- | --- | --- | --- | --- |
-| `01a13d66-11c8-7a93-a9fc-c4c410a91ca6` | `codex/p2-01-operational-contracts` | [#25](https://github.com/orkunozekin/team-hangout/pull/25) | Implementation `42324f23e63051e6bf0814db5452d6274ec3e1eb`; ledger-only follow-up, current PR head authoritative | Greptile 5/5 at `f8bb02fdf3f9d9989a5beca4bb9cff91cce3488e`; no actionable findings/threads. Current-head review and CI: linked PR summary/checks are authoritative. Not merged. |
+| `01a13d66-11c8-7a93-a9fc-c4c410a91ca6` | `codex/p2-01-operational-contracts` | [#25](https://github.com/orkunozekin/team-hangout/pull/25) | Final head `a9fc21ddc5967c7213f5c6e52a29a5b403e08fff`; squash `db2ca81a072ff1fb5b9d3c9f9ffee18a9f6c4420` present on fetched main | Merged. Explicit Greptile 5/5 at final head and all three CI jobs passed; no review threads. Earlier 5/5 at `f8bb02f` is historical, not the final gate. |
+
+
+### P2.02 delivery ledger
+
+| Chat | Branch | PR | Source/evidence | Review |
+| --- | --- | --- | --- | --- |
+| `01a13d7c-23ff-77b1-a2aa-abc558d645c2` | `codex/p2-02-canonical-events` | [#26](https://github.com/orkunozekin/team-hangout/pull/26) | Initial UI source `a56a17e4ad50a214d679b6f715565b642fd86449`; form source `bcea905`. Current PR head includes this handoff and is authoritative. 11 original attachments in the PR; native 144 tests and backend 136 tests validated as described above. | Implemented, not merged. Greptile unavailable due exhausted credits; no current-head 5/5. CI settling on the final handoff head; verify on PR, then coordinator gate. |
