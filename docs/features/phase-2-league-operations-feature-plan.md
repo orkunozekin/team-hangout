@@ -11,7 +11,7 @@ Translate the [approved product direction](../plans/product-plan.md#phase-2-depe
 | Implementation | P2.01 implemented and locally validated; PR review pending. P2.02 and later not started. |
 | Prerequisite | Phase 1 foundations, access-control migration, household agenda and web administration shell |
 | Commercial decision | Business model selection pending; no pricing, advertising, paid messaging, or billing enabled |
-| Related PR | P2.01 `codex/p2-01-operational-contracts`; PR pending |
+| Related PR | [P2.01 PR #25](https://github.com/orkunozekin/team-hangout/pull/25), `codex/p2-01-operational-contracts` |
 
 ## Goals and boundaries
 
@@ -321,7 +321,7 @@ Before pilot the owner must approve youth posting/history policy, data retention
 
 ### Remaining work
 
-- Finish P2.01 validation and AI review, then leave its regular PR for coordinator verification and gated merge. After verified merge, **P2.02** is the next step; it has not been started.
+- Finish P2.01 AI review and relevant CI, then leave its regular PR for coordinator verification and gated merge. After verified merge, **P2.02** is the next step; it has not been started.
 - At the end of each step record PR, verified test evidence, migration status, next step and blockers here; do not mark later steps complete by association.
 - Preserve current account/team behavior during compatibility migration; update account deletion for all added user/access/device paths before release.
 
@@ -342,4 +342,4 @@ Before pilot the owner must approve youth posting/history policy, data retention
 
 | Chat | Branch | PR | Head | Review |
 | --- | --- | --- | --- | --- |
-| `01a13d66-11c8-7a93-a9fc-c4c410a91ca6` | `codex/p2-01-operational-contracts` | Pending | Pending commit | Pending; not merged |
+| `01a13d66-11c8-7a93-a9fc-c4c410a91ca6` | `codex/p2-01-operational-contracts` | [#25](https://github.com/orkunozekin/team-hangout/pull/25) | Implementation `42324f23e63051e6bf0814db5452d6274ec3e1eb`; ledger-only follow-up, current PR head authoritative | CI and Greptile running; not merged |
