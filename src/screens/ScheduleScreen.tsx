@@ -69,6 +69,7 @@ type RootStackParamList = {
 
 type Props = {
   teamId: string;
+  teamName?: string;
   membership: TeamMember;
   appRole?: AppRole;
   navigation: NativeStackNavigationProp<RootStackParamList>;
@@ -82,6 +83,7 @@ const FILTERS: { key: EventTypeFilter; label: string }[] = [
 
 export default function ScheduleScreen({
   teamId,
+  teamName,
   membership,
   appRole,
   navigation,
@@ -133,7 +135,7 @@ export default function ScheduleScreen({
     <Screen style={{ paddingHorizontal: 0 }}>
       <View style={styles.header}>
         <Title>Schedule</Title>
-        <Subtitle>Practices and matches for your team.</Subtitle>
+        <Subtitle>Practices and matches for {teamName || 'your team'}.</Subtitle>
 
         <View style={styles.filters}>
           {FILTERS.map((item) => {
@@ -218,6 +220,7 @@ export default function ScheduleScreen({
             <Text style={styles.meta}>
               {formatEventDateLabel(item.date)}
               {item.location?.name ? ` · ${item.location.name}` : ''}
+              {item.timeZone ? ` · ${item.timeZone.replace(/_/g, ' ')}` : ''}
             </Text>
           </Pressable>
         )}

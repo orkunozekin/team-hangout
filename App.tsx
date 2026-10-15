@@ -249,6 +249,7 @@ function MainTabs({
         {({ navigation }) => (
           <ScheduleScreen
             teamId={team.id}
+            teamName={team.name}
             membership={membership}
             appRole={appRole}
             navigation={navigation as never}
