@@ -56,6 +56,11 @@ async function staff(tx: Transaction, orgId: string, uid: string) {
   }
   return scope;
 }
+async function catalogAdmin(tx: Transaction, orgId: string, uid: string, writing: boolean) {
+  const scope = await adminScope(tx, orgId, uid, writing);
+  if (scope.organization.features?.adminWorkspace !== true) denied();
+  return scope;
+}
 async function facility(tx: Transaction, orgId: string, facilityId: string) {
   const row = (await tx.get(facilityRef(orgId, facilityId))).data();
   if (!row || row.orgId !== orgId || row.schemaVersion !== 2) denied(); return row!;
@@ -97,7 +102,7 @@ export const saveFacility = command('saveFacility', data => {
   keys(data, ['requestId', 'orgId', 'facilityId', 'expectedRevision', 'fields']);
   return { orgId: id(data.orgId, 'orgId'), facilityId: data.facilityId == null ? null : id(data.facilityId, 'facilityId'), expectedRevision: revision(data.expectedRevision), fields: facilityFields(data.fields) };
 }, async (tx, data, uid, _actor, replay) => {
-  await adminScope(tx, data.orgId, uid, !replay); if (replay) return replay;
+  await catalogAdmin(tx, data.orgId, uid, !replay); if (replay) return replay;
   const ref = data.facilityId ? facilityRef(data.orgId, data.facilityId) : getFirestore().collection(`organizations/${data.orgId}/facilities`).doc();
   const before = data.facilityId ? await facility(tx, data.orgId, data.facilityId) : undefined;
   checkRevision(before, data.expectedRevision);
@@ -114,7 +119,7 @@ export const saveFacilityResource = command('saveFacilityResource', data => {
   keys(data, ['requestId', 'orgId', 'facilityId', 'resourceId', 'expectedRevision', 'fields']);
   return { orgId: id(data.orgId, 'orgId'), facilityId: id(data.facilityId, 'facilityId'), resourceId: data.resourceId == null ? null : id(data.resourceId, 'resourceId'), expectedRevision: revision(data.expectedRevision), fields: resourceFields(data.fields) };
 }, async (tx, data, uid, _actor, replay) => {
-  await adminScope(tx, data.orgId, uid, !replay); await facility(tx, data.orgId, data.facilityId);
+  await catalogAdmin(tx, data.orgId, uid, !replay); await facility(tx, data.orgId, data.facilityId);
   const before = data.resourceId ? await resource(tx, data.orgId, data.facilityId, data.resourceId) : undefined;
   if (replay) return replay; checkRevision(before, data.expectedRevision);
   const ref = data.resourceId ? resourceRef(data.orgId, data.facilityId, data.resourceId) : facilityRef(data.orgId, data.facilityId).collection('resources').doc();
@@ -148,7 +153,7 @@ export const appendResourceAvailability = command('appendResourceAvailability', 
   for (let i = 1; i < windows.length; i++) if (overlaps(windows[i - 1], windows[i])) invalid('Availability windows overlap.');
   return { orgId: id(data.orgId, 'orgId'), facilityId: id(data.facilityId, 'facilityId'), resourceId: id(data.resourceId, 'resourceId'), expectedRevision: revision(data.expectedRevision), effectiveFrom: instant(data.effectiveFrom, 'effectiveFrom'), windows };
 }, async (tx, data, uid, _actor, replay) => {
-  await adminScope(tx, data.orgId, uid, !replay); await facility(tx, data.orgId, data.facilityId);
+  await catalogAdmin(tx, data.orgId, uid, !replay); await facility(tx, data.orgId, data.facilityId);
   const before = await resource(tx, data.orgId, data.facilityId, data.resourceId); if (replay) return replay;
   checkRevision(before, data.expectedRevision);
   const ref = resourceRef(data.orgId, data.facilityId, data.resourceId);
@@ -189,11 +194,12 @@ export async function validateResourceAssignment(tx: Transaction, event: Data, e
       setupMinutes: r.setupMinutes, cleanupMinutes: r.cleanupMinutes, sports, availabilityRevision: available.revision, resourceRevision: r.revision },
     resourceFence: resourceRef(event.orgId, event.facilityId, event.resourceId) };
 }
-export function commitResourceAssignment(tx: Transaction, event: Data, assignment: Data, eventId: string, nextRevision: number) {
+export function commitResourceAssignment(tx: Transaction, event: Data, assignment: Data, eventId: string, nextRevision: number, previous: Data = event) {
   const { resourceFence, ...fields } = assignment;
   if (resourceFence) tx.update(resourceFence, { reservationVersion: Timestamp.now() });
   if (event.resourceOccupancy || fields.resourceOccupancy) tx.create(getFirestore().doc(`events/${eventId}/resourceHistory/${nextRevision}`), {
     schemaVersion: 2, revision: nextRevision, orgId: event.orgId, facilityId: event.facilityId ?? null, resourceId: event.resourceId ?? null,
-    status: event.status, occupancy: fields.resourceOccupancy ?? event.resourceOccupancy ?? null, createdAt: Timestamp.now(), updatedAt: Timestamp.now(), auditCorrelationId: `${eventId}:${nextRevision}` });
+    status: event.status, occupancy: Object.hasOwn(fields, 'resourceOccupancy') ? fields.resourceOccupancy : event.resourceOccupancy ?? null,
+    previousFacilityId: previous.facilityId ?? null, previousResourceId: previous.resourceId ?? null, previousOccupancy: previous.resourceOccupancy ?? null, createdAt: Timestamp.now(), updatedAt: Timestamp.now(), auditCorrelationId: `${eventId}:${nextRevision}` });
   return fields;
 }

@@ -203,7 +203,7 @@ function changeEvent(deleting: boolean) {
     if (v2 && !deleting) {
       const next = { ...event, ...patch };
       const assignment = await validateResourceAssignment(tx, next, ref.id, sports);
-      Object.assign(patch, commitResourceAssignment(tx, next, assignment, ref.id, currentRevision + 1));
+      Object.assign(patch, commitResourceAssignment(tx, next, assignment, ref.id, currentRevision + 1, event));
     }
     tx.update(ref, { ...patch, revision: currentRevision + 1, updatedAt: now, updatedBy: uid });
     if (v2) eventAudit(tx, event, uid, deleting ? 'softDeleteEvent' : 'updateEvent', ref.id, currentRevision + 1);

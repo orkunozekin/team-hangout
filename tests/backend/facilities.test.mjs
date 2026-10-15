@@ -117,6 +117,10 @@ test('lifecycle and compatibility paths cannot bypass occupancy; history survive
   const detached = await create(c, at(4, 12), at(4, 13));
   await mutate(detached, 'edit', { facilityId: null, resourceId: null });
   assert.equal((await db.doc(`events/${detached.id}`).get()).data().resourceOccupancy, null);
+  const detachedHistory = (await db.doc(`events/${detached.id}/resourceHistory/2`).get()).data();
+  assert.equal(detachedHistory.facilityId, null); assert.equal(detachedHistory.resourceId, null); assert.equal(detachedHistory.occupancy, null);
+  assert.equal(detachedHistory.previousFacilityId, c.facilityId); assert.equal(detachedHistory.previousResourceId, c.resourceId);
+  assert.equal(detachedHistory.previousOccupancy.startsAt.toDate().toISOString(), at(4, 11, 45));
   assert.ok((await create(c, at(4, 12), at(4, 13))).id);
   await assert.rejects(mutate(rescheduled, 'edit', { resourceOccupancy: {} }), { code: 'functions/invalid-argument' });
 });
@@ -174,4 +178,21 @@ test('availability revision and booking races serialize against the same resourc
   const rejected = outcomes.find(result => result.status === 'rejected'); assert.equal(rejected.reason.details.domainCode, 'SCHEDULE_CONFLICT');
   const originals = await db.doc(`organizations/${orgId}/facilities/${c.facilityId}/resources/${c.resourceId}/revisions/1`).get();
   assert.equal(originals.data().label, 'Field 2 North'); assert.equal(originals.data().setupMinutes, 15);
+});
+
+
+test('disabled workspace denies every catalog write and receipt replay without changing data', async () => {
+  const c = await catalog();
+  const payload = req({ orgId, facilityId: c.facilityId, expectedRevision: 1, fields: { ...facilityFields, name: 'Before rollout disable' } });
+  await call('p203-admin', 'saveFacility', payload);
+  await db.doc(`organizations/${orgId}`).update({ 'features.adminWorkspace': false });
+  try {
+    await deny(call('p203-admin', 'saveFacility', payload));
+    await deny(call('p203-admin', 'saveFacility', req({ orgId, expectedRevision: 0, fields: facilityFields })));
+    await deny(call('p203-admin', 'saveFacilityResource', req({ orgId, facilityId: c.facilityId, resourceId: c.resourceId, expectedRevision: 2, fields: resourceFields })));
+    await deny(call('p203-admin', 'appendResourceAvailability', req({ orgId, facilityId: c.facilityId, resourceId: c.resourceId, expectedRevision: 2, effectiveFrom: at(4, 0), windows: [] })));
+    assert.equal((await db.doc(`organizations/${orgId}/facilities/${c.facilityId}`).get()).data().revision, 2);
+    assert.equal((await db.doc(`organizations/${orgId}/facilities/${c.facilityId}/resources/${c.resourceId}`).get()).data().revision, 2);
+    assert.equal((await db.collection(`organizations/${orgId}/facilities/${c.facilityId}/resources/${c.resourceId}/availability`).get()).size, 1);
+  } finally { await db.doc(`organizations/${orgId}`).update({ 'features.adminWorkspace': true }); }
 });

@@ -194,7 +194,7 @@ export const mutateEventSchedule = command('mutateEventSchedule', data => {
   const assigning = data.patch.facilityId !== undefined || data.patch.resourceId !== undefined;
   if (data.action === 'reschedule' || assigning) assignment = await validateResourceAssignment(tx, { ...event, ...changes }, ref.id, scope.teams.map(team => team.sport));
   if (!assigning && event.resourceId && data.patch.location !== undefined && JSON.stringify(data.patch.location) !== JSON.stringify(event.location)) invalid('Assigned resources determine the location. Remove the resource assignment before entering a custom location.');
-  Object.assign(changes, commitResourceAssignment(tx, { ...event, ...changes }, assignment, ref.id, nextRevision));
+  Object.assign(changes, commitResourceAssignment(tx, { ...event, ...changes }, assignment, ref.id, nextRevision, event));
   // History is immutable and retains the previous interval and status for each committed transition.
   tx.create(ref.collection('scheduleHistory').doc(String(nextRevision)), { schemaVersion: 2, revision: nextRevision,
     action: data.action, reason: data.reason, previousStatus: event.status, status: changes.status ?? event.status,
