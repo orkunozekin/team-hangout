@@ -1,3 +1,4 @@
+import { decodeOperationalEvent } from '../../../shared/operations';
 const mockRead = jest.fn();
 jest.mock('firebase/functions', () => ({ httpsCallable: () => mockRead }));
 const mockGetTeam = jest.fn();
@@ -35,6 +36,7 @@ import {
   createEvent,
   getEvent,
   listTeamEvents,
+  listTeamEventPage,
   mapEventDoc,
   softDeleteEvent,
   updateEvent,
@@ -210,9 +212,18 @@ describe('canonical callable readers and writers', () => {
   it('paginates canonical team events and choices', async () => {
     mockGetTeam.mockResolvedValue({ schemaVersion: 2 });
     mockRead.mockResolvedValueOnce({ data: { items: [event], nextCursor: 'shared' } }).mockResolvedValueOnce({ data: { items: [{ ...event, id: 'second' }], nextCursor: null } });
-    expect((await listTeamEvents('a')).map(event => event.id)).toEqual(['shared', 'second']);
+    expect((await listTeamEventPage('a')).items.map(event => event.id)).toEqual(['shared']);
+    expect(mockRead).toHaveBeenCalledTimes(1);
+    expect((await listTeamEventPage('a', 'shared')).items.map(event => event.id)).toEqual(['second']);
+    expect(mockRead).toHaveBeenLastCalledWith({ teamId: 'a', cursor: 'shared', pageSize: 50 });
     mockRead.mockResolvedValueOnce({ data: { items: [{ id: 'a', name: 'A' }], nextCursor: 'a' } }).mockResolvedValueOnce({ data: { items: [{ id: 'b', name: 'B' }], nextCursor: null } });
     expect(await listEventTeamChoices('a')).toHaveLength(2);
+  });
+  it('decodes family projections without audit identities while storage readers remain strict', async () => {
+    const { createdBy, updatedBy, ...publicEvent } = event;
+    expect(() => decodeOperationalEvent('shared', publicEvent, publicEvent, { a: publicEvent })).toThrow('Invalid createdBy');
+    mockRead.mockResolvedValue({ data: publicEvent });
+    expect(await getEvent('shared')).toEqual(expect.objectContaining({ title: 'Match', notes: null, createdBy: '', startsAt: event.startsAt }));
   });
   it('sends revisioned lifecycle commands and canonical creation', async () => {
     await mutateEventSchedule('shared', 3, 'postpone', {}, 'Rain');

@@ -1,3 +1,4 @@
+import { decodePublicOperationalEvent } from '../../shared/operations';
 import { mapOperationalEventDoc } from './operationalEvents';
 import type { Parents } from '../../shared/contracts';
 import { httpsCallable } from 'firebase/functions';
@@ -51,13 +52,16 @@ export function mapEventDoc(
 
   if (data.schemaVersion === 2) {
     const parents = { orgId: data.orgId, programId: data.programId, seasonId: data.seasonId, divisionId: data.divisionId } as Parents;
-    const canonical = mapOperationalEventDoc(id, data, parents, Object.fromEntries((data.teamIds as string[]).map(teamId => [teamId, parents])));
-    const startsAt = canonical.startsAt.toISOString();
+    const teams = Object.fromEntries((data.teamIds as string[]).map(teamId => [teamId, parents]));
+    const canonical = data.createdBy === undefined && data.updatedBy === undefined
+      ? decodePublicOperationalEvent(id, data, parents, teams)
+      : mapOperationalEventDoc(id, data, parents, teams);
+    const startsAt = new Date(canonical.startsAt).toISOString();
     const zone = String(data.timeZone);
     const parts = new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(startsAt));
     const part = (name: string) => parts.find(value => value.type === name)!.value;
     return { ...mapEventDoc(id, { ...data, schemaVersion: undefined, date: `${part('year')}-${part('month')}-${part('day')}T12:00:00.000Z`, time: `${part('hour')}:${part('minute')}` }),
-      schemaVersion: 2, startsAt, endsAt: canonical.endsAt.toISOString(), timeZone: zone,
+      schemaVersion: 2, startsAt, endsAt: new Date(canonical.endsAt).toISOString(), timeZone: zone,
       status: data.status as TeamEvent['status'], scheduleVersion: Number(data.scheduleVersion ?? 1),
       teams: data.teams as TeamEvent['teams'], canManage: data.canManage === true,
       history: data.history as TeamEvent['history'], historyHasMore: data.historyHasMore === true };
@@ -112,19 +116,13 @@ export async function getEvent(
   return event;
 }
 
-export async function listTeamEvents(
-  teamId: string,
-): Promise<TeamEvent[]> {
+export type TeamEventPage = { items: TeamEvent[]; nextCursor: string | null };
+export async function listTeamEventPage(teamId: string, cursor: string | null = null): Promise<TeamEventPage> {
   const team = await getTeam(teamId);
   if (team?.schemaVersion === 2) {
-    const events: TeamEvent[] = [];
-    let cursor: string | null = null;
-    do {
-      const page: { items: (Record<string, unknown> & { id: string })[]; nextCursor: string | null } = await readEventCommand('listCanonicalTeamEvents', { teamId, cursor, pageSize: 50 });
-      events.push(...page.items.map(item => mapEventDoc(item.id, item)));
-      cursor = page.nextCursor;
-    } while (cursor);
-    return events;
+    const page = await readEventCommand<{ items: (Record<string, unknown> & { id: string })[]; nextCursor: string | null }>(
+      'listCanonicalTeamEvents', { teamId, cursor, pageSize: 50 });
+    return { items: page.items.map(item => mapEventDoc(item.id, item)), nextCursor: page.nextCursor };
   }
   const q = query(
     collection(db, 'events'),
@@ -132,9 +130,12 @@ export async function listTeamEvents(
     where('deletedAt', '==', null),
   );
   const snap = await getDocs(q);
-  return snap.docs.map((d) =>
-    mapEventDoc(d.id, d.data() as Record<string, unknown>),
-  );
+  return { items: snap.docs.map(d => mapEventDoc(d.id, d.data() as Record<string, unknown>)), nextCursor: null };
+}
+
+/** Compatibility callers receive a bounded first page. Screens use the explicit page API. */
+export async function listTeamEvents(teamId: string): Promise<TeamEvent[]> {
+  return (await listTeamEventPage(teamId)).items;
 }
 
 function eventPayload(input: UpdateEventInput) {

@@ -229,3 +229,62 @@ test('canonical team navigation never grants legacy directory access and live te
   await db.doc(`teamMembers/p202-b_${uid}`).update({ status: 'revoked' });
   await deny(call(uid, 'getNativeTeam', { teamId: 'p202-b' }));
 });
+
+test('family event and team responses exclude private notes, audit identities and unlisted metadata', async () => {
+  await db.doc('organizations/p202-org/participants/p202-child/guardians/p202-guardian').update({ status: 'active' });
+  await db.doc('teams/p202-b/roster/p202-child').update({ status: 'active' });
+  await db.doc('teams/p202-b').update({ externalId: 'internal-import-key', createdBy: 'private-team-creator', updatedBy: 'private-team-editor', futurePrivateField: 'secret' });
+  const event = await create({ notes: 'Staff-only instructions', startsAt: '2026-10-01T18:00:00.000Z', endsAt: '2026-10-01T19:00:00.000Z' });
+  for (const uid of ['p202-guardian', 'p202-self']) {
+    const loaded = await call(uid, 'getCanonicalEvent', { eventId: event.id });
+    for (const key of ['notes', 'createdBy', 'updatedBy']) assert.equal(Object.hasOwn(loaded, key), false, `${uid}: ${key}`);
+    const page = await call(uid, 'listCanonicalTeamEvents', { teamId: 'p202-b', pageSize: 50 });
+    assert.ok(page.items.some(row => row.id === event.id));
+    for (const row of page.items) for (const key of ['notes', 'createdBy', 'updatedBy']) assert.equal(Object.hasOwn(row, key), false);
+    const team = await call(uid, 'getNativeTeam', { teamId: 'p202-b' });
+    assert.deepEqual(Object.keys(team).sort(), ['id', 'schemaVersion', 'name', 'sport', 'timeZone'].sort());
+    assert.equal(team.name, 'Comets'); assert.equal(team.timeZone, 'America/Chicago');
+  }
+  for (const uid of ['p202-admin', 'p202-a-coach', 'p202-b-coach']) {
+    const loaded = await call(uid, 'getCanonicalEvent', { eventId: event.id });
+    assert.equal(loaded.notes, 'Staff-only instructions'); assert.equal(loaded.createdBy, 'p202-admin');
+  }
+  const ref = db.doc('teamMembers/p202-b_p202-guardian');
+  await ref.set({ ...meta, orgId: 'p202-org', teamId: 'p202-b', userId: 'p202-guardian', roles: ['coach'] });
+  assert.equal((await call('p202-guardian', 'getCanonicalEvent', { eventId: event.id })).notes, 'Staff-only instructions');
+  await ref.update({ status: 'revoked' });
+  const publicAgain = await call('p202-guardian', 'getCanonicalEvent', { eventId: event.id });
+  assert.equal(Object.hasOwn(publicAgain, 'notes'), false); assert.equal(Object.hasOwn(publicAgain, 'createdBy'), false);
+});
+
+test('staged type edits recompute matchup IDs before promotion', async () => {
+  const staged = await create({ publicationState: 'staged' });
+  let revision = 1;
+  for (const type of ['practice', 'match']) {
+    const updated = await call('p202-admin', 'updateEvent', req({ eventId: staged.id, expectedRevision: revision, patch: { type } }));
+    revision = updated.revision;
+    const stored = (await db.doc(`events/${staged.id}`).get()).data();
+    assert.equal(stored.homeTeamId, type === 'match' ? 'p202-a' : null);
+    assert.equal(stored.awayTeamId, type === 'match' ? 'p202-b' : null);
+  }
+  await call('p202-admin', 'updateEvent', req({ eventId: staged.id, expectedRevision: revision, patch: { publicationState: 'published' } }));
+  const loaded = await call('p202-admin', 'getCanonicalEvent', { eventId: staged.id });
+  assert.equal(loaded.homeTeamId, 'p202-a'); assert.equal(loaded.awayTeamId, 'p202-b');
+});
+
+test('canonical event pages order by instant and retain equal-instant boundaries without duplicates', async () => {
+  const teamId = 'p202-ordered';
+  await db.doc(`teams/${teamId}`).set({ ...meta, ...scope, name: 'Ordered team' });
+  for (const [id, instant] of [['p202-z-early', '2026-11-01T05:45:00.000Z'], ['p202-a-later', '2026-11-01T06:15:00.000Z'], ['p202-b-tie', '2026-11-01T06:15:00.000Z'], ['p202-c-last', '2026-11-01T08:00:00.000Z']]) {
+    await db.doc(`events/${id}`).set({ ...meta, ...scope, teamId, teamIds: [teamId], title: id, type: 'practice',
+      startsAt: Timestamp.fromDate(new Date(instant)), endsAt: Timestamp.fromDate(new Date(Date.parse(instant) + 3600000)),
+      timeZone: 'America/New_York', publicationState: 'published', publicationOperationId: null, deletedAt: null,
+      createdBy: 'p202-admin', updatedBy: 'p202-admin' });
+  }
+  const first = await call('p202-admin', 'listCanonicalTeamEvents', { teamId, pageSize: 2 });
+  assert.deepEqual(first.items.map(row => row.id), ['p202-z-early', 'p202-a-later']);
+  const second = await call('p202-admin', 'listCanonicalTeamEvents', { teamId, pageSize: 2, cursor: first.nextCursor });
+  assert.deepEqual(second.items.map(row => row.id), ['p202-b-tie', 'p202-c-last']);
+  assert.equal(second.nextCursor, null);
+  await assert.rejects(call('p202-admin', 'listCanonicalTeamEvents', { teamId: 'p202-a', pageSize: 2, cursor: first.nextCursor }), { code: 'functions/invalid-argument' });
+});

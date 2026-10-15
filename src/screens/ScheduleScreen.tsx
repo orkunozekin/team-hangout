@@ -22,12 +22,13 @@ import {
 } from '@react-navigation/native-stack';
 
 import {
-  listTeamEvents,
+  listTeamEventPage,
 } from '../firebase/events';
 
 import {
   EmptyState,
   PrimaryButton,
+  SecondaryButton,
   Screen,
   Subtitle,
   Title,
@@ -94,37 +95,55 @@ export default function ScheduleScreen({
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const pendingPage = useRef(false);
 
   const load = useCallback(async () => {
     const token = ++generation.current;
-    setError('');
-    const data = await listTeamEvents(teamId);
-    if (token === generation.current) setEvents(data);
+    pendingPage.current = true;
+    setLoadingMore(false); setError('');
+    try {
+      const page = await listTeamEventPage(teamId);
+      if (token === generation.current) {
+        setEvents(page.items); setNextCursor(page.nextCursor);
+      }
+    } catch (error) {
+      if (token === generation.current) setError(error instanceof Error ? error.message : 'Schedule unavailable.');
+    } finally {
+      if (token === generation.current) {
+        pendingPage.current = false; setLoading(false); setRefreshing(false);
+      }
+    }
   }, [teamId]);
 
   useFocusEffect(
     useCallback(() => {
-      let active = true;
-      (async () => {
-        setLoading(true); setEvents([]);
-        try {
-          await load();
-        } catch (error) { setEvents([]); setError(error instanceof Error ? error.message : 'Schedule unavailable.'); } finally {
-          if (active) setLoading(false);
-        }
-      })();
-      return () => {
-        active = false; generation.current++;
-      };
+      setLoading(true); setEvents([]); setNextCursor(null);
+      void load();
+      return () => { generation.current++; pendingPage.current = false; };
     }, [load]),
   );
 
   async function onRefresh() {
     setRefreshing(true);
+    await load();
+  }
+
+  async function onLoadMore() {
+    if (!nextCursor || pendingPage.current) return;
+    const token = generation.current;
+    pendingPage.current = true;
+    setLoadingMore(true); setError('');
     try {
-      await load();
-    } catch (error) { setEvents([]); setError(error instanceof Error ? error.message : 'Schedule unavailable.'); } finally {
-      setRefreshing(false);
+      const page = await listTeamEventPage(teamId, nextCursor);
+      if (token !== generation.current) return;
+      setEvents(previous => [...new Map([...previous, ...page.items].map(item => [item.id, item])).values()]);
+      setNextCursor(page.nextCursor);
+    } catch (error) {
+      if (token === generation.current) setError(error instanceof Error ? error.message : 'More events are unavailable. Please try again.');
+    } finally {
+      if (token === generation.current) { pendingPage.current = false; setLoadingMore(false); }
     }
   }
 
@@ -172,6 +191,8 @@ export default function ScheduleScreen({
         ) : null}
       </View>
 
+      {nextCursor ? <Text style={styles.meta}>More events are available. Load more to include them in this view.</Text> : null}
+
       <FlatList
         data={visible}
         keyExtractor={(item) => item.id}
@@ -183,6 +204,12 @@ export default function ScheduleScreen({
           loading ? null : (
             <EmptyState message={error || "No events yet. Coaches can add practices and matches."} />
           )
+        }
+        ListFooterComponent={
+          <View>
+            {error && events.length ? <Text accessibilityRole="alert">{error}</Text> : null}
+            {nextCursor ? <SecondaryButton label={loadingMore ? 'Loading events...' : 'Load more events'} onPress={() => { void onLoadMore(); }} disabled={loadingMore || refreshing || loading} /> : null}
+          </View>
         }
         renderItem={({ item }) => (
           <Pressable

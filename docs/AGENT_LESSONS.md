@@ -157,3 +157,11 @@
 - **Gap:** Enabling canonical active teams exposed a Team tab that still queried the legacy member directory. Revoked canonical assignments also remained preferred navigation candidates and blocked other valid teams.
 - **Going forward:** Follow newly enabled navigation through every existing screen. Keep canonical teams out of legacy roster/invite flows without expanding household directory access. Filter inactive canonical assignments before choosing a team, recheck the live team read, and fall back on denied/missing candidates while surfacing service failures. Test rendered canonical and legacy tabs, retry/switching states and live revocation.
 - **Pointers:** `src/screens/TeamScreen.tsx`, `src/firebase/teams.ts`, TeamScreen and membership tests, `tests/backend/operational-events.test.mjs`.
+
+
+### 2026-10-15 — Separate public projections and expose bounded schedule pages
+
+- **Source:** PR #26 · GitHub Codex full-diff review
+- **Gap:** Canonical family readers exposed private notes/audit identities and full team documents; the native schedule drained all server pages. Staged type edits preserved stale matchup IDs.
+- **Going forward:** Use explicit role-appropriate event/team projections and keep strict storage decoding separate from public decoding. Reauthorize private fields on live staff/coach/captain grants. Render one ordered page at a time, retain earlier results on later-page errors, and test equal-instant cursor boundaries and team switching. Recompute derived matchup fields on every accepted type-change path.
+- **Pointers:** `functions/src/operations/events.ts`, `functions/src/commands.ts`, `shared/contracts.ts`, `shared/operations.ts`, `src/firebase/events.ts`, `src/screens/ScheduleScreen.tsx` and their regression tests.

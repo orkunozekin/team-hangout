@@ -1,4 +1,4 @@
-import { decodeEvent, opaqueId, timestampToIso } from './contracts';
+import { decodeEvent, decodePublicEvent, opaqueId, timestampToIso } from './contracts';
 import type { Data, Parents } from './contracts';
 
 export type EventStatus = 'scheduled' | 'postponed' | 'cancelled' | 'completed';
@@ -31,8 +31,7 @@ const nullableId = (value: unknown, field: string): string | null => value == nu
  * Phase 1 records omit operational metadata. Nulls do not invent venue or matchup assignments.
  * Publication decoding is not authorization: readers must check live access and commit markers.
  */
-export function decodeOperationalEvent(id: string, data: Data, canonical: Parents, teams: Record<string, Parents>): OperationalEvent {
-  const event = decodeEvent(data, canonical, teams);
+function operationalFields<T extends ReturnType<typeof decodePublicEvent>>(id: string, data: Data, event: T) {
   if (event.teamIds.length > 20) throw new Error('Invalid teamIds');
   const homeTeamId = nullableId(data.homeTeamId, 'homeTeamId');
   const awayTeamId = nullableId(data.awayTeamId, 'awayTeamId');
@@ -56,4 +55,12 @@ export function decodeOperationalEvent(id: string, data: Data, canonical: Parent
     location, notes: data.notes == null ? null : data.notes as string, id: opaqueId(id), homeTeamId, awayTeamId, facilityId, resourceId,
     scheduleVersion: data.scheduleVersion === undefined ? 1 : positiveInteger(data.scheduleVersion, 'scheduleVersion'),
     rescheduledFromRevision, completedAt: data.completedAt == null ? null : timestampToIso(data.completedAt) };
+}
+
+export function decodeOperationalEvent(id: string, data: Data, canonical: Parents, teams: Record<string, Parents>): OperationalEvent {
+  return operationalFields(id, data, decodeEvent(data, canonical, teams));
+}
+/** Authorized family projection has no audit identities; storage decoding remains strict. */
+export function decodePublicOperationalEvent(id: string, data: Data, canonical: Parents, teams: Record<string, Parents>) {
+  return operationalFields(id, data, decodePublicEvent(data, canonical, teams));
 }

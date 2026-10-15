@@ -41,13 +41,22 @@ async function result(tx: Transaction, eventId: string, event: Data, uid: string
     catch (error) { if (!(error instanceof HttpsError) || !['permission-denied', 'failed-precondition'].includes(error.code)) throw error; return false; }
   })());
   const canManage = await management.get(key)!;
+  let canReadPrivate = false;
+  for (const teamId of event.teamIds) {
+    const readKey = `private:${teamId}`;
+    if (!management.has(readKey)) management.set(readKey, (async () => {
+      try { await eventScope(tx, [teamId], uid, false); return true; }
+      catch (error) { if (!(error instanceof HttpsError) || error.code !== 'permission-denied') throw error; return false; }
+    })());
+    if (await management.get(readKey)!) { canReadPrivate = true; break; }
+  }
   const fields = ['schemaVersion', 'orgId', 'programId', 'seasonId', 'divisionId', 'teamId', 'teamIds', 'title', 'type',
     'startsAt', 'endsAt', 'timeZone', 'status', 'publicationState', 'publicationOperationId', 'revision',
-    'scheduleVersion', 'rescheduledFromRevision', 'homeTeamId', 'awayTeamId', 'completedAt', 'createdBy', 'updatedBy',
+    'scheduleVersion', 'rescheduledFromRevision', 'homeTeamId', 'awayTeamId', 'completedAt',
     'createdAt', 'updatedAt', 'deletedAt'];
   const safe = Object.fromEntries(fields.filter(field => event[field] !== undefined).map(field => [field, event[field]]));
   return { id: eventId, ...safe, location: event.location ? { name: event.location.name,
-    ...(event.location.address ? { address: event.location.address } : {}) } : null, notes: event.notes ?? null, teams, canManage };
+    ...(event.location.address ? { address: event.location.address } : {}) } : null, ...(canReadPrivate ? { notes: event.notes ?? null, createdBy: event.createdBy, updatedBy: event.updatedBy } : {}), teams, canManage };
 }
 export const getNativeTeam = readCommand(data => {
   keys(data, ['teamId']); return { teamId: id(data.teamId, 'teamId') };
@@ -57,7 +66,7 @@ export const getNativeTeam = readCommand(data => {
   const organization = (await tx.get(getFirestore().doc(`organizations/${team.orgId}`))).data();
   const timeZone = text(organization?.timeZone, 'organization time zone', 100);
   try { new Intl.DateTimeFormat('en', { timeZone }); } catch { invalid('Organization time zone needs administrator correction.'); }
-  return { id: data.teamId, ...team, timeZone };
+  return { id: data.teamId, schemaVersion: 2, name: team.name, sport: team.sport ?? null, timeZone };
 });
 export const listEventTeamChoices = readCommand(data => {
   keys(data, ['teamId', 'pageSize', 'cursor']); return { teamId: id(data.teamId, 'teamId'), ...page(data) };
@@ -85,8 +94,13 @@ export const listCanonicalTeamEvents = readCommand(data => {
   const team = await readableTeam(tx, data.teamId, uid);
   let query = getFirestore().collection('events').where('orgId', '==', team.orgId)
     .where('teamIds', 'array-contains', data.teamId).where('publicationState', '==', 'published')
-    .where('publicationOperationId', '==', null).where('deletedAt', '==', null).orderBy(FieldPath.documentId());
-  if (data.cursor) query = query.startAfter(data.cursor);
+    .where('publicationOperationId', '==', null).where('deletedAt', '==', null).orderBy('startsAt').orderBy(FieldPath.documentId());
+  if (data.cursor) {
+    const cursor = await tx.get(getFirestore().doc(`events/${data.cursor}`));
+    const event = cursor.data();
+    if (!event || event.orgId !== team.orgId || !event.teamIds?.includes(data.teamId) || !visible(event)) invalid('Reload the schedule before loading more.');
+    query = query.startAfter(cursor);
+  }
   const rows = await tx.get(query.limit(data.pageSize + 1));
   const items: Data[] = [];
   for (const row of rows.docs.slice(0, data.pageSize)) {

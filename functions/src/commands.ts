@@ -181,6 +181,8 @@ function changeEvent(deleting: boolean) {
         // Compatibility edits are restricted to unpublished, server-owned single-event drafts.
         if (event.status !== 'scheduled') throw new HttpsError('failed-precondition', 'This lifecycle is not editable yet.');
         changes = storageFields({ ...event, ...changes });
+        changes.homeTeamId = changes.type === 'match' && event.teamIds.length === 2 ? event.teamIds[0] : null;
+        changes.awayTeamId = changes.type === 'match' && event.teamIds.length === 2 ? event.teamIds[1] : null;
       }
     } else {
       await managedTeam(tx, id(event.teamId, 'stored teamId'), uid, actor.appRole === 'superAdmin');
