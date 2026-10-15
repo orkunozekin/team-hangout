@@ -1,3 +1,4 @@
+import { checkRevision } from './operations/revisions';
 import { eventScope } from './organizations/policy';
 import { v2Fields, teamIds, validateStoredEvent, storageFields, eventAudit } from './organizations/events';
 import { Data, invalid, object, keys, text, id, optional, revision, command } from './commandSupport';
@@ -178,7 +179,7 @@ function changeEvent(deleting: boolean) {
     }
     if (replay) return replay;
     const currentRevision = event.revision ?? 0;
-    if (currentRevision !== payload.expectedRevision) throw new HttpsError('aborted', 'This event changed. Reload it before saving.', { domainCode: 'STALE_REVISION', currentRevision });
+    checkRevision(event, payload.expectedRevision);
     if (event.deletedAt != null) throw new HttpsError('failed-precondition', 'This event was deleted. Reload the schedule.');
     const now = Timestamp.now(); const patch: DocumentData = deleting ? { deletedAt: now } : changes;
     if (patch.date) patch.date = Timestamp.fromDate(new Date(patch.date));

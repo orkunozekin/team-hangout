@@ -6,12 +6,12 @@ Translate the [approved product direction](../plans/product-plan.md#phase-2-depe
 
 | Field | Value |
 | --- | --- |
-| Status | planned |
-| Last updated | 2026-10-10 |
-| Implementation | Not started; documentation and source/API research only |
+| Status | in-progress |
+| Last updated | 2026-10-14 |
+| Implementation | P2.01 implemented and locally validated; PR review pending. P2.02 and later not started. |
 | Prerequisite | Phase 1 foundations, access-control migration, household agenda and web administration shell |
 | Commercial decision | Business model selection pending; no pricing, advertising, paid messaging, or billing enabled |
-| Related PR | Planning PR to be recorded by the delivering agent |
+| Related PR | P2.01 `codex/p2-01-operational-contracts`; PR pending |
 
 ## Goals and boundaries
 
@@ -309,19 +309,25 @@ Before pilot the owner must approve youth posting/history policy, data retention
 
 ### Done so far
 
+- P2.01 baseline verified against fetched remote `main` at `eec291f452374743701eb6fed25a0bb8fe629a8e` (merged PR #24), including final Phase 1 PR #22. Open PR #23 staging acceptance was not adopted or modified.
+- Existing canonical event commands, staff/program/coach scopes, participant/guardian and roster boundaries, household agenda/calendar, email and deletion interfaces inspected. The source inventory above is historical; direct client event writes were already replaced in Phase 1.
+- P2.01 adds operational JSON/native reader contracts, reusable server access/revision/receipt helpers, malformed-grant and identity defenses, and explicit legacy reader compatibility tests. Existing receipt hashes/storage and deletion coverage are preserved. No new user-linked storage, UI behavior, lifecycle command, deployment or production access.
+- Local Node 22 validation passed: native typecheck, 25 unit suites / 132 tests with coverage, Functions build, 7 pure contracts, 3 helper tests, and the full isolated backend suite (132 tests including deletion).
+- Focused `yarn test:operations` reuses isolated emulator configuration and includes deletion tests; full backend CI retains all suites. See `docs/backend-testing.md` for contracts and boundary details.
+
 - Product scope translated into contracts, bounded PR steps, feasibility evidence, explicit prototype gates and external release dependencies.
 - Existing native/server source and owner-app recurrence/RSVP/check-in logic inspected read-only.
 - Official SDK54 and backend documentation reviewed; no phase-2 behavior implemented or deployability claimed.
 
 ### Remaining work
 
-- Verify merged phase-1 schema/access/agenda interfaces, then implement **P2.01 only** on a `codex/` branch when instructed.
+- Finish P2.01 validation and AI review, then leave its regular PR for coordinator verification and gated merge. After verified merge, **P2.02** is the next step; it has not been started.
 - At the end of each step record PR, verified test evidence, migration status, next step and blockers here; do not mark later steps complete by association.
 - Preserve current account/team behavior during compatibility migration; update account deletion for all added user/access/device paths before release.
 
 ### Blockers and risks
 
-- Phase-1 contracts are prerequisites and must exist before operational access is safe.
+- Phase-1 contracts are present on verified main. Fresh head-linked Greptile 5/5 plus passing relevant CI remain pending for P2.01.
 - Bounded league scheduler feasibility, native binary upload, real push/email, scanner infrastructure and staging indexes require the listed proofs.
 - Database edition, deployment billing/IAM, email service, push credentials and physical device availability were not verified by this planning document.
 - Privacy policy decisions remain explicitly gated; commercial model selection remains pending.
@@ -331,3 +337,9 @@ Before pilot the owner must approve youth posting/history policy, data retention
 - Start with phase-1 merged contracts and existing event adapters/functions; implement the next named PR step only.
 - Do not port account-only RSVP identity, automatic no-show inference, unsupported native persistence/upload assumptions, or claims of exactly-once external delivery.
 - Treat source/API evidence as feasibility support; attach actual runtime/test proof as each capability is implemented.
+
+### P2.01 delivery ledger
+
+| Chat | Branch | PR | Head | Review |
+| --- | --- | --- | --- | --- |
+| `01a13d66-11c8-7a93-a9fc-c4c410a91ca6` | `codex/p2-01-operational-contracts` | Pending | Pending commit | Pending; not merged |

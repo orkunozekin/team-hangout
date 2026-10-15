@@ -47,7 +47,7 @@ export function v2Fields(value: unknown, partial = false): Data {
 export function validateStoredEvent(event: Data, scope: Awaited<ReturnType<typeof eventScope>>) {
   const ids = teamIds(event.teamIds);
   if (event.orgId !== scope.orgId || event.programId !== scope.programId || event.seasonId !== scope.seasonId
-    || event.teamId !== ids[0] || ids.length !== scope.teams.length
+    || event.teamId !== ids[0] || ids.length !== scope.teamIds.length || ids.some((id, index) => id !== scope.teamIds[index])
     || (event.divisionId !== null && scope.teams.some(team => team.divisionId !== event.divisionId))) denied();
   if (!['scheduled', 'postponed', 'cancelled', 'completed'].includes(event.status)
     || !['staged', 'published'].includes(event.publicationState) || event.publicationOperationId !== null) {

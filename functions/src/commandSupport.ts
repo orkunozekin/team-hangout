@@ -1,5 +1,6 @@
 import { accountAvailable } from './accountAccess';
-import { createHash } from 'node:crypto';
+import { fingerprint, receiptId } from './operations/requests';
+export { revision } from './operations/revisions';
 import { getFirestore, Timestamp, Transaction } from 'firebase-admin/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 
@@ -24,23 +25,12 @@ export function id(value: unknown, field: string): string {
 export function optional(value: unknown, field: string, max: number): string | null {
   return value == null || value === '' ? null : text(value, field, max);
 }
-export function revision(value: unknown): number {
-  if (!Number.isSafeInteger(value) || (value as number) < 0) invalid('Reload the record before saving.');
-  return value as number;
-}
 export function wire(value: any): any {
   if (value instanceof Timestamp) return value.toDate().toISOString();
   if (Array.isArray(value)) return value.map(wire);
   if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, wire(v)]));
   return value;
 }
-function stable(value: any): string {
-  if (value && typeof value === 'object') {
-    return `{${Object.keys(value).sort().map(k => `${JSON.stringify(k)}:${stable(value[k])}`).join(',')}}`;
-  }
-  return JSON.stringify(value);
-}
-const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 // Every command rechecks current authority before replaying a stored response.
 export function command(name: string, normalize: (data: Data) => Data,
   execute: (tx: Transaction, payload: Data, uid: string, actor: Data, replay: Data | null) => Promise<Data>) {
@@ -50,18 +40,17 @@ export function command(name: string, normalize: (data: Data) => Data,
     const data = object(request.data);
     const requestId = id(data.requestId, 'requestId');
     const payload = normalize(data);
-    const fingerprint = hash(stable(payload));
+    const payloadFingerprint = fingerprint(payload);
     const db = getFirestore();
-    const scope = payload.orgId ? `${payload.orgId}:` : "";
-    const receipt = db.doc(`commandRequests/${hash(`${uid}:${name}:${scope}${requestId}`)}`);
+    const receipt = db.doc(`commandRequests/${receiptId(uid, name, requestId, payload.orgId)}`);
     return db.runTransaction(async tx => {
       const actor = await accountAvailable(tx, uid);
       const previous = await tx.get(receipt);
-      if (previous.exists && previous.data()?.fingerprint !== fingerprint) {
+      if (previous.exists && previous.data()?.fingerprint !== payloadFingerprint) {
         throw new HttpsError('already-exists', 'This request ID was used for another change.', { domainCode: 'REQUEST_ID_REUSED' });
       }
       const result = wire(await execute(tx, payload, uid, actor, previous.data()?.result ?? null));
-      if (!previous.exists) tx.create(receipt, { uid, operation: name, fingerprint, result, createdAt: Timestamp.now() });
+      if (!previous.exists) tx.create(receipt, { uid, operation: name, fingerprint: payloadFingerprint, result, createdAt: Timestamp.now() });
       return result;
     });
   });

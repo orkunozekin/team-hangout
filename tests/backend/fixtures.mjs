@@ -15,3 +15,8 @@ export function requireEmulators() {
     throw new Error('Use yarn test:backend with the isolated demo project and loopback emulators.');
   }
 }
+
+/** Callable fixture shared by Phase 1 compatibility and operational boundary tests. */
+export const operationalEventFields = { title: 'Synthetic practice', type: 'practice',
+  startsAt: '2026-10-11T23:00:00.000Z', endsAt: '2026-10-12T00:00:00.000Z',
+  timeZone: 'America/Chicago', status: 'scheduled', publicationState: 'staged' };

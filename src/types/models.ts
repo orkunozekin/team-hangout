@@ -83,3 +83,7 @@ export interface UpdateEventInput {
   location?: EventLocation | null;
   notes?: string | null;
 }
+
+/** Canonical operations remain distinct from the legacy split date/time UI contract. */
+export type { CanonicalTeamEvent } from '../firebase/operationalEvents';
+export type { EventStatus, PublicationState, AvailabilityStatus, AttendanceStatus, AttendanceSource, RevisionRequest } from '../../shared/operations';
