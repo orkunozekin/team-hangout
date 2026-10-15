@@ -8,7 +8,7 @@ Translate the [approved product direction](../plans/product-plan.md#phase-2-depe
 | --- | --- |
 | Status | in-progress |
 | Last updated | 2026-10-14 |
-| Implementation | P2.01 implemented and locally validated; PR review pending. P2.02 and later not started. |
+| Implementation | P2.01 implemented and locally validated in PR #25; current-head review and CI are recorded on the linked PR. P2.02 and later not started. |
 | Prerequisite | Phase 1 foundations, access-control migration, household agenda and web administration shell |
 | Commercial decision | Business model selection pending; no pricing, advertising, paid messaging, or billing enabled |
 | Related PR | [P2.01 PR #25](https://github.com/orkunozekin/team-hangout/pull/25), `codex/p2-01-operational-contracts` |
@@ -321,13 +321,13 @@ Before pilot the owner must approve youth posting/history policy, data retention
 
 ### Remaining work
 
-- Finish P2.01 AI review and relevant CI, then leave its regular PR for coordinator verification and gated merge. After verified merge, **P2.02** is the next step; it has not been started.
+- Coordinator must independently verify current-head AI review and relevant CI on P2.01 PR #25 before its gated merge. After verified merge, **P2.02** is the next step; it has not been started.
 - At the end of each step record PR, verified test evidence, migration status, next step and blockers here; do not mark later steps complete by association.
 - Preserve current account/team behavior during compatibility migration; update account deletion for all added user/access/device paths before release.
 
 ### Blockers and risks
 
-- Phase-1 contracts are present on verified main. Fresh head-linked Greptile 5/5 plus passing relevant CI remain pending for P2.01.
+- Phase-1 contracts are present on verified main. P2.01 remains unmerged; current-head Greptile 5/5 and passing relevant CI are required and must be verified from the linked PR before coordinator merge. Macroscope skips provide no approval evidence.
 - Bounded league scheduler feasibility, native binary upload, real push/email, scanner infrastructure and staging indexes require the listed proofs.
 - Database edition, deployment billing/IAM, email service, push credentials and physical device availability were not verified by this planning document.
 - Privacy policy decisions remain explicitly gated; commercial model selection remains pending.
@@ -342,4 +342,4 @@ Before pilot the owner must approve youth posting/history policy, data retention
 
 | Chat | Branch | PR | Head | Review |
 | --- | --- | --- | --- | --- |
-| `01a13d66-11c8-7a93-a9fc-c4c410a91ca6` | `codex/p2-01-operational-contracts` | [#25](https://github.com/orkunozekin/team-hangout/pull/25) | Implementation `42324f23e63051e6bf0814db5452d6274ec3e1eb`; ledger-only follow-up, current PR head authoritative | CI and Greptile running; not merged |
+| `01a13d66-11c8-7a93-a9fc-c4c410a91ca6` | `codex/p2-01-operational-contracts` | [#25](https://github.com/orkunozekin/team-hangout/pull/25) | Implementation `42324f23e63051e6bf0814db5452d6274ec3e1eb`; ledger-only follow-up, current PR head authoritative | Greptile 5/5 at `f8bb02fdf3f9d9989a5beca4bb9cff91cce3488e`; no actionable findings/threads. Current-head review and CI: linked PR summary/checks are authoritative. Not merged. |
