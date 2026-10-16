@@ -127,6 +127,22 @@ test('changed canonical event is explicitly reconciled without overwrite and clo
   const done = await advance(o); assert.deepEqual(done.mismatches, [event.id]); assert.equal(done.postponed, 0);
   const stored = (await db.doc(`events/${event.id}`).get()).data(); assert.equal(stored.title, 'Trusted maintenance edit'); assert.equal(stored.revision, 2);
   assert.equal((await call('getCanonicalEvent', { eventId: event.id })).status, 'postponed');
+  const reconciled = await call('mutateEventSchedule',req({eventId:event.id,expectedRevision:2,action:'reschedule',patch:{startsAt:at(29,12),endsAt:at(29,13),timeZone:'UTC'},reason:'Explicit mismatch reconciliation'}));
+  assert.equal(reconciled.revision,3);assert.equal((await db.doc(`events/${event.id}`).get()).data().status,'scheduled');
+});
+test('closure postponements require reviewed makeups while ordinary postponements and mismatch reconciliation retain rescheduling', async () => {
+  const { f, event } = await fixture({ teamIds:['p208-a'], type:'practice' });
+  await advance(await apply(await preview(f)));
+  const patch={startsAt:at(26,12),endsAt:at(26,13),timeZone:'UTC'};
+  for(const uid of ['p208-owner','p208-coach']) await code(call('mutateEventSchedule',req({eventId:event.id,expectedRevision:2,action:'reschedule',patch,reason:'Ordinary reschedule bypass'}),uid),'MAKEUP_REVIEW_REQUIRED');
+  const unchanged=(await db.doc(`events/${event.id}`).get()).data();assert.equal(unchanged.revision,2);assert.equal(unchanged.status,'postponed');
+  assert.equal((await db.collection(`events/${event.id}/scheduleHistory`).get()).size,1);
+  await deny(call('previewEventMakeup',req({orgId,eventId:event.id,expectedRevision:2,patch:{...patch,facilityId:f,resourceId:'r0'},reason:'Coach bypass'}),'p208-coach'));
+  const reviewed=await call('previewEventMakeup',req({orgId,eventId:event.id,expectedRevision:2,patch:{...patch,facilityId:f,resourceId:'r0'},reason:'Staff reviewed makeup'}));
+  await call('confirmEventMakeup',req({orgId,previewId:reviewed.previewId,previewHash:reviewed.previewHash,confirmed:true}));
+  assert.equal((await db.doc(`events/${event.id}`).get()).data().closureId,null);
+  await call('mutateEventSchedule',req({eventId:event.id,expectedRevision:3,action:'postpone',reason:'Ordinary later postponement'}));
+  assert.equal((await call('mutateEventSchedule',req({eventId:event.id,expectedRevision:4,action:'reschedule',patch:{...patch,startsAt:at(27,12),endsAt:at(27,13)},reason:'Ordinary later reschedule'}))).revision,5);
 });
 test('live access, revocation, cross-tenant denial, deleting accounts and server-only rules protect previews and recovery', async () => {
   const { f } = await fixture();
@@ -201,6 +217,9 @@ test('retained facility history and unrelated coaches do not disable current rea
       startsAt:Timestamp.fromDate(new Date('2020-01-01T00:00:00.000Z')),endsAt:Timestamp.fromDate(new Date('2020-01-01T01:00:00.000Z')),
       resourceOccupancy:{ ...stored.resourceOccupancy,startsAt:Timestamp.fromDate(new Date('2019-12-31T23:45:00.000Z')),endsAt:Timestamp.fromDate(new Date('2020-01-01T01:10:00.000Z')) },
       status:['scheduled','completed','cancelled'][i%3],publicationState:i%2?'published':'staged',deletedAt:i%3===0?Timestamp.now():null });
+    await put(db.doc(`events/p208-inactive-${f}-${i}`),{...stored,teamId:'p208-c',teamIds:['p208-c'],type:'practice',homeTeamId:null,awayTeamId:null,
+      startsAt:Timestamp.fromDate(new Date(at(28,12))),endsAt:Timestamp.fromDate(new Date(at(28,13))),facilityId:null,resourceId:null,resourceOccupancy:null,
+      status:['cancelled','scheduled','completed','postponed'][i%4],publicationState:i%4===1?'staged':'published',deletedAt:i%4===2?Timestamp.now():null});
     await put(db.doc(`teamMembers/p208-c_unrelated-${i}`),{ ...meta,orgId,teamId:'p208-c',userId:`unrelated-${i}`,roles:['coach'] });
   }
   if(writes) await batch.commit();
@@ -220,7 +239,7 @@ test('retained facility history and unrelated coaches do not disable current rea
   assert.equal(reviewed.result.impacted.length,1);assert.equal(reviewed.reads.events.documents,1);
   await advance(await apply(reviewed.result));
   const proposal=req({orgId,eventId:event.id,expectedRevision:2,patch:{startsAt:at(28,12),endsAt:at(28,13),timeZone:'UTC',facilityId:f,resourceId:'r0'},reason:'Reviewed makeup'});
-  const makeup=await instrument(previewEventMakeup,proposal);assert.ok(makeup.result.previewId);assert.equal(makeup.reads.teamMembers.documents,1);
+  const makeup=await instrument(previewEventMakeup,proposal);assert.ok(makeup.result.previewId);assert.equal(makeup.reads.teamMembers.documents,1);assert.equal(makeup.reads.events.documents,0);
   const moved=await call('confirmEventMakeup',req({orgId,previewId:makeup.result.previewId,previewHash:makeup.result.previewHash,confirmed:true}));assert.equal(moved.id,event.id);
 });
 test('real fifty-event reads share one facility closure scan and refresh across transactions and revoked grants', async () => {

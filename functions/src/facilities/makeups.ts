@@ -122,6 +122,9 @@ async function validate(tx: Transaction, d: Data, uid: string) {
     db()
       .collection("events")
       .where("orgId", "==", d.orgId)
+      .where("status", "in", ["scheduled", "completed"])
+      .where("publicationState", "==", "published")
+      .where("deletedAt", "==", null)
       .where(
         "endsAt",
         ">",
@@ -360,6 +363,7 @@ export const confirmEventMakeup = command(
       uid,
       actor,
       null,
+      true,
     );
   },
 );

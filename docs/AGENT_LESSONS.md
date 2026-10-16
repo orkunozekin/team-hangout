@@ -246,3 +246,10 @@
 - **Gap:** Lifetime facility closure/event scans and tenant-wide membership scans let unrelated retained history exhaust current read and makeup budgets.
 - **Going forward:** Apply interval and lifecycle filters at the database boundary, include maximum booking/buffer lookback, and scope coach reads to participating and overlapping-event teams. Prime finite visible pages per facility within each transaction attempt. Exercise actual handlers with more than 1,000 unrelated historical records and assert returned query document counts.
 - **Pointers:** `functions/src/facilities/{closures,makeups}.ts`, `functions/src/scheduling/drafts.ts`, `tests/backend/closures.test.mjs`.
+
+### 2026-10-16 — Guard compatibility mutations as well as new workflows
+
+- **Source:** PR #32 · actual second GitHub Codex review at `27daeb0`.
+- **Gap:** The reviewed makeup callable enforced policy but ordinary native lifecycle rescheduling could bypass it after a closure was materialized. Interval-bounded makeup queries still counted inactive events before filtering.
+- **Going forward:** Enforce the reviewed transition at the shared mutation boundary with a server-only adapter flag; exercise the existing client callable for staff and coach bypass attempts, ordinary later postponement, and deliberate mismatch reconciliation. Apply lifecycle/publication/deletion predicates before query limits and seed more than 1,000 inactive records in the exact proposed interval.
+- **Pointers:** `functions/src/operations/events.ts`, `functions/src/facilities/makeups.ts`, `tests/backend/closures.test.mjs`.

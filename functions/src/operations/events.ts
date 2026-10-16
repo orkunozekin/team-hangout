@@ -180,7 +180,7 @@ export const mutateEventSchedule = command('mutateEventSchedule', data => {
   return { eventId: id(data.eventId, 'eventId'), expectedRevision: revision(data.expectedRevision), action,
     patch: ['edit', 'reschedule'].includes(action) ? v2Fields(patch, true) : {}, reason: text(data.reason, 'reason', 500) };
 }, lifecycleMutation);
-export async function lifecycleMutation(tx: Transaction, data: Data, uid: string, _actor: Data, replay: Data | null) {
+export async function lifecycleMutation(tx: Transaction, data: Data, uid: string, _actor: Data, replay: Data | null, reviewedMakeup = false) {
   const db = getFirestore(); const ref = db.doc(`events/${data.eventId}`);
   const event = (await tx.get(ref)).data();
   if (!event || event.schemaVersion !== 2) denied();
@@ -193,6 +193,9 @@ export async function lifecycleMutation(tx: Transaction, data: Data, uid: string
     || (['postpone', 'complete'].includes(data.action) && event.status !== 'scheduled')) {
     throw new HttpsError('failed-precondition', 'This action is unavailable for the current event status.');
   }
+  if (data.action === 'reschedule' && event.status === 'postponed' && event.closureId != null && !reviewedMakeup) {
+    throw new HttpsError('failed-precondition', 'Use Closures and makeups in the browser workspace to review and confirm this closure makeup.', { domainCode: 'MAKEUP_REVIEW_REQUIRED' });
+  }
   if (['complete', 'edit'].includes(data.action)) await requireOpenInterval(tx, event);
   const now = Timestamp.now(); const nextRevision = event.revision + 1;
   const changes: Data = { ...data.patch };
@@ -200,6 +203,7 @@ export async function lifecycleMutation(tx: Transaction, data: Data, uid: string
     homeTeamId: data.patch.type === 'match' && event.teamIds.length === 2 ? event.teamIds[0] : null,
     awayTeamId: data.patch.type === 'match' && event.teamIds.length === 2 ? event.teamIds[1] : null });
   if (data.action === 'reschedule') {
+    if (reviewedMakeup) changes.closureId = null;
     if (event.startsAt.toMillis() === Date.parse(data.patch.startsAt) && event.endsAt.toMillis() === Date.parse(data.patch.endsAt)
       && event.timeZone === data.patch.timeZone) invalid('Choose a different schedule.');
     Object.assign(changes, storageFields({ ...data.patch }), { status: 'scheduled', scheduleVersion: (event.scheduleVersion ?? 1) + 1,
