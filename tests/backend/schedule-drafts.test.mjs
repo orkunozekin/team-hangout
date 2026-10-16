@@ -232,7 +232,7 @@ test("complete generation, nonempty manual edit, independent validation and immu
   );
   await assert.rejects(
     invoke("publishScheduleDraft", req(identity(v))),
-    (e) => e.details?.domainCode === "PUBLICATION_DISABLED",
+    (e) => e.details?.domainCode === "CONFIRM_PUBLICATION",
   );
   assert.equal(
     (await db.collection("events").where("orgId", "==", orgId).get()).size,

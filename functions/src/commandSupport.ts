@@ -1,3 +1,5 @@
+import { cacheDocumentReads } from './operations/reads';
+import { commandScheduleMutation } from './scheduling/lease';
 import { accountAvailable } from './accountAccess';
 import { fingerprint, receiptId } from './operations/requests';
 export { revision } from './operations/revisions';
@@ -44,12 +46,15 @@ export function command(name: string, normalize: (data: Data) => Data,
     const db = getFirestore();
     const receipt = db.doc(`commandRequests/${receiptId(uid, name, requestId, payload.orgId)}`);
     return db.runTransaction(async tx => {
+      tx = cacheDocumentReads(tx);
       const actor = await accountAvailable(tx, uid);
       const previous = await tx.get(receipt);
       if (previous.exists && previous.data()?.fingerprint !== payloadFingerprint) {
         throw new HttpsError('already-exists', 'This request ID was used for another change.', { domainCode: 'REQUEST_ID_REUSED' });
       }
+      const fence = !previous.exists ? await commandScheduleMutation(tx, name, payload) : null;
       const result = wire(await execute(tx, payload, uid, actor, previous.data()?.result ?? null));
+      if (fence) fence();
       if (!previous.exists) tx.create(receipt, { uid, operation: name, fingerprint: payloadFingerprint, result, createdAt: Timestamp.now() });
       return result;
     });

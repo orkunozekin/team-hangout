@@ -1,3 +1,4 @@
+import { scheduleMutation } from '../scheduling/lease';
 import { createHash } from "node:crypto";
 import { getFirestore, Timestamp, Transaction } from "firebase-admin/firestore";
 import { HttpsError } from "firebase-functions/v2/https";
@@ -345,6 +346,7 @@ export async function resolveScheduleRow(
   return { ok: true };
 }
 export async function commitScheduleRow(tx: Transaction, job: Data, row: Data) {
+  const fence = await scheduleMutation(tx, job.orgId);
   if (row.resolution === "skip")
     return () => tx.update(rowRef(job, row.number), { outcome: "skipped" });
   if (
@@ -428,6 +430,7 @@ export async function commitScheduleRow(tx: Transaction, job: Data, row: Data) {
     ...metadata(job.ownerUid, before),
   };
   return () => {
+    fence();
     tx.set(ref, event);
     tx.set(ledgerRef, {
       orgId: job.orgId,

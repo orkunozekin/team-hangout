@@ -232,3 +232,10 @@
 - **Gap:** The large slot/constraint regression used empty blackout arrays, leaving 32 constraints times 128 interval editors unbounded even after slot paging.
 - **Going forward:** Include accepted nested-array ceilings in rendered tests. Page interval controls per constraint, preserve hidden intervals on save, and assert input counts on a real callable-created maximum-blackout draft.
 - **Pointers:** `admin/src/ScheduleDrafts.tsx`, accepted 32-team/128-blackouts-per-team browser regression.
+
+### 2026-10-16 — Publication recovery and shared marker reads
+
+- **Source:** PR #31 · GitHub Codex review at `2680eed`.
+- **Gap:** A publication panel keyed only by draft ID retained an aborted operation after the same draft was edited and revalidated. Facility reservation scans also read the same operation marker once per event.
+- **Going forward:** Refresh operation state when the draft revision changes, and share transaction-local canonical document reads across command fencing, authority checks and visibility scans. Exercise abort/edit/revalidate/restart without focus or reload, and measure repeated marker reads against a real multi-event publication.
+- **Pointers:** `admin/src/SchedulePublication.tsx`, `functions/src/commandSupport.ts`, `tests/backend/schedule-publication.test.mjs`.

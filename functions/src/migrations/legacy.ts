@@ -1,3 +1,4 @@
+import { scheduleMutation } from '../scheduling/lease';
 /** Offline, reviewed tooling only. No callable exports and no email/rollout writes. */
 import { createHash } from 'node:crypto';
 import { Firestore, Timestamp } from 'firebase-admin/firestore';
@@ -168,6 +169,9 @@ export async function applyPlan(db: Firestore, plan: Plan, approvedChecksum: str
         return false;
       }
       requireValue(checksum(current.data() ?? null) === checksum(operation.before), `Source/target changed: ${operation.path}`);
+      const orgId = operation.after?.orgId;
+      const fence = orgId ? await scheduleMutation(tx, orgId, false, db) : null;
+      if (fence) fence();
       tx.set(target, operation.after);
       tx.create(checkpoint, { checksum: digest, path: operation.path, before: operation.before, after: operation.after });
       return true;

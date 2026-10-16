@@ -66,7 +66,7 @@ test('one canonical match is visible from either team and live household grants,
   await db.doc('teams/p202-b/roster/p202-child').update({ status: 'removed' });
   await deny(call('p202-self', 'getCanonicalEvent', { eventId: event.id }));
 });
-test('staging and every non-null operation remain invisible and client rules cannot expose canonical events', async () => {
+test('staging and malformed operation markers remain invisible and client rules cannot expose canonical events', async () => {
   const staged = await create({ publicationState: 'staged' });
   await deny(call('p202-admin', 'getCanonicalEvent', { eventId: staged.id }));
   await assert.rejects(mutate(staged, 'cancel'), { code: 'functions/failed-precondition' });
@@ -76,7 +76,7 @@ test('staging and every non-null operation remain invisible and client rules can
     await db.doc(`events/${event.id}`).update({ publicationOperationId: 'p202-bulk' });
     await deny(call('p202-admin', 'getCanonicalEvent', { eventId: event.id }));
     assert.ok(!(await call('p202-admin', 'listCanonicalTeamEvents', { teamId: 'p202-a' })).items.some(row => row.id === event.id));
-    await assert.rejects(mutate(event, 'edit', { title: 'Cannot clear marker' }), { code: 'functions/invalid-argument' });
+    await assert.rejects(mutate(event, 'edit', { title: 'Cannot clear marker' }), { code: 'functions/failed-precondition' });
   }
   await assert.rejects(getDoc(doc(clientDb(apps['p202-admin']), 'events', event.id)), { code: 'permission-denied' });
   await assert.rejects(setDoc(doc(clientDb(apps['p202-admin']), 'events', event.id), { publicationOperationId: null }, { merge: true }), { code: 'permission-denied' });

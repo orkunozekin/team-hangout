@@ -141,7 +141,7 @@ async function fill(page: Page, partial = false) {
     .getByText("Candidate slots and team constraints", { exact: true })
     .click();
 }
-test("complete and partial schedules, manual edit invalidation, conflicts, reload and disabled publishing", async ({
+test("complete and partial schedules, manual edit invalidation, conflicts, reload and deliberate publishing", async ({
   page,
 }) => {
   await open(page);
@@ -179,7 +179,7 @@ test("complete and partial schedules, manual edit invalidation, conflicts, reloa
     page.getByRole("heading", { name: "Hard conflicts", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Publish schedule (disabled)" }),
+    page.getByRole("button", { name: "Start publication" }),
   ).toBeDisabled();
   expect(
     (await db.collection("events").where("orgId", "==", orgId).get()).size,
@@ -246,9 +246,11 @@ test("uncertain generate retries exact action, stale save preserves correction, 
   let release!: () => void, held!: () => void;
   const wait = new Promise<void>((r) => (release = r)),
     ready = new Promise<void>((r) => (held = r));
-  await page.route("**/getAdminWorkspace", async (route) => {
+  const authorizationResponses = new Set<string>();
+  await page.route(/\/(getAdminWorkspace|getSchedulePublication)$/, async (route) => {
     const response = await route.fetch();
-    held();
+    authorizationResponses.add(new URL(route.request().url()).pathname.split("/").at(-1)!);
+    if (authorizationResponses.size === 2) held();
     await wait;
     await route.fulfill({ response });
   });
@@ -637,4 +639,71 @@ test("accepted 32-team draft with 128 blackouts per team pages interval controls
     await clientApp.deleteApp(client);
     for (const id of extra) await db.doc(`teams/${id}`).delete();
   }
+});
+
+test("deliberate publication recovers an uncertain chunk, reloads progress and commits the complete batch", async ({ page }) => {
+  await open(page);
+  await fill(page);
+  await page.getByRole("button", { name: "Generate private draft", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Complete schedule", exact: true })).toBeVisible();
+  const start = page.getByRole("button", { name: "Start publication" });
+  await expect(start).toBeDisabled();
+  await page.getByLabel("I have reviewed this complete schedule and want to publish it.").check();
+  await expect(start).toBeEnabled();
+  await start.click();
+  await expect(page.getByText("Staged 0 of 6 · Promoted 0 of 6")).toBeVisible();
+  const requests: unknown[] = [];
+  let lost = true;
+  await page.route("**/advanceSchedulePublication", async route => {
+    requests.push(route.request().postDataJSON());
+    if (lost) { lost = false; await route.fetch(); await route.abort("failed"); }
+    else await route.continue();
+  });
+  await page.getByRole("button", { name: "Continue next chunk" }).click();
+  await expect(page.getByRole("button", { name: "Retry same publication action" })).toBeVisible();
+  await page.getByRole("button", { name: "Retry same publication action" }).click();
+  expect(requests[0]).toEqual(requests[1]);
+  await expect(page.getByText("Staged 6 of 6 · Promoted 0 of 6")).toBeVisible();
+  const rows = await db.collection(`organizations/${orgId}/scheduleOperations`).get();
+  const op = rows.docs.find((r: { data: () => { state: string } }) => r.data().state === "promoting")!;
+  await page.reload();
+  await page.getByLabel("Existing draft ID").fill(op.data().draftId);
+  await page.getByRole("button", { name: "Load draft", exact: true }).click();
+  await expect(page.getByText("Staged 6 of 6 · Promoted 0 of 6")).toBeVisible();
+  await page.getByRole("button", { name: "Resume interrupted publication" }).click();
+  await page.getByRole("button", { name: "Continue next chunk" }).click();
+  await expect(page.getByRole("button", { name: "Verify and commit publication" })).toBeVisible();
+  expect((await db.collection(`organizations/${orgId}/outbox`).get()).size).toBe(0);
+  await page.getByRole("button", { name: "Verify and commit publication" }).click();
+  await expect(page.getByText("Published. The complete schedule is available to authorized teams and households.")).toBeVisible();
+  expect((await db.collection(`organizations/${orgId}/outbox`).get()).size).toBe(1);
+});
+
+test("abort then save and revalidate restarts publication without focus or reload", async ({ page }) => {
+  await open(page);
+  await fill(page);
+  await page.getByLabel("Range start (UTC)", { exact: true }).fill("2035-02-02T12:00:00.000Z");
+  await page.getByLabel("Range end (UTC, exclusive)", { exact: true }).fill("2035-02-07T13:00:00.000Z");
+  await page.getByText("Candidate slots and team constraints", { exact: true }).click();
+  for (let i = 0; i < 6; i++) {
+    await page.getByLabel(`UTC start for slot ${i + 1}`, { exact: true }).fill(`2035-02-0${i + 2}T12:00:00.000Z`);
+    await page.getByLabel(`UTC end for slot ${i + 1}`, { exact: true }).fill(`2035-02-0${i + 2}T13:00:00.000Z`);
+  }
+  await page.getByText("Candidate slots and team constraints", { exact: true }).click();
+  await page.getByRole("button", { name: "Generate private draft", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Complete schedule", exact: true })).toBeVisible();
+  await page.getByLabel("I have reviewed this complete schedule and want to publish it.").check();
+  await page.getByRole("button", { name: "Start publication", exact: true }).click();
+  await expect(page.getByText("Staged 0 of 6 · Promoted 0 of 6")).toBeVisible();
+  await page.getByRole("button", { name: "Abort hidden publication", exact: true }).click();
+  await expect(page.getByText("Publication aborted. Batch events remain hidden.")).toBeVisible();
+  await page.getByLabel("Draft title", { exact: true }).fill("Reviewed after abort");
+  await page.getByRole("button", { name: "Save edits as unvalidated draft", exact: true }).click();
+  await page.getByRole("button", { name: "Revalidate saved draft", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Complete schedule", exact: true })).toBeVisible();
+  await page.getByLabel("I have reviewed this complete schedule and want to publish it.").check();
+  await page.getByRole("button", { name: "Start publication", exact: true }).click();
+  await expect(page.getByText("Staged 0 of 6 · Promoted 0 of 6")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Continue next chunk", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Abort hidden publication", exact: true }).click();
 });

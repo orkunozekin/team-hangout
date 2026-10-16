@@ -18,7 +18,7 @@ test('staging discovery bounds every export and never loads the email provider w
   const result = metadata('team-hangout-staging');
   assert.equal(result.mailLoaded, false);
   for (const name of ['previewRecurrenceDraft', 'saveRecurrenceDraft', 'getRecurrenceDraft', 'generateScheduleDraft', 'saveScheduleDraft', 'validateScheduleDraft', 'getScheduleDraft', 'publishScheduleDraft']) assert.ok(result.endpoints.some(e => e.name === name));
-  assert.equal(result.endpoints.length, 81);
+  assert.equal(result.endpoints.length, 83);
   assert.equal(result.endpoints.some(e => e.name === 'resumeEssentialEmail'), false);
   for (const endpoint of result.endpoints) {
     assert.equal(endpoint.max, 2, endpoint.name);
@@ -31,7 +31,7 @@ test('other project discovery keeps the email worker and existing scaling defaul
   for (const project of ['demo-team-hangout', 'non-staging-project']) {
     const result = metadata(project);
     assert.equal(result.mailLoaded, true);
-    assert.equal(result.endpoints.length, 82);
+    assert.equal(result.endpoints.length, 84);
     assert.ok(result.endpoints.some(e => e.name === 'resumeEssentialEmail'));
     const agenda = result.endpoints.find(e => e.name === 'listHouseholdAgenda');
     assert.equal(agenda.max, null);

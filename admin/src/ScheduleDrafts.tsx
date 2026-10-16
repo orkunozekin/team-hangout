@@ -1,3 +1,4 @@
+import { SchedulePublication } from "./SchedulePublication";
 import { useEffect, useRef, useState } from "react";
 import type { DraftFields, ScheduleDraft } from "../../shared/scheduleDrafts";
 import type { BrowserServices } from "./firebase";
@@ -149,7 +150,9 @@ export function ScheduleDrafts({
     setRetry(null);
     setNotice(
       loaded
-        ? `Loaded revision ${result.revision}. Revalidate against current conditions.`
+        ? result.publicationOperationId
+          ? `Loaded revision ${result.revision}. Recover or inspect the recorded publication below.`
+          : `Loaded revision ${result.revision}. Revalidate against current conditions.`
         : `Saved private draft revision ${result.revision}. No events published or resources reserved.`,
     );
   }
@@ -239,7 +242,7 @@ export function ScheduleDrafts({
       <h1>League schedule drafts</h1>
       <p>
         Generate a finite schedule, review conflicts and adjust assignments. All
-        results stay private. Publishing is disabled.
+        results stay private until an explicit publication completes.
       </p>
       {error && (
         <p className="error" role="alert">
@@ -254,7 +257,9 @@ export function ScheduleDrafts({
       {!ready && !denied && <p role="status">Checking staff access…</p>}
       {ready && !denied && (
         <>
-          <fieldset disabled={busy || !!retry}>
+          <fieldset
+            disabled={busy || !!retry || !!draft?.publicationOperationId}
+          >
             <section className="panel">
               <h2>Draft and constraints</h2>
               <div className="form-grid">
@@ -274,7 +279,10 @@ export function ScheduleDrafts({
                 </button>
               </div>
               <p className="small muted">
-                Draft {draftId} · Revision {draft?.revision ?? 0} · PRIVATE
+                Draft {draftId} · Revision {draft?.revision ?? 0} ·{" "}
+                {draft?.publicationOperationId
+                  ? "PUBLICATION RECORDED"
+                  : "PRIVATE"}
               </p>
               <div className="form-grid">
                 <label>
@@ -839,15 +847,20 @@ export function ScheduleDrafts({
               <section className="panel">
                 <div className="page-heading">
                   <h2>Schedule review</h2>
-                  <span className="badge">PRIVATE DRAFT</span>
+                  <span className="badge">
+                    {draft.publicationOperationId
+                      ? "PUBLICATION RECORDED"
+                      : "PRIVATE DRAFT"}
+                  </span>
                 </div>
                 <p className="small muted">
                   Season timezone: {draft.timeZone}. Slot times below are UTC.
                 </p>
                 {!validation ? (
                   <p role="status">
-                    Validation required. Save edited assignments before
-                    revalidating. Previous validation no longer applies.
+                    {draft.publicationOperationId
+                      ? "Publication rechecks current conditions on every chunk. Draft editing is locked."
+                      : "Validation required. Save edited assignments before revalidating. Previous validation no longer applies."}
                   </p>
                 ) : (
                   <>
@@ -1120,9 +1133,39 @@ export function ScheduleDrafts({
               Retry same action
             </button>
           )}
-          <button type="button" disabled>
-            Publish schedule (disabled)
-          </button>
+          {draft && (
+            <SchedulePublication
+              key={draft.draftId}
+              services={services}
+              orgId={orgId}
+              draft={draft}
+              eligible={
+                ready &&
+                !busy &&
+                !retry &&
+                !dirty &&
+                !unsaved &&
+                !!validation?.valid &&
+                validation.unscheduledFixtureIds.length === 0
+              }
+              onError={(e) => {
+                if (
+                  [
+                    "functions/permission-denied",
+                    "functions/unauthenticated",
+                  ].includes(errorCode(e))
+                )
+                  fail(e);
+              }}
+              onPublication={(id) =>
+                setDraft((current) =>
+                  current
+                    ? { ...current, publicationOperationId: id }
+                    : current,
+                )
+              }
+            />
+          )}
           {busy && <p role="status">Checking current records…</p>}
         </>
       )}

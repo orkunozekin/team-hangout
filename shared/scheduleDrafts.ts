@@ -7,6 +7,7 @@ import type {
 import type { DraftFields } from "../functions/src/scheduling/model";
 export type { DraftFields } from "../functions/src/scheduling/model";
 export type ScheduleDraft = {
+  publicationOperationId: string | null;
   timeZone: string;
   draftId: string;
   divisionId: string;
@@ -34,5 +35,35 @@ export type DraftCommands = {
   };
   validateScheduleDraft: { input: Edit; output: ScheduleDraft };
   getScheduleDraft: { input: Identity; output: ScheduleDraft };
-  publishScheduleDraft: { input: Edit; output: never };
+  publishScheduleDraft: {
+    input: Edit & { confirmed: true };
+    output: SchedulePublication;
+  };
+  getSchedulePublication: {
+    input: Identity;
+    output: { operation: SchedulePublication | null };
+  };
+  advanceSchedulePublication: {
+    input: Identity & {
+      requestId: string;
+      operationId: string;
+      expectedRevision: number;
+      fencingToken: number;
+      action: "advance" | "resume" | "abort";
+    };
+    output: SchedulePublication;
+  };
+};
+
+export type SchedulePublication = {
+  operationId: string;
+  draftId: string;
+  revision: number;
+  state: "staging" | "promoting" | "verifying" | "committed" | "aborted";
+  stagingCursor: number;
+  promotionCursor: number;
+  total: number;
+  fencingToken: number;
+  expiresAt: string;
+  committedAt: string | null;
 };

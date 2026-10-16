@@ -1,3 +1,4 @@
+import { publishedEvent } from '../scheduling/visibility';
 import { validateResourceAssignment, commitResourceAssignment } from '../facilities/service';
 import { cacheDocumentReads } from './reads';
 import { FieldPath, getFirestore, Timestamp, Transaction } from 'firebase-admin/firestore';
@@ -8,7 +9,7 @@ import { storageFields, teamIds, v2Fields, validateStoredEvent, eventAudit } fro
 import { readCommand, page } from '../participants/policy';
 import { readAgenda } from '../calendar/agenda';
 
-const visible = (event: Data) => event.deletedAt == null && event.publicationState === 'published' && event.publicationOperationId === null;
+
 // Reuse the existing live staff/coach/participant/guardian reader; navigation pointers grant nothing.
 async function readableTeam(tx: Transaction, teamId: string, uid: string, household?: () => Promise<Data>) {
   const team = (await tx.get(getFirestore().doc(`teams/${teamId}`))).data();
@@ -97,11 +98,12 @@ export const listCanonicalTeamEvents = readCommand(data => {
   tx = cacheDocumentReads(tx);
   const management = new Map<string, Promise<boolean>>();
   const team = await readableTeam(tx, data.teamId, uid);
+  const publicationVersion = (await tx.get(getFirestore().doc(`organizations/${team.orgId}/schedulingLock/current`))).data()?.visibilityRevision ?? 0;
   let cutoff = Timestamp.now().toDate().toISOString();
   let boundary: Data | null = null;
   if (data.cursor) {
     try { boundary = JSON.parse(Buffer.from(data.cursor, 'base64url').toString('utf8')); } catch { invalid('Invalid schedule cursor.'); }
-    if (!boundary || boundary.orgId !== team.orgId || boundary.teamId !== data.teamId || boundary.view !== data.view
+    if (!boundary || boundary.orgId !== team.orgId || boundary.teamId !== data.teamId || boundary.view !== data.view || boundary.publicationVersion !== publicationVersion
       || typeof boundary.cutoff !== 'string' || !Number.isFinite(Date.parse(boundary.cutoff))
       || new Date(boundary.cutoff).toISOString() !== boundary.cutoff
       || typeof boundary.startsAt !== 'string' || !Number.isFinite(Date.parse(boundary.startsAt))
@@ -110,19 +112,28 @@ export const listCanonicalTeamEvents = readCommand(data => {
   }
   let query = getFirestore().collection('events').where('orgId', '==', team.orgId)
     .where('teamIds', 'array-contains', data.teamId).where('publicationState', '==', 'published')
-    .where('publicationOperationId', '==', null).where('deletedAt', '==', null);
+    .where('deletedAt', '==', null);
   if (data.view !== 'all') query = query.where('startsAt', data.view === 'past' ? '<' : '>=', Timestamp.fromDate(new Date(cutoff)));
   const direction = data.view === 'past' ? 'desc' : 'asc';
   query = query.orderBy('startsAt', direction).orderBy(FieldPath.documentId(), direction);
   if (boundary) query = query.startAfter(Timestamp.fromDate(new Date(boundary.startsAt)), id(boundary.id, 'cursor eventId'));
-  const rows = await tx.get(query.limit(data.pageSize + 1));
-  const items: Data[] = [];
-  for (const row of rows.docs.slice(0, data.pageSize)) {
-    const event = row.data();
-    if (event.schemaVersion === 2 && visible(event)) items.push(await result(tx, row.id, event, uid, management));
+  const visibleRows: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+  let scanned = 0;
+  while (visibleRows.length <= data.pageSize) {
+    const rows = await tx.get(query.limit(data.pageSize + 1));
+    for (const row of rows.docs) {
+      if (++scanned > 500) throw new HttpsError('resource-exhausted', 'Schedule visibility scan exceeded 500 rows. Retry after publication recovery.');
+      const event = row.data();
+      if (event.schemaVersion === 2 && await publishedEvent(tx, event)) visibleRows.push(row);
+      if (visibleRows.length > data.pageSize) break;
+    }
+    if (visibleRows.length > data.pageSize || rows.size < data.pageSize + 1) break;
+    query = query.startAfter(rows.docs[rows.docs.length - 1]);
   }
-  const last = rows.docs[data.pageSize - 1];
-  const nextCursor = rows.size > data.pageSize ? Buffer.from(JSON.stringify({ orgId: team.orgId, teamId: data.teamId, view: data.view, cutoff,
+  const items: Data[] = [];
+  for (const row of visibleRows.slice(0, data.pageSize)) items.push(await result(tx, row.id, row.data(), uid, management));
+  const last = visibleRows[data.pageSize - 1];
+  const nextCursor = visibleRows.length > data.pageSize ? Buffer.from(JSON.stringify({ orgId: team.orgId, teamId: data.teamId, view: data.view, publicationVersion, cutoff,
     startsAt: last.data().startsAt.toDate().toISOString(), id: last.id })).toString('base64url') : null;
   let canManage = false;
   try { await eventScope(tx, [data.teamId], uid); canManage = true; }
@@ -136,7 +147,7 @@ export const getCanonicalEvent = readCommand(data => {
   let agenda: Promise<Data> | undefined;
   const household = () => agenda ??= readAgenda(tx, {}, uid, { events: false });
   const event = (await tx.get(getFirestore().doc(`events/${data.eventId}`))).data();
-  if (!event || event.schemaVersion !== 2 || !visible(event)) denied();
+  if (!event || event.schemaVersion !== 2 || !(await publishedEvent(tx, event))) denied();
   let allowed = false;
   for (const teamId of teamIds(event.teamIds)) {
     try { await readableTeam(tx, teamId, uid, household); allowed = true; break; }
@@ -169,10 +180,10 @@ export const mutateEventSchedule = command('mutateEventSchedule', data => {
   const event = (await tx.get(ref)).data();
   if (!event || event.schemaVersion !== 2) denied();
   const scope = await eventScope(tx, teamIds(event.teamIds), uid, !replay);
-  validateStoredEvent(event, scope);
+  validateStoredEvent({ ...event, publicationOperationId: null }, scope);
   if (replay) return replay;
   checkRevision(event, data.expectedRevision);
-  if (!visible(event)) throw new HttpsError('failed-precondition', 'Only published single events can be changed.');
+  if (!(await publishedEvent(tx, event))) throw new HttpsError('failed-precondition', 'Only committed published events can be changed.');
   if (event.status === 'completed' || event.status === 'cancelled'
     || (['postpone', 'complete'].includes(data.action) && event.status !== 'scheduled')) {
     throw new HttpsError('failed-precondition', 'This action is unavailable for the current event status.');
