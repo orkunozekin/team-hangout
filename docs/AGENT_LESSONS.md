@@ -203,3 +203,11 @@
 - **Gap:** Catalog reads enforced the workspace rollout flag while writes only checked the organization flag; detachment history paired null resource IDs with a previous occupancy fallback.
 - **Going forward:** Apply the same rollout predicate to every catalog mutation and replay. Record consistent before/after resource identity and occupancy, including explicit null after detachment; avoid nullish fallbacks that combine states. Test flag-disabled new writes/replay and the complete immutable detachment row.
 - **Pointers:** `functions/src/facilities/service.ts`, `tests/backend/facilities.test.mjs`.
+
+
+### 2026-10-15: Bound actor intersection cost in pure validators
+
+- **Source:** PR #29, GitHub Codex review 5542781923.
+- **Gap:** Accepted maximum busy snapshots multiplied linear coach-ID membership scans across every game/busy pair, including nonoverlapping intervals, outside the search deadline.
+- **Going forward:** Prefilter temporal conflicts before actor intersection, index actor membership once per snapshot and share immutable fixture indexes across candidate slots. Benchmark accepted array-size combinations as well as team/slot ceilings. Cap detailed conflict output explicitly while retaining the full count and invalid result.
+- **Pointers:** `functions/src/scheduling/validator.ts`, `functions/src/scheduling/search.ts`, maximum busy-snapshot regression and benchmark.
