@@ -422,6 +422,7 @@ export function ScheduleDrafts({
                       Team for constraint {i + 1}
                       {draft ? (
                         <select
+                          aria-label={`Team for constraint ${i + 1}`}
                           value={c.teamId}
                           onChange={(e) =>
                             patch({
