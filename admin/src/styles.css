@@ -728,3 +728,8 @@ button { overflow-wrap: anywhere; }
 .facilities .panel { overflow-wrap: anywhere; }
 .facilities li { margin-bottom: 18px; }
 .facilities button { margin: 4px 8px 4px 0; }
+
+.recurrence-days { display: flex; flex-wrap: wrap; gap: 10px 20px; margin: 12px 0; }
+.recurrence-days legend { margin-bottom: 12px; font-weight: 600; }
+.recurrence-days label, .recurrence-confirmation { flex-direction: row; align-items: center; }
+.recurrence-days input, .recurrence-confirmation input { width: 20px; height: 20px; flex-shrink: 0; }
