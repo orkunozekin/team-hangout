@@ -18,6 +18,7 @@ import { lockRef, publicationError as fail } from "../scheduling/lease";
 import { publishedEvent } from "../scheduling/visibility";
 import { commitResourceAssignment, instant } from "./service";
 import { overlaps } from "./intervals";
+import type { Interval } from "./intervals";
 
 const db = () => getFirestore();
 const closureRef = (orgId: string, closureId: string) =>
@@ -38,37 +39,98 @@ export function eventInterval(e: Data) {
     endsAt: span.endsAt.toDate().toISOString(),
   };
 }
-const closureReads = new WeakMap<
-  Transaction,
-  Map<string, Promise<FirebaseFirestore.QuerySnapshot>>
->();
-/** One bounded tenant closure scan, cached within this transaction attempt only. */
-export async function effectiveClosure(tx: Transaction, event: Data) {
-  if (
-    !event.orgId ||
-    !event.facilityId ||
-    !event.resourceId ||
-    !["scheduled", "completed"].includes(event.status)
-  )
-    return false;
+type ClosureWindow = {
+  span: Interval;
+  rows: Promise<FirebaseFirestore.QuerySnapshot>;
+};
+const closureReads = new WeakMap<Transaction, Map<string, ClosureWindow>>();
+/** Bounded to applied closures intersecting the requested read window, never lifetime history. */
+export async function resourceClosures(
+  tx: Transaction,
+  orgId: string,
+  facilityId: string,
+  span: Interval,
+) {
   let reads = closureReads.get(tx);
   if (!reads) {
     reads = new Map();
     closureReads.set(tx, reads);
   }
-  const key = `${event.orgId}/${event.facilityId}`;
-  if (!reads.has(key))
-    reads.set(
-      key,
-      tx.get(
-        db()
-          .collection(`organizations/${event.orgId}/closures`)
-          .where("facilityId", "==", event.facilityId)
-          .limit(1001),
-      ),
-    );
-  const rows = await reads.get(key)!;
-  bounded(rows.size, 1000, "Facility closures");
+  const key = `${orgId}/${facilityId}`,
+    previous = reads.get(key);
+  if (
+    previous &&
+    previous.span.startsAt <= span.startsAt &&
+    previous.span.endsAt >= span.endsAt
+  )
+    return previous.rows;
+  const window = previous
+    ? {
+        startsAt: [previous.span.startsAt, span.startsAt].sort()[0],
+        endsAt: [previous.span.endsAt, span.endsAt].sort().at(-1)!,
+      }
+    : span;
+  const rows = tx
+    .get(
+      db()
+        .collection(`organizations/${orgId}/closures`)
+        .where("facilityId", "==", facilityId)
+        .where("status", "==", "applied")
+        .where("endsAt", ">", window.startsAt)
+        .where("startsAt", "<", window.endsAt)
+        .limit(1001),
+    )
+    .then((result) => {
+      bounded(result.size, 1000, "Overlapping facility closures");
+      return result;
+    });
+  reads.set(key, { span: window, rows });
+  return rows;
+}
+/** Prime the finite visible page as one interval window per facility and transaction attempt. */
+export async function primeClosureReads(tx: Transaction, events: Data[]) {
+  const windows = new Map<
+    string,
+    { orgId: string; facilityId: string; span: Interval }
+  >();
+  for (const event of events) {
+    if (
+      !event.orgId ||
+      !event.facilityId ||
+      !event.resourceId ||
+      !["scheduled", "postponed", "completed"].includes(event.status)
+    )
+      continue;
+    const span = eventInterval(event),
+      key = `${event.orgId}/${event.facilityId}`,
+      previous = windows.get(key);
+    windows.set(key, {
+      orgId: event.orgId,
+      facilityId: event.facilityId,
+      span: previous
+        ? {
+            startsAt: [previous.span.startsAt, span.startsAt].sort()[0],
+            endsAt: [previous.span.endsAt, span.endsAt].sort().at(-1)!,
+          }
+        : span,
+    });
+  }
+  await Promise.all(
+    [...windows.values()].map((w) =>
+      resourceClosures(tx, w.orgId, w.facilityId, w.span),
+    ),
+  );
+}
+export async function effectiveClosure(tx: Transaction, event: Data) {
+  if (
+    !event.orgId ||
+    !event.facilityId ||
+    !event.resourceId ||
+    !["scheduled", "postponed", "completed"].includes(event.status)
+  )
+    return false;
+  const span = eventInterval(event),
+    rows = await resourceClosures(tx, event.orgId, event.facilityId, span);
   return rows.docs.some((row) => {
     const c = row.data();
     return (
@@ -76,7 +138,7 @@ export async function effectiveClosure(tx: Transaction, event: Data) {
       c.orgId === event.orgId &&
       c.status === "applied" &&
       c.resourceIds.includes(event.resourceId) &&
-      overlaps(eventInterval(event), { startsAt: c.startsAt, endsAt: c.endsAt })
+      overlaps(span, { startsAt: c.startsAt, endsAt: c.endsAt })
     );
   });
 }
@@ -171,12 +233,25 @@ async function snapshot(tx: Transaction, d: Data, uid: string) {
   )
     denied();
   const resourceIds = selected.map((r) => r.id).sort();
-  // Full bounded facility snapshot includes events starting before midnight or the closure boundary.
+  // Resource bookings are at most 24 hours plus 3 hours cleanup/setup. Include boundary-spanning occupancy.
   const rows = await tx.get(
     db()
       .collection("events")
       .where("orgId", "==", d.orgId)
       .where("facilityId", "==", d.facilityId)
+      .where("status", "==", "scheduled")
+      .where("publicationState", "==", "published")
+      .where("deletedAt", "==", null)
+      .where(
+        "startsAt",
+        ">=",
+        Timestamp.fromMillis(Date.parse(d.startsAt) - 27 * 3600000),
+      )
+      .where(
+        "startsAt",
+        "<",
+        Timestamp.fromMillis(Date.parse(d.endsAt) + 3 * 3600000),
+      )
       .limit(1001),
   );
   bounded(rows.size, 1000, "Facility events");
@@ -495,6 +570,7 @@ export const advanceFacilityClosure = command(
         !overlaps(eventInterval(event!), c as any);
     const next: Data = {
       ...row,
+      expiresAt: Timestamp.fromMillis(now.toMillis() + 120000),
       cursor: row.cursor + 1,
       revision: row.revision + 1,
       updatedAt: now,
@@ -564,7 +640,7 @@ export const advanceFacilityClosure = command(
       ...(next.state === "committed"
         ? { operationId: null, inputRevision: lock!.inputRevision + 1 }
         : {}),
-      expiresAt: Timestamp.fromMillis(now.toMillis() + 120000),
+      expiresAt: next.expiresAt,
     });
     return progress(next);
   },

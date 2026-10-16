@@ -73,7 +73,10 @@ test('closure is immediate across midnight and buffers, preserves family history
   await code(call('mutateEventSchedule', req({ eventId: event.id, expectedRevision: 1, action: 'complete', reason: 'Unsafe' })), 'RESOURCE_CLOSED');
   const done = await advance(operation); assert.equal(done.postponed, 1); assert.equal(done.state, 'committed');
   const stored = (await db.doc(`events/${event.id}`).get()).data();
-  assert.equal(stored.status, 'postponed'); assert.equal(stored.deletedAt, null); assert.equal(stored.publicationOperationId, null);
+  assert.equal(stored.status, 'postponed'); assert.equal(stored.deletedAt, null);
+  const materialized = await call('getCanonicalEvent', { eventId: event.id }, 'p208-guardian');
+  assert.equal(materialized.resourceClosed, true); assert.equal(materialized.closureUpdatePending, false);
+  assert.equal(done.expiresAt, (await db.doc(`organizations/${orgId}/schedulingLock/current`).get()).data().expiresAt.toDate().toISOString()); assert.equal(stored.publicationOperationId, null);
   assert.equal((await db.collection(`events/${event.id}/scheduleHistory`).get()).size, 1);
   assert.equal((await db.collection(`events/${event.id}/resourceHistory`).get()).size, 2);
   await code(call('createEvent', req({ teamId: 'p208-a', event: { ...operationalEventFields, teamIds: ['p208-a'], publicationState: 'published', startsAt: at(3), endsAt: at(3,1), facilityId: f, resourceId: 'r0' } })), 'RESOURCE_CLOSED');
@@ -187,10 +190,43 @@ test('makeup confirmation serializes on the publication fence and increments the
   assert.deepEqual(concurrent[0],concurrent[1]); assert.equal((await lock.get()).data().inputRevision,before.inputRevision+1);
   await call('confirmEventMakeup',payload); assert.equal((await lock.get()).data().inputRevision,before.inputRevision+1);
 });
+test('retained facility history and unrelated coaches do not disable current reads, closure review or makeups', async () => {
+  const { f, event } = await fixture(), stored = (await db.doc(`events/${event.id}`).get()).data();
+  let batch = db.batch(), writes = 0;
+  const put = async (ref, value) => { batch.set(ref,value); if (++writes === 400) { await batch.commit(); batch=db.batch(); writes=0; } };
+  for (let i=0;i<1001;i++) {
+    await put(db.doc(`organizations/${orgId}/closures/history-${f}-${i}`),{ schemaVersion:2, orgId, facilityId:f, resourceIds:['r0'], status:'applied', startsAt:'2020-01-01T00:00:00.000Z', endsAt:'2020-01-02T00:00:00.000Z' });
+    await put(db.doc(`organizations/${orgId}/closures/cancelled-${f}-${i}`),{ schemaVersion:2, orgId, facilityId:f, resourceIds:['r0'], status:'cancelled', startsAt:at(2), endsAt:at(4) });
+    await put(db.doc(`events/p208-history-${f}-${i}`),{ ...stored, teamId:'p208-c', teamIds:['p208-c'], type:'practice', homeTeamId:null, awayTeamId:null,
+      startsAt:Timestamp.fromDate(new Date('2020-01-01T00:00:00.000Z')),endsAt:Timestamp.fromDate(new Date('2020-01-01T01:00:00.000Z')),
+      resourceOccupancy:{ ...stored.resourceOccupancy,startsAt:Timestamp.fromDate(new Date('2019-12-31T23:45:00.000Z')),endsAt:Timestamp.fromDate(new Date('2020-01-01T01:10:00.000Z')) },
+      status:['scheduled','completed','cancelled'][i%3],publicationState:i%2?'published':'staged',deletedAt:i%3===0?Timestamp.now():null });
+    await put(db.doc(`teamMembers/p208-c_unrelated-${i}`),{ ...meta,orgId,teamId:'p208-c',userId:`unrelated-${i}`,roles:['coach'] });
+  }
+  if(writes) await batch.commit();
+  const transact=db.runTransaction.bind(db);
+  async function instrument(handler,data) {
+    const reads={};
+    db.runTransaction=(callback,options)=>transact(tx=>callback(new Proxy(tx,{get(target,name){
+      if(name==='get') return async ref=>{const result=await target.get(ref),kind=ref._queryOptions?.collectionId; if(kind){const count=reads[kind]??={queries:0,documents:0};count.queries++;count.documents+=result.size;}return result;};
+      const value=Reflect.get(target,name);return typeof value==='function'?value.bind(target):value;
+    }})),options);
+    try { return { result:await handler.run({data,auth:{uid:'p208-owner'}}),reads }; }
+    finally {db.runTransaction=transact;}
+  }
+  const {getCanonicalEvent}=require('./lib/operations/events'), {previewFacilityClosure}=require('./lib/facilities/closures'), {previewEventMakeup}=require('./lib/facilities/makeups');
+  const detail=await instrument(getCanonicalEvent,{eventId:event.id});assert.equal(detail.result.status,'scheduled');assert.equal(detail.reads.closures.documents,0);
+  const reviewed=await instrument(previewFacilityClosure,req({orgId,facilityId:f,resourceIds:null,startsAt:at(3),endsAt:at(3,2),reason:'Reviewed current window'}));
+  assert.equal(reviewed.result.impacted.length,1);assert.equal(reviewed.reads.events.documents,1);
+  await advance(await apply(reviewed.result));
+  const proposal=req({orgId,eventId:event.id,expectedRevision:2,patch:{startsAt:at(28,12),endsAt:at(28,13),timeZone:'UTC',facilityId:f,resourceId:'r0'},reason:'Reviewed makeup'});
+  const makeup=await instrument(previewEventMakeup,proposal);assert.ok(makeup.result.previewId);assert.equal(makeup.reads.teamMembers.documents,1);
+  const moved=await call('confirmEventMakeup',req({orgId,previewId:makeup.result.previewId,previewHash:makeup.result.previewHash,confirmed:true}));assert.equal(moved.id,event.id);
+});
 test('real fifty-event reads share one facility closure scan and refresh across transactions and revoked grants', async () => {
   const { f, event } = await fixture(), base = (await db.doc(`events/${event.id}`).get()).data();
   const batch = db.batch();
-  for (let i = 0; i < 50; i++) batch.set(db.doc(`events/p208-cache-${i}`), { ...base, startsAt: Timestamp.fromDate(new Date(at(1,1))), endsAt: Timestamp.fromDate(new Date(at(1,2))), resourceOccupancy: { ...base.resourceOccupancy, startsAt: Timestamp.fromDate(new Date(at(1,0,45))), endsAt: Timestamp.fromDate(new Date(at(1,2,10))) } });
+  for (let i = 0; i < 50; i++) batch.set(db.doc(`events/p208-cache-${i}`), { ...base, startsAt: Timestamp.fromMillis(Date.parse(at(1,1)) + i*60000), endsAt: Timestamp.fromMillis(Date.parse(at(1,2)) + i*60000), resourceOccupancy: { ...base.resourceOccupancy, startsAt: Timestamp.fromMillis(Date.parse(at(1,0,45)) + i*60000), endsAt: Timestamp.fromMillis(Date.parse(at(1,2,10)) + i*60000) } });
   await batch.commit();
   const { listCanonicalTeamEvents } = require('./lib/operations/events');
   const transact = db.runTransaction.bind(db); let closureQueries = 0;

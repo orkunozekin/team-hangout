@@ -21,6 +21,7 @@ import { fingerprint } from "../operations/requests";
 import { publishedEvent } from "../scheduling/visibility";
 import { lockRef, publicationError as fail } from "../scheduling/lease";
 import { instant, validateResourceAssignment } from "./service";
+import { teamIds as canonicalTeamIds } from "../organizations/events";
 import { overlaps } from "./intervals";
 import { lifecycleMutation } from "../operations/events";
 const db = () => getFirestore();
@@ -117,42 +118,79 @@ async function validate(tx: Transaction, d: Data, uid: string) {
     d.eventId,
     s.teams.map((t) => t.sport),
   );
-  const [events, grants] = await Promise.all([
-    tx.get(
-      db()
-        .collection("events")
-        .where("orgId", "==", d.orgId)
-        .where(
-          "endsAt",
-          ">",
-          Timestamp.fromMillis(
-            Date.parse(d.patch.startsAt) - restMinutes * 60000,
-          ),
-        )
-        .where(
-          "startsAt",
-          "<",
-          Timestamp.fromMillis(
-            Date.parse(d.patch.endsAt) + restMinutes * 60000,
-          ),
-        )
-        .limit(1001),
-    ),
-    tx.get(
+  const events = await tx.get(
+    db()
+      .collection("events")
+      .where("orgId", "==", d.orgId)
+      .where(
+        "endsAt",
+        ">",
+        Timestamp.fromMillis(
+          Date.parse(d.patch.startsAt) - restMinutes * 60000,
+        ),
+      )
+      .where(
+        "startsAt",
+        "<",
+        Timestamp.fromMillis(Date.parse(d.patch.endsAt) + restMinutes * 60000),
+      )
+      .limit(1001),
+  );
+  if (events.size > 1000)
+    throw new HttpsError(
+      "resource-exhausted",
+      "Makeup interval exceeds the safe 1,000 event snapshot limit. Nothing was truncated.",
+    );
+  const overlapping: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+  for (const doc of events.docs) {
+    const other = doc.data();
+    if (
+      doc.id !== d.eventId &&
+      ["scheduled", "completed"].includes(other.status) &&
+      (await publishedEvent(tx, other))
+    )
+      overlapping.push(doc);
+  }
+  const relevantTeams = [
+    ...new Set<string>([
+      ...e.teamIds,
+      ...overlapping.flatMap((doc) => canonicalTeamIds(doc.data().teamIds)),
+    ]),
+  ].sort();
+  if (relevantTeams.length > 200)
+    throw new HttpsError(
+      "resource-exhausted",
+      "Makeup interval includes more than 200 teams. Narrow the reviewed interval; nothing was truncated.",
+    );
+  const teamRecords = await tx.getAll(
+    ...relevantTeams.map((t) => db().doc(`teams/${t}`)),
+  );
+  if (
+    teamRecords.some(
+      (t) => t.data()?.schemaVersion !== 2 || t.data()?.orgId !== d.orgId,
+    )
+  )
+    denied();
+  const grants: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+  for (let n = 0; n < relevantTeams.length; n += 10) {
+    const rows = await tx.get(
       db()
         .collection("teamMembers")
         .where("orgId", "==", d.orgId)
         .where("status", "==", "active")
+        .where("teamId", "in", relevantTeams.slice(n, n + 10))
+        .where("roles", "array-contains", "coach")
         .limit(1001),
-    ),
-  ]);
-  if (events.size > 1000 || grants.size > 1000)
-    throw new HttpsError(
-      "resource-exhausted",
-      "Makeup validation exceeds the safe tenant snapshot limit. Nothing was truncated.",
     );
+    grants.push(...rows.docs);
+    if (grants.length > 1000)
+      throw new HttpsError(
+        "resource-exhausted",
+        "Makeup interval exceeds 1,000 relevant coach assignments. Nothing was truncated.",
+      );
+  }
   const coaches = new Map<string, Set<string>>();
-  for (const doc of grants.docs) {
+  for (const doc of grants) {
     const g = doc.data();
     if (
       g.schemaVersion === 2 &&
@@ -168,7 +206,7 @@ async function validate(tx: Transaction, d: Data, uid: string) {
   const actors = new Set<string>(
     e.teamIds.flatMap((t: string) => [...(coaches.get(t) ?? [])]),
   );
-  for (const doc of events.docs) {
+  for (const doc of overlapping) {
     const other = doc.data();
     if (
       doc.id === d.eventId ||
@@ -210,9 +248,10 @@ async function validate(tx: Transaction, d: Data, uid: string) {
       policy,
       event: e,
       teams: s.teams,
+      relevantTeams: teamRecords.map((t) => [t.id, t.data()]),
       season,
       assignment: safeAssignment,
-      grants: grants.docs.map((g) => [g.id, g.data()]),
+      grants: grants.map((g) => [g.id, g.data()]),
       events: events.docs.map((r) => [r.id, r.data().revision ?? null]),
       inputRevision: lock?.inputRevision ?? 0,
     }),

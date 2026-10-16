@@ -1,4 +1,4 @@
-import { effectiveEvent, requireOpenInterval } from '../facilities/closures';
+import { effectiveEvent, requireOpenInterval, primeClosureReads } from '../facilities/closures';
 import { fingerprint } from './requests';
 import { publishedEvent } from '../scheduling/visibility';
 import { validateResourceAssignment, commitResourceAssignment } from '../facilities/service';
@@ -133,6 +133,7 @@ export const listCanonicalTeamEvents = readCommand(data => {
     if (visibleRows.length > data.pageSize || rows.size < data.pageSize + 1) break;
     query = query.startAfter(rows.docs[rows.docs.length - 1]);
   }
+  await primeClosureReads(tx, visibleRows.slice(0, data.pageSize).map(row => row.data()));
   const items: Data[] = [];
   for (const row of visibleRows.slice(0, data.pageSize)) items.push(await result(tx, row.id, row.data(), uid, management));
   const last = visibleRows[data.pageSize - 1];
