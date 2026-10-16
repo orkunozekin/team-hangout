@@ -39,3 +39,5 @@ export { listEssentialEmail, getEssentialEmailPreference, setEssentialEmailPrefe
 export { getNativeTeam, listEventTeamChoices, listCanonicalTeamEvents, getCanonicalEvent, mutateEventSchedule } from './operations/events';
 
 export { listFacilities, listFacilityResources, saveFacility, saveFacilityResource, listResourceAvailability, appendResourceAvailability } from './facilities/service';
+
+export { previewRecurrenceDraft, saveRecurrenceDraft, getRecurrenceDraft } from './recurrence/service';
