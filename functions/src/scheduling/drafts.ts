@@ -433,6 +433,7 @@ export async function draftSnapshot(
         Date.parse(f.endsAt) + (f.minimumRestMinutes + 1440) * 60000
     )
       continue;
+    bindings.push([doc.id, e.revision ?? null, e.scheduleVersion ?? null, e.publicationOperationId ?? null]);
     const actorIds = [
       ...new Set<string>(
         e.teamIds.flatMap((t: string) => coachMap.get(t) || []),
