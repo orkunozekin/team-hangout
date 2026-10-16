@@ -399,6 +399,7 @@ export function Recurrence({
                               <label>
                                 UTC offset for {formatCalendarDate(o.localDate)}
                                 <select
+                                  aria-label={`UTC offset for ${formatCalendarDate(o.localDate)}`}
                                   value={fields.offsets[o.localDate] ?? ""}
                                   onChange={(e) =>
                                     change({

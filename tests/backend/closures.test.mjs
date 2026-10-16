@@ -161,6 +161,19 @@ test('reviewed makeups revalidate current resources, closure buffers, team and c
   await db.doc(`organizations/${orgId}/members/p208-staff`).update({ programIds:[] }); await deny(call('confirmEventMakeup',payload,'p208-staff'));
   await db.doc(`organizations/${orgId}/members/p208-staff`).update({ programIds:['p208-program'] });
 });
+test('publication makeups preserve reviewed duration, blackouts and team rest policy', async () => {
+  const { f, event } = await fixture();
+  await db.doc(`events/${event.id}`).update({ publicationOperationId:'p208-policy' });
+  await db.doc(`organizations/${orgId}/scheduleOperations/p208-policy`).set({ schemaVersion:2, orgId, state:'committed', action:'publishScheduleDraft', draftId:'p208-policy-draft' });
+  await db.doc(`organizations/${orgId}/scheduleDrafts/p208-policy-draft`).set({ schemaVersion:2, orgId, fields:{ durationMinutes:60, minimumRestMinutes:120, teamConstraints:[{ teamId:'p208-a', blackouts:[{ startsAt:at(10), endsAt:at(11) }] }] } });
+  await advance(await apply(await preview(f)));
+  const proposed = (start,end) => req({ orgId, eventId:event.id, expectedRevision:2, patch:{ startsAt:start, endsAt:end, timeZone:'UTC', facilityId:f, resourceId:'r0' }, reason:'Reviewed policy makeup' });
+  await assert.rejects(call('previewEventMakeup',proposed(at(12,12),at(12,12,30))),{ code:'functions/invalid-argument' });
+  await code(call('previewEventMakeup',proposed(at(10,12),at(10,13))),'SCHEDULE_CONFLICT');
+  await call('createEvent',req({ teamId:'p208-a', event:{ ...operationalEventFields, teamIds:['p208-a'], publicationState:'published', startsAt:at(12,15), endsAt:at(12,16) } }));
+  await code(call('previewEventMakeup',proposed(at(12,13),at(12,14))),'SCHEDULE_CONFLICT');
+  assert.ok((await call('previewEventMakeup',proposed(at(12,12),at(12,13)))).previewId);
+});
 test('makeup confirmation serializes on the publication fence and increments the shared input revision exactly once', async () => {
   const { f, event } = await fixture(), closure = await apply(await preview(f)); await advance(closure);
   const p = await call('previewEventMakeup', req({ orgId, eventId:event.id, expectedRevision:2, patch:{ startsAt:at(25,12), endsAt:at(25,13), timeZone:'UTC', facilityId:f, resourceId:'r0' }, reason:'Reviewed makeup' }));

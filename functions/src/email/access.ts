@@ -1,3 +1,4 @@
+import { cacheDocumentReads } from '../operations/reads';
 import { requireOpenInterval } from '../facilities/closures';
 import { publishedEvent } from '../scheduling/visibility';
 import { getFirestore, Transaction } from "firebase-admin/firestore";
@@ -11,6 +12,7 @@ export async function eventInformation(
   eventId: string,
   uid: string,
 ): Promise<Data> {
+  tx = cacheDocumentReads(tx);
   const db = getFirestore(),
     event = (await tx.get(db.doc(`events/${eventId}`))).data();
   if (
