@@ -261,6 +261,7 @@ test("uncertain generate retries exact action, stale save preserves correction, 
   release();
   await expect(page.getByRole("alert")).toContainText("Access unavailable");
   await expect(page.getByLabel("Draft title")).toHaveCount(0);
+  await page.unrouteAll({ behavior: "wait" });
   await db
     .doc(`organizations/${orgId}/members/${uid}`)
     .update({ status: "active" });
