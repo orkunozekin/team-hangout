@@ -1,3 +1,4 @@
+import { publishedEvent } from '../scheduling/visibility';
 import { getFirestore, Transaction } from "firebase-admin/firestore";
 import { Data, id, keys } from "../commandSupport";
 import { readAgenda } from "../calendar/agenda";
@@ -15,7 +16,7 @@ export async function eventInformation(
     !event ||
     event.schemaVersion !== 2 ||
     event.publicationState !== "published" ||
-    event.publicationOperationId != null ||
+    !(await publishedEvent(tx, event)) ||
     event.deletedAt != null ||
     event.status !== "scheduled" ||
     !Array.isArray(event.teamIds) ||

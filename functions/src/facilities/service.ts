@@ -1,3 +1,4 @@
+import { publishedEvent } from '../scheduling/visibility';
 import { FieldPath, getFirestore, Timestamp, Transaction } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { command, Data, id, invalid, keys, object, optional, revision, text } from '../commandSupport';
@@ -71,7 +72,7 @@ async function resource(tx: Transaction, orgId: string, facilityId: string, reso
 }
 const conflict = (message: string): never => { throw new HttpsError('failed-precondition', message, { domainCode: 'SCHEDULE_CONFLICT' }); };
 const bounded = (size: number) => { if (size > 500) throw new HttpsError('resource-exhausted', 'Too many reservations to validate safely. Narrow the interval or ask an administrator.'); };
-function active(event: Data) { return event.deletedAt == null && event.publicationState === 'published' && ['scheduled', 'completed'].includes(event.status); }
+async function active(tx: Transaction, event: Data) { return event.deletedAt == null && event.publicationState === 'published' && ['scheduled', 'completed'].includes(event.status) && (event.publicationOperationId == null || await publishedEvent(tx, event)); }
 function occupied(event: Data) {
   return event.resourceOccupancy ? { startsAt: event.resourceOccupancy.startsAt.toDate().toISOString(), endsAt: event.resourceOccupancy.endsAt.toDate().toISOString() } : null;
 }
@@ -108,7 +109,7 @@ export const saveFacility = command('saveFacility', data => {
   checkRevision(before, data.expectedRevision);
   if (before && data.fields.status === 'inactive') {
     const rows = await tx.get(queryEvents(data.orgId, ref.id).where('endsAt', '>', Timestamp.now()).limit(501)); bounded(rows.size);
-    if (rows.docs.some(row => active(row.data()))) conflict('Move or postpone future reservations before making this facility unavailable.');
+    if ((await Promise.all(rows.docs.map(row => active(tx, row.data())))).some(Boolean)) conflict('Move or postpone future reservations before making this facility unavailable.');
   }
   const row = { ...data.fields, orgId: data.orgId, ...metadata(uid, before), auditCorrelationId: ref.id };
   tx.create(ref.collection('revisions').doc(String(row.revision)), { ...row, effectiveAt: Timestamp.now() });
@@ -125,7 +126,7 @@ export const saveFacilityResource = command('saveFacilityResource', data => {
   const ref = data.resourceId ? resourceRef(data.orgId, data.facilityId, data.resourceId) : facilityRef(data.orgId, data.facilityId).collection('resources').doc();
   if (before) {
     const rows = await tx.get(queryEvents(data.orgId, data.facilityId, ref.id).where('endsAt', '>', Timestamp.now()).limit(501)); bounded(rows.size);
-    if (rows.docs.some(row => active(row.data()) && (data.fields.status === 'inactive' || row.data().resourceOccupancy?.sports?.some((sport: string) => !data.fields.sports.includes(sport))))) conflict('Move or postpone incompatible future reservations first.');
+    if ((await Promise.all(rows.docs.map(async row => await active(tx, row.data()) && (data.fields.status === 'inactive' || row.data().resourceOccupancy?.sports?.some((sport: string) => !data.fields.sports.includes(sport)))))).some(Boolean)) conflict('Move or postpone incompatible future reservations first.');
   }
   const row = { ...data.fields, orgId: data.orgId, facilityId: data.facilityId, ...metadata(uid, before), auditCorrelationId: ref.id };
   tx.create(ref.collection('revisions').doc(String(row.revision)), { ...row, effectiveAt: Timestamp.now() });
@@ -161,7 +162,7 @@ export const appendResourceAvailability = command('appendResourceAvailability', 
   if (data.effectiveFrom <= Timestamp.now().toDate().toISOString() || (latest.size && data.effectiveFrom <= latest.docs[0].data().effectiveFrom)) invalid('New availability must take effect in the future after the previous revision.');
   if (data.windows.some((window: Data) => window.startsAt < data.effectiveFrom)) invalid('Availability windows cannot precede their effective date.');
   const rows = await tx.get(queryEvents(data.orgId, data.facilityId, data.resourceId).where('endsAt', '>', Timestamp.fromMillis(Date.parse(data.effectiveFrom) - 3 * 3600000)).limit(501)); bounded(rows.size);
-  if (rows.docs.some(row => active(row.data()) && occupied(row.data()) && occupied(row.data())!.endsAt > data.effectiveFrom && !contains(data.windows, occupied(row.data())!))) conflict('New availability would exclude a reservation. Move or postpone it first.');
+  if ((await Promise.all(rows.docs.map(async row => await active(tx, row.data()) && occupied(row.data()) && occupied(row.data())!.endsAt > data.effectiveFrom && !contains(data.windows, occupied(row.data())!)))).some(Boolean)) conflict('New availability would exclude a reservation. Move or postpone it first.');
   const next = before.revision + 1;
   tx.create(ref.collection('availability').doc(String(next)), { schemaVersion: 2, orgId: data.orgId, facilityId: data.facilityId, resourceId: data.resourceId,
     revision: next, effectiveFrom: data.effectiveFrom, windows: data.windows, createdAt: Timestamp.now(), updatedAt: Timestamp.now(), auditCorrelationId: `${ref.id}:${next}` });
@@ -187,7 +188,7 @@ export async function validateResourceAssignment(tx: Transaction, event: Data, e
   const rows = await tx.get(queryEvents(event.orgId, event.facilityId, event.resourceId)
     .where('startsAt', '>=', Timestamp.fromMillis(Date.parse(span.startsAt) - 27 * 3600000))
     .where('startsAt', '<', Timestamp.fromMillis(Date.parse(span.endsAt) + 3 * 3600000)).limit(501)); bounded(rows.size);
-  for (const row of rows.docs) if (row.id !== eventId && active(row.data()) && occupied(row.data()) && overlaps(span, occupied(row.data())!)) conflict('This resource already has an overlapping reservation including setup and cleanup.');
+  for (const row of rows.docs) if (row.id !== eventId && await active(tx, row.data()) && occupied(row.data()) && overlaps(span, occupied(row.data())!)) conflict('This resource already has an overlapping reservation including setup and cleanup.');
   return { location: { name: `${f.name} · ${r.label}`, address: f.address }, resourceDetails: { facilityName: f.name, label: r.label,
     address: f.address, timeZone: f.timeZone, latitude: f.latitude, longitude: f.longitude, parking: f.parking, accessibility: f.accessibility },
     resourceOccupancy: { startsAt: Timestamp.fromDate(new Date(span.startsAt)), endsAt: Timestamp.fromDate(new Date(span.endsAt)),

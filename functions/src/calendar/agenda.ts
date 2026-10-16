@@ -1,3 +1,5 @@
+import { publishedEvent } from '../scheduling/visibility';
+import { cacheDocumentReads } from '../operations/reads';
 import { createHash } from "node:crypto";
 import {
   FieldPath,
@@ -126,6 +128,7 @@ export async function readAgenda(
   uid: string,
   options: { events?: boolean; scheduledOnly?: boolean } = {},
 ): Promise<Data> {
+  tx = cacheDocumentReads(tx);
   const db = getFirestore();
   const candidates = new Set<string>();
   const labels = new Map<string, AgendaParticipant[]>();
@@ -319,7 +322,8 @@ export async function readAgenda(
     }
   }
   if (options.events === false) return { teams, setupRequired };
-  const accessVersion = hash(teams);
+  const versions = await Promise.all([...new Set(teams.map(t => t.orgId))].sort().map(async orgId => [orgId, (await tx.get(db.doc(`organizations/${orgId}/schedulingLock/current`))).data()?.visibilityRevision ?? 0]));
+  const accessVersion = hash({ teams, versions });
   const { cursor: ignored, ...parameters } = payload;
   const fingerprint = hash({ uid, parameters, accessVersion });
   let after: { time: Timestamp; id: string } | null = null;
@@ -405,7 +409,7 @@ export async function readAgenda(
         if (
           event.schemaVersion !== 2 ||
           !["scheduled", "postponed", "cancelled", "completed"].includes(event.status) ||
-          event.publicationOperationId !== null ||
+          !(await publishedEvent(tx, event)) ||
           event.seasonId !== team.seasonId ||
           !Array.isArray(event.teamIds) ||
           event.teamId !== event.teamIds[0] ||

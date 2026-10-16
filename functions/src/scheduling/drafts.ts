@@ -1,3 +1,5 @@
+import { publishedEvent } from "./visibility";
+import { publicationError } from "./lease";
 import { getFirestore, Transaction } from "firebase-admin/firestore";
 import { HttpsError } from "firebase-functions/v2/https";
 import {
@@ -144,7 +146,7 @@ const edit = (d: Data) => ({
   ...identity(d),
   expectedRevision: revision(d.expectedRevision),
 });
-async function scope(tx: Transaction, d: Data, uid: string) {
+export async function draftScope(tx: Transaction, d: Data, uid: string) {
   const staff = await staffScope(tx, d.orgId, uid);
   if (
     staff.organization.features?.organizationV2 !== true ||
@@ -191,7 +193,7 @@ async function scope(tx: Transaction, d: Data, uid: string) {
   if (teams.some((t) => t.data().divisionId !== d.divisionId)) denied();
   return { ...h, teams };
 }
-async function stored(tx: Transaction, d: Data, uid: string) {
+export async function storedDraft(tx: Transaction, d: Data, uid: string) {
   const row = (await tx.get(ref(d))).data();
   if (
     !row ||
@@ -200,12 +202,13 @@ async function stored(tx: Transaction, d: Data, uid: string) {
     row.state !== "privateDraft"
   )
     denied();
-  await scope(tx, { ...d, divisionId: row.divisionId }, uid);
+  await draftScope(tx, { ...d, divisionId: row.divisionId }, uid);
   return row!;
 }
 function safe(d: Data, row: Data) {
   return {
     draftId: d.draftId,
+    publicationOperationId: row.publicationOperationId ?? null,
     divisionId: row.divisionId,
     revision: row.revision,
     state: row.state,
@@ -220,11 +223,11 @@ function safe(d: Data, row: Data) {
     timeZone: row.timeZone,
   };
 }
-async function snapshot(
+export async function draftSnapshot(
   tx: Transaction,
   d: Data,
   uid: string,
-  authorized?: Awaited<ReturnType<typeof scope>>,
+  authorized?: Awaited<ReturnType<typeof draftScope>>,
 ) {
   tx = cacheDocumentReads(tx);
   let count = 0;
@@ -234,7 +237,7 @@ async function snapshot(
     bounded(count, 5000, "Snapshot query documents");
     return r;
   };
-  const s = authorized || (await scope(tx, d, uid)),
+  const s = authorized || (await draftScope(tx, d, uid)),
     f = d.fields as DraftFields;
   const zone = s.season.timeZone || s.org.timeZone;
   const availabilityStart = new Date(
@@ -303,6 +306,19 @@ async function snapshot(
     values.push(fingerprint({ uid: c.userId }));
     coachMap.set(c.teamId, [...new Set(values)].sort());
   }
+  const bindings: unknown[] = [
+    s.org,
+    s.program,
+    s.season,
+    s.division,
+    s.teams.map((t) => [t.id, t.data()]),
+    coaches.docs.map((t) => [t.id, t.data()]),
+  ];
+  const closures = await query(
+    db().collection(`organizations/${d.orgId}/closures`).limit(1001),
+  );
+  bounded(closures.size, 1000, "Closures");
+  bindings.push(closures.docs.map((t) => [t.id, t.data()]));
   const resources: ScheduleInput["resources"] = [],
     resourceMap = new Map<string, string>();
   for (const slot of f.slots) {
@@ -335,6 +351,11 @@ async function snapshot(
         .limit(129),
     );
     bounded(revisions.size, 128, "Availability revisions");
+    bindings.push(
+      a,
+      r,
+      revisions.docs.map((t) => [t.id, t.data()]),
+    );
     const availability: { startsAt: string; endsAt: string }[] = [];
     for (let n = 0; n < revisions.size; n++) {
       const r = revisions.docs[n].data(),
@@ -360,7 +381,23 @@ async function snapshot(
       setupMinutes: r.setupMinutes,
       cleanupMinutes: r.cleanupMinutes,
       availability,
-      closures: [],
+      closures: closures.docs.flatMap((doc) => {
+        const c = doc.data();
+        return c.status !== "cancelled" &&
+          Array.isArray(c.resourceIds) &&
+          c.resourceIds.includes(slot.resourceId)
+          ? [
+              {
+                startsAt: c.startsAt?.toDate
+                  ? c.startsAt.toDate().toISOString()
+                  : c.startsAt,
+                endsAt: c.endsAt?.toDate
+                  ? c.endsAt.toDate().toISOString()
+                  : c.endsAt,
+              },
+            ]
+          : [];
+      }),
       availabilityBoundaries,
     });
     resourceMap.set(key, resourceId);
@@ -374,9 +411,12 @@ async function snapshot(
   for (const doc of events.docs) {
     const e = doc.data();
     if (
+      (d.excludeOperationId &&
+        e.publicationOperationId === d.excludeOperationId) ||
       e.deletedAt != null ||
       !["scheduled", "completed"].includes(e.status) ||
-      e.publicationState !== "published"
+      e.publicationState !== "published" ||
+      (e.publicationOperationId != null && !(await publishedEvent(tx, e)))
     )
       continue;
     if (
@@ -445,7 +485,7 @@ async function snapshot(
   }
   return {
     input,
-    inputHash: fingerprint(input),
+    inputHash: fingerprint({ input, bindings }),
     timeZone: zone,
     teams: s.teams.map((t) => ({ id: t.id, name: t.data().name })),
     canonicalTeamIds,
@@ -460,7 +500,7 @@ async function snapshot(
   };
 }
 function publicValidation(
-  current: Awaited<ReturnType<typeof snapshot>>,
+  current: Awaited<ReturnType<typeof draftSnapshot>>,
   validation: import("./model").Validation,
 ) {
   return {
@@ -478,6 +518,11 @@ function persist(
   before: Data | undefined,
   value: Data,
 ) {
+  if (before?.publicationOperationId)
+    publicationError(
+      "ALREADY_PUBLISHING",
+      "This draft has a publication. Create a new draft to schedule another batch.",
+    );
   const row: Data = {
     ...value,
     orgId: d.orgId,
@@ -514,12 +559,12 @@ export const generateScheduleDraft = command(
   },
   async (tx, d, uid, _actor, replay) => {
     tx = cacheDocumentReads(tx);
-    const authorized = await scope(tx, d, uid);
+    const authorized = await draftScope(tx, d, uid);
     if (replay) return replay;
     const before = (await tx.get(ref(d))).data();
     if (before && before.divisionId !== d.divisionId) denied();
     checkRevision(before, d.expectedRevision);
-    const current = await snapshot(tx, d, uid, authorized),
+    const current = await draftSnapshot(tx, d, uid, authorized),
       result = assignSchedule(current.input);
     const { assignments, validation, ...search } = result;
     return persist(tx, d, uid, before, {
@@ -561,11 +606,11 @@ export const saveScheduleDraft = command(
   },
   async (tx, d, uid, _actor, replay) => {
     tx = cacheDocumentReads(tx);
-    const before = await stored(tx, d, uid);
+    const before = await storedDraft(tx, d, uid);
     if (replay) return replay;
     checkRevision(before, d.expectedRevision);
     // New constraints must also reference authoritative current inputs, even though validation is intentionally dirty.
-    const current = await snapshot(
+    const current = await draftSnapshot(
       tx,
       { ...d, divisionId: before.divisionId },
       uid,
@@ -604,10 +649,10 @@ export const validateScheduleDraft = command(
   },
   async (tx, d, uid, _actor, replay) => {
     tx = cacheDocumentReads(tx);
-    const before = await stored(tx, d, uid);
+    const before = await storedDraft(tx, d, uid);
     if (replay) return replay;
     checkRevision(before, d.expectedRevision);
-    const current = await snapshot(
+    const current = await draftSnapshot(
       tx,
       { ...d, divisionId: before.divisionId, fields: before.fields },
       uid,
@@ -634,20 +679,6 @@ export const getScheduleDraft = readCommand(
     keys(d, ["orgId", "draftId"]);
     return identity(d);
   },
-  async (tx, d, uid) => safe(d, await stored(cacheDocumentReads(tx), d, uid)),
-);
-// P2.07 owns every publication path. No event, reservation, outbox, operation or fence is created here.
-export const publishScheduleDraft = readCommand(
-  (d) => {
-    keys(d, ["requestId", "orgId", "draftId", "expectedRevision"]);
-    return edit(d);
-  },
-  async (tx, d, uid) => {
-    await stored(tx, d, uid);
-    throw new HttpsError(
-      "failed-precondition",
-      "Schedule draft publishing is disabled.",
-      { domainCode: "PUBLICATION_DISABLED" },
-    );
-  },
+  async (tx, d, uid) =>
+    safe(d, await storedDraft(cacheDocumentReads(tx), d, uid)),
 );

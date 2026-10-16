@@ -42,4 +42,6 @@ export { listFacilities, listFacilityResources, saveFacility, saveFacilityResour
 
 export { previewRecurrenceDraft, saveRecurrenceDraft, getRecurrenceDraft } from './recurrence/service';
 
-export { generateScheduleDraft, saveScheduleDraft, validateScheduleDraft, getScheduleDraft, publishScheduleDraft } from './scheduling/drafts';
+export { generateScheduleDraft, saveScheduleDraft, validateScheduleDraft, getScheduleDraft } from './scheduling/drafts';
+
+export { publishScheduleDraft, getSchedulePublication, advanceSchedulePublication } from './scheduling/publication';

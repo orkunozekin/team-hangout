@@ -1,3 +1,4 @@
+import { commandScheduleMutation } from './scheduling/lease';
 import { accountAvailable } from './accountAccess';
 import { fingerprint, receiptId } from './operations/requests';
 export { revision } from './operations/revisions';
@@ -49,7 +50,9 @@ export function command(name: string, normalize: (data: Data) => Data,
       if (previous.exists && previous.data()?.fingerprint !== payloadFingerprint) {
         throw new HttpsError('already-exists', 'This request ID was used for another change.', { domainCode: 'REQUEST_ID_REUSED' });
       }
+      const fence = !previous.exists ? await commandScheduleMutation(tx, name, payload) : null;
       const result = wire(await execute(tx, payload, uid, actor, previous.data()?.result ?? null));
+      if (fence) fence();
       if (!previous.exists) tx.create(receipt, { uid, operation: name, fingerprint: payloadFingerprint, result, createdAt: Timestamp.now() });
       return result;
     });

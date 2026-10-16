@@ -66,7 +66,7 @@ test('one canonical match is visible from either team and live household grants,
   await db.doc('teams/p202-b/roster/p202-child').update({ status: 'removed' });
   await deny(call('p202-self', 'getCanonicalEvent', { eventId: event.id }));
 });
-test('staging and every non-null operation remain invisible and client rules cannot expose canonical events', async () => {
+test('staging and malformed operation markers remain invisible and client rules cannot expose canonical events', async () => {
   const staged = await create({ publicationState: 'staged' });
   await deny(call('p202-admin', 'getCanonicalEvent', { eventId: staged.id }));
   await assert.rejects(mutate(staged, 'cancel'), { code: 'functions/failed-precondition' });

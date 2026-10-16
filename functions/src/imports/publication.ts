@@ -1,3 +1,4 @@
+import { scheduleMutation } from '../scheduling/lease';
 import { createHash } from "node:crypto";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore, Timestamp, Transaction } from "firebase-admin/firestore";
@@ -283,6 +284,7 @@ export const publishScheduleImport = command(
     const job = await scope(tx, payload, uid);
     if (replay) return replay;
     await scope(tx, payload, uid, true);
+    const fence = await scheduleMutation(tx, job.orgId);
     const prepared = await prepare(tx, job, payload.numbers);
     if (prepared.binding !== payload.binding)
       throw new HttpsError(
@@ -290,6 +292,7 @@ export const publishScheduleImport = command(
         "Notification contacts changed. Review publication again.",
         { domainCode: "SCHEDULE_RECIPIENTS_CHANGED" },
       );
+    fence();
     let queued = 0;
     // All reads finish before any event/outbox writes. Transaction retries cannot send mail.
     for (const e of prepared.entries) {
