@@ -31,5 +31,6 @@ test("event-zone timestamps retain midnight and DST offsets with readable clocks
 });
 
 test("partially edited timestamps remain renderable", () => {
+  expect(formatDateTime(undefined)).toBe("Date and time unavailable");
   expect(formatDateTime("2035-01-02T1", "UTC")).toBe("Invalid date and time");
 });

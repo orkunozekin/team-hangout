@@ -14,9 +14,10 @@ export function formatCalendarDate(value: string | Date): string {
   }).format(date);
 }
 export function formatDateTime(
-  value: string | Date,
+  value: string | Date | null | undefined,
   timeZone?: string,
 ): string {
+  if (value == null) return "Date and time unavailable";
   const date = typeof value === "string" ? new Date(value) : value;
   if (!Number.isFinite(date.getTime())) return "Invalid date and time";
   const day = new Intl.DateTimeFormat("en-US", {
