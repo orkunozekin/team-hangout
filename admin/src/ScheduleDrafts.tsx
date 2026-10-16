@@ -1148,7 +1148,15 @@ export function ScheduleDrafts({
                 !!validation?.valid &&
                 validation.unscheduledFixtureIds.length === 0
               }
-              onError={fail}
+              onError={(e) => {
+                if (
+                  [
+                    "functions/permission-denied",
+                    "functions/unauthenticated",
+                  ].includes(errorCode(e))
+                )
+                  fail(e);
+              }}
               onPublication={(id) =>
                 setDraft((current) =>
                   current
