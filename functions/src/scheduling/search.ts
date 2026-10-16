@@ -58,6 +58,7 @@ export function assignSchedule(input: ScheduleInput, options: SearchOptions = {}
       for (const w of [...resource.availability].sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt))) {
         if (Date.parse(w.startsAt) > cursor) break; cursor = Math.max(cursor, Date.parse(w.endsAt));
       }
+      if (resource.availabilityBoundaries?.some(b => game.occupiedStart < Date.parse(b) && Date.parse(b) < game.occupiedEnd)) { reject('RESOURCE_REVISION_BOUNDARY'); continue; }
       if (cursor < game.occupiedEnd) { reject('RESOURCE_AVAILABILITY'); continue; }
       if (resource.closures.some(w => overlap(game.occupiedStart, game.occupiedEnd, Date.parse(w.startsAt), Date.parse(w.endsAt)))) { reject('RESOURCE_CLOSURE'); continue; }
       if (game.teams.some(t => teams.get(t)!.blackouts.some(w => overlap(game.start, game.end, Date.parse(w.startsAt), Date.parse(w.endsAt))))) { reject('TEAM_BLACKOUT'); continue; }

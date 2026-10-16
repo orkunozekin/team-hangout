@@ -1,5 +1,6 @@
 import type { AdminSection } from "../../shared/admin";
 export const sections: AdminSection[] = [
+  "drafts",
   "recurrence",
   "facility",
   "import",
@@ -14,6 +15,7 @@ export const sections: AdminSection[] = [
   "organization",
 ];
 export const labels: Record<AdminSection, string> = {
+  drafts: "League schedule drafts",
   recurrence: "Recurring practice drafts",
   facility: "Facilities and resources",
   import: "Roster CSV imports",

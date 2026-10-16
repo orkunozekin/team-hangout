@@ -3,7 +3,7 @@ export type Interval = { startsAt: string; endsAt: string };
 export type Team = { id: string; coachIds: string[]; blackouts: Interval[]; preferredSlotIds?: string[] };
 export type Resource = {
   id: string; sports: string[]; active: boolean; setupMinutes: number; cleanupMinutes: number;
-  availability: Interval[]; closures: Interval[];
+  availability: Interval[]; closures: Interval[]; availabilityBoundaries?: string[];
 };
 export type Slot = Interval & { id: string; resourceId: string; late: boolean };
 export type Busy = Interval & { teamIds: string[]; coachIds: string[]; resourceId: string | null;
@@ -34,3 +34,10 @@ export type ScheduleResult = {
 };
 export const LIMITS = { teams: 32, weeks: 16, slots: 1000, resources: 32, busy: 1000,
   intervalsPerEntity: 128, coachesPerTeam: 8, repetitions: 2, nodes: 100000, milliseconds: 10000 } as const;
+
+export type DraftFields = {
+  title: string; startsAt: string; endsAt: string; durationMinutes: number; minimumRestMinutes: number;
+  repetitions: number; seed: number;
+  slots: { id: string; facilityId: string; resourceId: string; startsAt: string; endsAt: string; late: boolean }[];
+  teamConstraints: { teamId: string; blackouts: { startsAt: string; endsAt: string }[]; preferredSlotIds: string[] }[];
+};
