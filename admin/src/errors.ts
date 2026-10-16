@@ -33,7 +33,8 @@ export function message(error: unknown): string {
     return "The connection was interrupted. Retry this same action to safely confirm its result.";
   if (
     code === "functions/invalid-argument" ||
-    code === "functions/failed-precondition"
+    code === "functions/failed-precondition" ||
+    code === "functions/resource-exhausted"
   )
     return error instanceof Error
       ? error.message

@@ -37,3 +37,5 @@ export { getPrivateEventInformation } from "./email/access";
 export { listEssentialEmail, getEssentialEmailPreference, setEssentialEmailPreference } from "./email/commands";
 
 export { getNativeTeam, listEventTeamChoices, listCanonicalTeamEvents, getCanonicalEvent, mutateEventSchedule } from './operations/events';
+
+export { listFacilities, listFacilityResources, saveFacility, saveFacilityResource, listResourceAvailability, appendResourceAvailability } from './facilities/service';

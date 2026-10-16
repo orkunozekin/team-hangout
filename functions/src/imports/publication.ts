@@ -182,6 +182,7 @@ async function prepare(tx: Transaction, job: Data, numbers: number[]) {
       event.status !== "scheduled" ||
       event.deletedAt != null ||
       event.publicationOperationId != null ||
+      event.resourceId != null ||
       event.teamId !== row.teamId ||
       event.teamIds?.length !== 1 ||
       event.teamIds[0] !== row.teamId

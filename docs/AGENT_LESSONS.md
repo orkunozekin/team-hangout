@@ -189,3 +189,17 @@
 - **Gap:** Canonical Add event controls trusted stale navigation roles, and every page performed team discovery before the authorized page request repeated household discovery.
 - **Going forward:** Return current mutation capability from the same authorized schedule response, including empty pages, and clear it on failed refreshes. Reuse resolved schema only to select the reader; every server page still reauthorizes current grants. Do not use platform support or cached membership as canonical mutation authority.
 - **Pointers:** `functions/src/operations/events.ts`, `src/firebase/events.ts`, `src/screens/ScheduleScreen.tsx`, `App.tsx` and revocation/paging regressions.
+
+### 2026-10-15: Keep capability refresh and object denial scoped
+
+- **Source:** PR #27, GitHub Codex review 5540542434.
+- **Gap:** A successful read-only staff refresh collapsed the selected safe catalog view; denial of an individual event lookup was treated as loss of organization catalog access.
+- **Going forward:** Preserve authorized reader state when write capability is absent. Treat object lookup/assignment denial locally unless the canonical catalog request also denies access. Fence late page responses and capability results so a newer revocation or demotion cannot be undone by an older successful request. Test normal focus, unknown IDs, revocation and demotion with held in-flight responses.
+- **Pointers:** `admin/src/Facilities.tsx`, `admin/tests/facilities.spec.ts`.
+
+### 2026-10-15: Align catalog rollout and history snapshots
+
+- **Source:** PR #27, GitHub Codex review 5540687530.
+- **Gap:** Catalog reads enforced the workspace rollout flag while writes only checked the organization flag; detachment history paired null resource IDs with a previous occupancy fallback.
+- **Going forward:** Apply the same rollout predicate to every catalog mutation and replay. Record consistent before/after resource identity and occupancy, including explicit null after detachment; avoid nullish fallbacks that combine states. Test flag-disabled new writes/replay and the complete immutable detachment row.
+- **Pointers:** `functions/src/facilities/service.ts`, `tests/backend/facilities.test.mjs`.

@@ -108,3 +108,23 @@ test('opponent discovery loads one page per request and preserves choices after 
   expect(listEventTeamChoices).toHaveBeenNthCalledWith(3, 'a', 'b');
   expect(screen.queryByText('Load more opponent teams')).toBeNull();
 });
+
+test('resource-assigned detail renders the exact facility and field label for a read-only viewer', async () => {
+  (getEvent as jest.Mock).mockResolvedValue({ ...event, canManage: false,
+    location: { name: 'Cedar Park · Field 2 North', address: '100 Sample Street' } });
+  await render(<EventDetailScreen membership={membership} navigation={navigation} route={{ params: { eventId: 'shared' } } as any} />);
+  await screen.findByText('Cedar Park · Field 2 North\n100 Sample Street');
+  expect(screen.queryByText('Edit event')).toBeNull();
+});
+
+test('resource conflict on native reschedule preserves entered local time and explains the rejection', async () => {
+  (mutateEventSchedule as jest.Mock).mockRejectedValueOnce(new Error('This resource already has an overlapping reservation including setup and cleanup.'));
+  await render(<CreateEditEventScreen teamId="a" membership={membership} navigation={navigation} route={{ params: { eventId: 'shared', action: 'reschedule' } } as any} />);
+  await screen.findByDisplayValue('2026-10-20');
+  await fireEvent.changeText(screen.getByLabelText('Local time'), '19:30');
+  await fireEvent.changeText(screen.getByLabelText('Reason for change'), 'Moving practice');
+  await fireEvent.press(screen.getByText('Save changes'));
+  await screen.findByText('This resource already has an overlapping reservation including setup and cleanup.');
+  expect(screen.getByDisplayValue('19:30')).toBeTruthy();
+  expect(navigation.goBack).not.toHaveBeenCalled();
+});

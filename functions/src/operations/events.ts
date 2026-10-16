@@ -1,3 +1,4 @@
+import { validateResourceAssignment, commitResourceAssignment } from '../facilities/service';
 import { cacheDocumentReads } from './reads';
 import { FieldPath, getFirestore, Timestamp, Transaction } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
@@ -53,7 +54,7 @@ async function result(tx: Transaction, eventId: string, event: Data, uid: string
   const fields = ['schemaVersion', 'orgId', 'programId', 'seasonId', 'divisionId', 'teamId', 'teamIds', 'title', 'type',
     'startsAt', 'endsAt', 'timeZone', 'status', 'publicationState', 'publicationOperationId', 'revision',
     'scheduleVersion', 'rescheduledFromRevision', 'homeTeamId', 'awayTeamId', 'completedAt',
-    'createdAt', 'updatedAt', 'deletedAt'];
+    'createdAt', 'updatedAt', 'deletedAt', 'facilityId', 'resourceId'];
   const safe = Object.fromEntries(fields.filter(field => event[field] !== undefined).map(field => [field, event[field]]));
   return { id: eventId, ...safe, location: event.location ? { name: event.location.name,
     ...(event.location.address ? { address: event.location.address } : {}) } : null, ...(canReadPrivate ? { notes: event.notes ?? null, createdBy: event.createdBy, updatedBy: event.updatedBy } : {}), teams, canManage };
@@ -159,7 +160,7 @@ export const mutateEventSchedule = command('mutateEventSchedule', data => {
   if (!['edit', 'postpone', 'cancel', 'reschedule', 'complete'].includes(action)) invalid('Invalid lifecycle action.');
   const patch = object(data.patch ?? {});
   if (['postpone', 'cancel', 'complete'].includes(action)) keys(patch, []);
-  else keys(patch, action === 'edit' ? ['title', 'type', 'location', 'notes'] : ['startsAt', 'endsAt', 'timeZone']);
+  else keys(patch, action === 'edit' ? ['title', 'type', 'location', 'notes', 'facilityId', 'resourceId'] : ['startsAt', 'endsAt', 'timeZone']);
   if (action === 'reschedule' && ['startsAt', 'endsAt', 'timeZone'].some(field => patch[field] === undefined)) invalid('Supply the complete new interval and timeZone.');
   return { eventId: id(data.eventId, 'eventId'), expectedRevision: revision(data.expectedRevision), action,
     patch: ['edit', 'reschedule'].includes(action) ? v2Fields(patch, true) : {}, reason: text(data.reason, 'reason', 500) };
@@ -189,6 +190,11 @@ export const mutateEventSchedule = command('mutateEventSchedule', data => {
   } else if (data.action !== 'edit') changes.status = { postpone: 'postponed', cancel: 'cancelled', complete: 'completed' }[data.action as string];
   if (data.action === 'complete') changes.completedAt = now;
   if (data.action === 'postpone') changes.postponementReason = data.reason;
+  let assignment: Data = {};
+  const assigning = data.patch.facilityId !== undefined || data.patch.resourceId !== undefined;
+  if (data.action === 'reschedule' || assigning) assignment = await validateResourceAssignment(tx, { ...event, ...changes }, ref.id, scope.teams.map(team => team.sport));
+  if (!assigning && event.resourceId && data.patch.location !== undefined && JSON.stringify(data.patch.location) !== JSON.stringify(event.location)) invalid('Assigned resources determine the location. Remove the resource assignment before entering a custom location.');
+  Object.assign(changes, commitResourceAssignment(tx, { ...event, ...changes }, assignment, ref.id, nextRevision, event));
   // History is immutable and retains the previous interval and status for each committed transition.
   tx.create(ref.collection('scheduleHistory').doc(String(nextRevision)), { schemaVersion: 2, revision: nextRevision,
     action: data.action, reason: data.reason, previousStatus: event.status, status: changes.status ?? event.status,

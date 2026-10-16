@@ -246,6 +246,7 @@ export async function previewScheduleRow(
       before.deletedAt != null ||
       before.status !== "scheduled" ||
       before.publicationOperationId != null ||
+      before.resourceId != null ||
       before.teamIds?.length !== 1 ||
       before.teamId !== teamDoc?.id ||
       before.teamIds[0] !== teamDoc?.id ||
@@ -395,9 +396,11 @@ export async function commitScheduleRow(tx: Transaction, job: Data, row: Data) {
         before.status !== "scheduled" ||
         before.deletedAt != null ||
         before.publicationOperationId != null ||
+      before.resourceId != null ||
         before.externalId !== (row.fields.externalId || null)))
   )
     throw new HttpsError("aborted", "Event changed. Refresh the preview.");
+  if (before?.resourceId != null) throw new HttpsError("failed-precondition", "Resource-assigned events must be edited through the event lifecycle command.");
   const event: Data = {
     ...before,
     orgId: job.orgId,

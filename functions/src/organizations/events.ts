@@ -16,7 +16,7 @@ function instant(value: unknown, field: string): string {
 }
 export function v2Fields(value: unknown, partial = false): Data {
   const fields = object(value);
-  keys(fields, ['title', 'type', 'startsAt', 'endsAt', 'timeZone', 'status', 'publicationState', 'location', 'notes', ...(partial ? [] : ['teamIds'])]);
+  keys(fields, ['title', 'type', 'startsAt', 'endsAt', 'timeZone', 'status', 'publicationState', 'location', 'notes', 'facilityId', 'resourceId', ...(partial ? [] : ['teamIds'])]);
   const result: Data = {};
   for (const field of ['title', 'type', 'startsAt', 'endsAt', 'timeZone', 'status', 'publicationState']) {
     if (partial && fields[field] === undefined) continue;
@@ -32,6 +32,7 @@ export function v2Fields(value: unknown, partial = false): Data {
       result[field] = value;
     }
   }
+  for (const field of ['facilityId', 'resourceId']) if (!partial || fields[field] !== undefined) result[field] = fields[field] == null ? null : id(fields[field], field);
   if (!partial) result.teamIds = teamIds(fields.teamIds);
   if (!partial || fields.location !== undefined) {
     result.location = null;

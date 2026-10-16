@@ -711,3 +711,20 @@ button { overflow-wrap: anywhere; }
 .badge, td button { white-space: nowrap; }
 
 .table-wrap, .table-scroll { position: relative; width: 100%; max-width: 100%; min-width: 0; }
+
+.facilities textarea {
+  font: inherit;
+  width: 100%;
+  min-height: 110px;
+  padding: 10px 12px;
+  border: 1px solid #b7c8bf;
+  border-radius: 7px;
+  color: #203a35;
+  resize: vertical;
+}
+.facilities textarea:focus-visible { outline: 3px solid #bc741c; outline-offset: 3px; }
+.facilities label:has(input[type="checkbox"]) { flex-direction: row; align-items: center; min-height: 44px; gap: 12px; }
+.facilities input[type="checkbox"] { width: 20px; height: 20px; flex: 0 0 20px; }
+.facilities .panel { overflow-wrap: anywhere; }
+.facilities li { margin-bottom: 18px; }
+.facilities button { margin: 4px 8px 4px 0; }
