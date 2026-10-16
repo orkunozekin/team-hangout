@@ -1,3 +1,5 @@
+import { effectiveEvent, requireOpenInterval } from '../facilities/closures';
+import { fingerprint } from './requests';
 import { publishedEvent } from '../scheduling/visibility';
 import { validateResourceAssignment, commitResourceAssignment } from '../facilities/service';
 import { cacheDocumentReads } from './reads';
@@ -36,6 +38,7 @@ async function canonical(tx: Transaction, event: Data) {
   return rows.map(row => ({ id: row.id, name: row.data()!.name }));
 }
 async function result(tx: Transaction, eventId: string, event: Data, uid: string, management = new Map<string, Promise<boolean>>()) {
+  event = await effectiveEvent(tx, event);
   const teams = await canonical(tx, event);
   const key = JSON.stringify(event.teamIds);
   if (!management.has(key)) management.set(key, (async () => {
@@ -54,7 +57,7 @@ async function result(tx: Transaction, eventId: string, event: Data, uid: string
   }
   const fields = ['schemaVersion', 'orgId', 'programId', 'seasonId', 'divisionId', 'teamId', 'teamIds', 'title', 'type',
     'startsAt', 'endsAt', 'timeZone', 'status', 'publicationState', 'publicationOperationId', 'revision',
-    'scheduleVersion', 'rescheduledFromRevision', 'homeTeamId', 'awayTeamId', 'completedAt',
+    'resourceClosed', 'closureUpdatePending', 'scheduleVersion', 'rescheduledFromRevision', 'homeTeamId', 'awayTeamId', 'completedAt',
     'createdAt', 'updatedAt', 'deletedAt', 'facilityId', 'resourceId'];
   const safe = Object.fromEntries(fields.filter(field => event[field] !== undefined).map(field => [field, event[field]]));
   return { id: eventId, ...safe, location: event.location ? { name: event.location.name,
@@ -175,7 +178,8 @@ export const mutateEventSchedule = command('mutateEventSchedule', data => {
   if (action === 'reschedule' && ['startsAt', 'endsAt', 'timeZone'].some(field => patch[field] === undefined)) invalid('Supply the complete new interval and timeZone.');
   return { eventId: id(data.eventId, 'eventId'), expectedRevision: revision(data.expectedRevision), action,
     patch: ['edit', 'reschedule'].includes(action) ? v2Fields(patch, true) : {}, reason: text(data.reason, 'reason', 500) };
-}, async (tx, data, uid, _actor, replay) => {
+}, lifecycleMutation);
+export async function lifecycleMutation(tx: Transaction, data: Data, uid: string, _actor: Data, replay: Data | null) {
   const db = getFirestore(); const ref = db.doc(`events/${data.eventId}`);
   const event = (await tx.get(ref)).data();
   if (!event || event.schemaVersion !== 2) denied();
@@ -188,6 +192,7 @@ export const mutateEventSchedule = command('mutateEventSchedule', data => {
     || (['postpone', 'complete'].includes(data.action) && event.status !== 'scheduled')) {
     throw new HttpsError('failed-precondition', 'This action is unavailable for the current event status.');
   }
+  if (['complete', 'edit'].includes(data.action)) await requireOpenInterval(tx, event);
   const now = Timestamp.now(); const nextRevision = event.revision + 1;
   const changes: Data = { ...data.patch };
   if (data.patch.type !== undefined) Object.assign(changes, {
@@ -214,5 +219,9 @@ export const mutateEventSchedule = command('mutateEventSchedule', data => {
     endsAt: changes.endsAt ?? event.endsAt, createdAt: now });
   tx.update(ref, { ...changes, revision: nextRevision, updatedAt: now, updatedBy: uid });
   eventAudit(tx, event, uid, `event:${data.action}`, ref.id, nextRevision);
+  tx.create(db.doc(`organizations/${event.orgId}/outbox/${fingerprint({ eventId: ref.id, revision: nextRevision, kind: data.action })}`), {
+    schemaVersion: 2, orgId: event.orgId, sourceType: 'event', sourceId: ref.id, sourceRevision: nextRevision,
+    templateKey: `event:${data.action}`, state: 'pending', critical: data.action !== 'edit', audience: { teamIds: event.teamIds },
+    createdAt: now, updatedAt: now, auditCorrelationId: `${ref.id}:${nextRevision}` });
   return { id: ref.id, revision: nextRevision };
-});
+}

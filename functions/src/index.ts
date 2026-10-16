@@ -45,3 +45,6 @@ export { previewRecurrenceDraft, saveRecurrenceDraft, getRecurrenceDraft } from 
 export { generateScheduleDraft, saveScheduleDraft, validateScheduleDraft, getScheduleDraft } from './scheduling/drafts';
 
 export { publishScheduleDraft, getSchedulePublication, advanceSchedulePublication } from './scheduling/publication';
+
+export { previewFacilityClosure, applyFacilityClosure, getFacilityClosureOperation, advanceFacilityClosure } from './facilities/closures';
+export { previewEventMakeup, confirmEventMakeup } from './facilities/makeups';

@@ -389,6 +389,7 @@ export async function draftSnapshot(
       closures: closures.docs.flatMap((doc) => {
         const c = doc.data();
         return c.status !== "cancelled" &&
+          (c.facilityId == null || c.facilityId === slot.facilityId) &&
           Array.isArray(c.resourceIds) &&
           c.resourceIds.includes(slot.resourceId)
           ? [

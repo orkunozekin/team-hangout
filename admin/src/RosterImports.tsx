@@ -1,3 +1,4 @@
+import { formatCalendarDate, formatClockTime } from "../../shared/dates";
 import { useEffect, useRef, useState } from "react";
 import type { AdminEntity, AdminWorkspace } from "../../shared/admin";
 import type { ImportJob, ImportRow } from "../../shared/imports";
@@ -621,7 +622,12 @@ export function RosterImports({
               >
                 Download outcome CSV
               </button>
-              <div className="table-wrap" role="region" aria-label="Records table" tabIndex={0}>
+              <div
+                className="table-wrap"
+                role="region"
+                aria-label="Records table"
+                tabIndex={0}
+              >
                 <table>
                   <thead>
                     <tr>
@@ -646,8 +652,10 @@ export function RosterImports({
                           </strong>
                           {schedule && (
                             <p>
-                              {row.fields.localDate} {row.fields.localStartTime}
-                              –{row.fields.localEndTime} · {row.fields.timeZone}
+                              {formatCalendarDate(row.fields.localDate)} at{" "}
+                              {formatClockTime(row.fields.localStartTime)}–
+                              {formatClockTime(row.fields.localEndTime)} ·{" "}
+                              {row.fields.timeZone}
                               <br />
                               {row.fields.locationName} {row.fields.address}
                             </p>

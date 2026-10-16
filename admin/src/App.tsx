@@ -1,3 +1,4 @@
+import { Closures } from "./Closures";
 import { ScheduleDrafts } from "./ScheduleDrafts";
 import { Recurrence } from "./Recurrence";
 import { Facilities } from "./Facilities";
@@ -201,6 +202,8 @@ export function App({ services }: { services: BrowserServices }) {
               />
             ) : route.section === "invitation" ? (
               <Invitations services={services} orgId={route.orgId} />
+            ) : route.section === "closures" ? (
+              <Closures key={route.orgId} services={services} orgId={route.orgId} />
             ) : route.section === "drafts" ? (
               <ScheduleDrafts services={services} orgId={route.orgId} />
             ) : route.section === "recurrence" ? (

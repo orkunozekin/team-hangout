@@ -1,3 +1,4 @@
+import { formatDateTime } from "../../shared/dates";
 import { useEffect, useRef, useState } from "react";
 import type {
   Facility,
@@ -648,7 +649,8 @@ function ResourceAvailability({
         items?.map((item) => (
           <div key={item.id}>
             <h4>
-              Revision {item.revision}, effective {item.effectiveFrom}
+              Revision {item.revision}, effective{" "}
+              {formatDateTime(item.effectiveFrom, facility.timeZone)}
             </h4>
             {item.windows.length === 0 ? (
               <p>Unavailable from this revision.</p>
@@ -656,7 +658,8 @@ function ResourceAvailability({
               <ul>
                 {item.windows.map((w) => (
                   <li key={w.startsAt}>
-                    {w.startsAt} to {w.endsAt}
+                    {formatDateTime(w.startsAt, facility.timeZone)} to{" "}
+                    {formatDateTime(w.endsAt, facility.timeZone)}
                   </li>
                 ))}
               </ul>

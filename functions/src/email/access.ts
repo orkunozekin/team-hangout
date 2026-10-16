@@ -1,3 +1,4 @@
+import { requireOpenInterval } from '../facilities/closures';
 import { publishedEvent } from '../scheduling/visibility';
 import { getFirestore, Transaction } from "firebase-admin/firestore";
 import { Data, id, keys } from "../commandSupport";
@@ -55,6 +56,7 @@ export async function eventInformation(
       false,
     );
   }
+  await requireOpenInterval(tx, event);
   return {
     id: eventId,
     title: event.title,
