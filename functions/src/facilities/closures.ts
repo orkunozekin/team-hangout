@@ -267,6 +267,8 @@ export const previewFacilityClosure = command(
 );
 function progress(row: Data) {
   return {
+    startsAt: row.startsAt,
+    endsAt: row.endsAt,
     operationId: row.operationId,
     closureId: row.closureId,
     revision: row.revision,
@@ -327,6 +329,8 @@ export const applyFacilityClosure = command(
       operationId,
       closureId: ref.id,
       action: "facilityClosure",
+      startsAt: p.startsAt,
+      endsAt: p.endsAt,
       revision: 1,
       fencingToken,
       state: current.impacted.length ? "running" : "committed",

@@ -20,6 +20,8 @@ export type ClosurePreview = {
   impacted: ClosureImpact[];
 };
 export type ClosureOperation = {
+  startsAt: string;
+  endsAt: string;
   operationId: string;
   closureId: string;
   revision: number;

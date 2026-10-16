@@ -162,7 +162,7 @@ export function Closures({ services, orgId }: Props) {
   const impacted = operation?.impacted ?? preview?.impacted ?? [];
   const requestId = () => crypto.randomUUID();
   return (
-    <main id="main-content" tabIndex={-1} className="page">
+    <main id="main-content" tabIndex={-1} className="page closures">
       <p className="eyebrow">League operations</p>
       <h1>Closures and makeups</h1>
       <p>
@@ -307,7 +307,8 @@ export function Closures({ services, orgId }: Props) {
         <section className="panel" aria-label="Closure impact">
           <h2>Affected teams and events</h2>
           <p>
-            {impacted.length} affected events
+            {impacted.length} affected{" "}
+            {impacted.length === 1 ? "event" : "events"}
             {preview ? ` across ${preview.resourceIds.length} resources` : ""}.
             Times and history are retained.
           </p>
@@ -398,6 +399,10 @@ export function Closures({ services, orgId }: Props) {
         </button>
         {operation && (
           <>
+            <p>
+              Closed interval: {formatDateTime(operation.startsAt, "UTC")} to{" "}
+              {formatDateTime(operation.endsAt, "UTC")}
+            </p>
             <p role="status">
               Interval closed. {operation.postponed} postponed ·{" "}
               {operation.cursor} of {operation.total} processed ·{" "}
