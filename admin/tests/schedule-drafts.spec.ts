@@ -246,9 +246,11 @@ test("uncertain generate retries exact action, stale save preserves correction, 
   let release!: () => void, held!: () => void;
   const wait = new Promise<void>((r) => (release = r)),
     ready = new Promise<void>((r) => (held = r));
-  await page.route("**/getAdminWorkspace", async (route) => {
+  const authorizationResponses = new Set<string>();
+  await page.route(/\/(getAdminWorkspace|getSchedulePublication)$/, async (route) => {
     const response = await route.fetch();
-    held();
+    authorizationResponses.add(new URL(route.request().url()).pathname.split("/").at(-1)!);
+    if (authorizationResponses.size === 2) held();
     await wait;
     await route.fulfill({ response });
   });
