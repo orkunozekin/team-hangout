@@ -244,3 +244,16 @@ test('assignment search indexes the same maximum-size busy actor groups without 
   input.busy[999].coachIds[255] = input.teams[0].coachIds[7];
   const denied = assignSchedule(input); assert.equal(denied.status, 'impossible'); assert.equal(denied.assignments.length, 0);
 });
+
+test('immutable availability revision boundaries reject crossing occupancy but permit exact endpoints', () => {
+  const input = sample(2, 1);
+  const s = input.slots[0], r = input.resources[0];
+  r.setupMinutes = 0; r.cleanupMinutes = 0;
+  const fixture = generatePairings(input.teams.map(t => t.id), 1).fixtures[0];
+  r.availabilityBoundaries = [new Date((Date.parse(s.startsAt) + Date.parse(s.endsAt)) / 2).toISOString()];
+  assert.ok(validateSchedule(input,[{ fixtureId:fixture.id,slotId:s.id }]).conflicts.some(c => c.code === 'RESOURCE_REVISION_BOUNDARY'));
+  assert.equal(assignSchedule(input).status,'impossible');
+  r.availabilityBoundaries = [s.startsAt,s.endsAt];
+  assert.equal(validateSchedule(input,[{ fixtureId:fixture.id,slotId:s.id }]).valid,true);
+  assert.equal(assignSchedule(input).status,'feasible');
+});

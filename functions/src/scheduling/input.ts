@@ -38,6 +38,7 @@ export function checkInput(input: ScheduleInput) {
     requireValue(typeof r.active === 'boolean', 'Resource active flag required.');
     list(r.sports, 3, 'Resource sports'); requireValue(r.sports.every(s => ['soccer', 'basketball', 'football'].includes(s)), 'Unknown resource sport.');
     requireValue(integer(r.setupMinutes, 0, 1440) && integer(r.cleanupMinutes, 0, 1440), 'Invalid resource buffers.'); intervals(r.availability); intervals(r.closures);
+    if (r.availabilityBoundaries) { list(r.availabilityBoundaries, 128, 'Availability boundaries'); r.availabilityBoundaries.forEach(instant); }
   });
   input.slots.forEach(s => { interval(s); requireValue(resourceIds.has(s.resourceId), 'Unknown slot resource.'); requireValue(typeof s.late === 'boolean', 'Explicit late-slot classification required.'); });
   input.busy.forEach(b => {

@@ -733,3 +733,12 @@ button { overflow-wrap: anywhere; }
 .recurrence-days legend { margin-bottom: 12px; font-weight: 600; }
 .recurrence-days label, .recurrence-confirmation { flex-direction: row; align-items: center; }
 .recurrence-days input, .recurrence-confirmation input { width: 20px; height: 20px; flex-shrink: 0; }
+
+.schedule-drafts textarea { font: inherit; width: 100%; padding: 12px; border: 1px solid #b7c8bf; border-radius: 7px; resize: vertical; }
+.schedule-drafts button { margin: 6px 10px 6px 0; }
+.schedule-drafts details { margin: 16px 0; }
+.schedule-drafts summary { cursor: pointer; font-weight: 600; min-height: 44px; }
+.schedule-drafts select { max-width: 540px; }
+
+.draft-preferences label { flex-direction: row; align-items: center; gap: 10px; }
+.draft-preferences input { width: 20px; height: 20px; flex: 0 0 20px; }

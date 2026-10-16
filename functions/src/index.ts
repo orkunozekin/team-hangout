@@ -41,3 +41,5 @@ export { getNativeTeam, listEventTeamChoices, listCanonicalTeamEvents, getCanoni
 export { listFacilities, listFacilityResources, saveFacility, saveFacilityResource, listResourceAvailability, appendResourceAvailability } from './facilities/service';
 
 export { previewRecurrenceDraft, saveRecurrenceDraft, getRecurrenceDraft } from './recurrence/service';
+
+export { generateScheduleDraft, saveScheduleDraft, validateScheduleDraft, getScheduleDraft, publishScheduleDraft } from './scheduling/drafts';

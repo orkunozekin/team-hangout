@@ -211,3 +211,24 @@
 - **Gap:** Accepted maximum busy snapshots multiplied linear coach-ID membership scans across every game/busy pair, including nonoverlapping intervals, outside the search deadline.
 - **Going forward:** Prefilter temporal conflicts before actor intersection, index actor membership once per snapshot and share immutable fixture indexes across candidate slots. Benchmark accepted array-size combinations as well as team/slot ceilings. Cap detailed conflict output explicitly while retaining the full count and invalid result.
 - **Pointers:** `functions/src/scheduling/validator.ts`, `functions/src/scheduling/search.ts`, maximum busy-snapshot regression and benchmark.
+
+### 2026-10-16: Preserve canonical identity domains at pure-module boundaries
+
+- **Source:** PR #30, GitHub Codex review 5550600840.
+- **Gap:** The scheduler accepted 80-character internal IDs while canonical organization/event contracts permit 128-character team IDs. Passing stored IDs directly broke migrated teams and constraints before generation or revalidation.
+- **Going forward:** Map canonical identities to bounded internal handles and map staff-facing results back to full canonical IDs. Cover generation, nonempty manual saves, replay, constraints and current occupancy with identities beyond the pure module's limit; do not truncate IDs or silently narrow existing contracts.
+- **Pointers:** `functions/src/scheduling/drafts.ts`, `tests/backend/schedule-drafts.test.mjs`.
+
+### 2026-10-16: Bound every multiplying UI dimension
+
+- **Source:** PR #30, GitHub Codex review 5550600840.
+- **Gap:** Paging fixtures alone still multiplied 1,000 slot options across 32 preferences and 20 assignment selectors, in addition to rendering every slot form.
+- **Going forward:** Page slot forms and each choice universe too. Retain off-page selections, keep the current assignment visible, and verify rendered node bounds and saved values on an accepted maximum-size draft through real callables. Removing a slot must also clear assignments that reference it.
+- **Pointers:** `admin/src/ScheduleDrafts.tsx`, `admin/tests/schedule-drafts.spec.ts`.
+
+### 2026-10-16: Exercise nested array ceilings in rendered tests
+
+- **Source:** PR #30, GitHub Codex review 5550772551.
+- **Gap:** The large slot/constraint regression used empty blackout arrays, leaving 32 constraints times 128 interval editors unbounded even after slot paging.
+- **Going forward:** Include accepted nested-array ceilings in rendered tests. Page interval controls per constraint, preserve hidden intervals on save, and assert input counts on a real callable-created maximum-blackout draft.
+- **Pointers:** `admin/src/ScheduleDrafts.tsx`, accepted 32-team/128-blackouts-per-team browser regression.

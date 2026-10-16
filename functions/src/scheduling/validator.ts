@@ -33,6 +33,7 @@ export function validateSchedule(input: ScheduleInput, assignments: Assignment[]
     for (const w of r.availability.map(interval).sort((a, b) => a[0] - b[0])) {
       if (w[0] > covered) break; if (w[1] > covered) covered = w[1];
     }
+    if (r.availabilityBoundaries?.some(b => occupied[0] < Date.parse(b) && Date.parse(b) < occupied[1])) report('RESOURCE_REVISION_BOUNDARY', f.id);
     if (covered < occupied[1]) report('RESOURCE_AVAILABILITY', f.id);
     if (r.closures.some(c => intersects(interval(c), occupied))) report('RESOURCE_CLOSURE', f.id);
     const teamIds = [f.homeTeamId, f.awayTeamId]; const coachIds = [...new Set(teamIds.flatMap(t => teams.get(t)!.coachIds))];

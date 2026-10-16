@@ -1,3 +1,4 @@
+import { ScheduleDrafts } from "./ScheduleDrafts";
 import { Recurrence } from "./Recurrence";
 import { Facilities } from "./Facilities";
 import { useEffect, useRef, useState } from "react";
@@ -200,6 +201,8 @@ export function App({ services }: { services: BrowserServices }) {
               />
             ) : route.section === "invitation" ? (
               <Invitations services={services} orgId={route.orgId} />
+            ) : route.section === "drafts" ? (
+              <ScheduleDrafts services={services} orgId={route.orgId} />
             ) : route.section === "recurrence" ? (
               <Recurrence services={services} orgId={route.orgId} />
             ) : route.section === "facility" ? (
