@@ -160,15 +160,13 @@ before(async () => {
     userId: "p207-coach",
     roles: ["coach"],
   });
-  await db
-    .doc(`organizations/${orgId}/facilities/park`)
-    .set({
-      ...meta,
-      orgId,
-      name: "Cedar Park",
-      address: "Synthetic park",
-      timeZone: "America/Chicago",
-    });
+  await db.doc(`organizations/${orgId}/facilities/park`).set({
+    ...meta,
+    orgId,
+    name: "Cedar Park",
+    address: "Synthetic park",
+    timeZone: "America/Chicago",
+  });
   await db.doc(`organizations/${orgId}/facilities/park/resources/north`).set({
     ...meta,
     orgId,
@@ -306,18 +304,29 @@ test("bounded publication hides staging and promotion, verifies complete set, re
   );
   draft = await invoke("validateScheduleDraft", req(identity(draft)));
   assert.equal(draft.validation.unscheduledFixtureIds.length, 0);
-  await db
-    .doc(`organizations/${orgId}/participants/child`)
-    .set({
-      ...meta,
-      orgId,
-      displayName: "Synthetic player",
-      linkedUserId: "p207-self",
-    });
+  await db.doc(`organizations/${orgId}/participants/child`).set({
+    ...meta,
+    orgId,
+    displayName: "Synthetic player",
+    linkedUserId: "p207-self",
+  });
   await db
     .doc(`teams/p207-a/roster/child`)
     .set({ ...meta, orgId, participantId: "child" });
+  let competingDraft = await generate(input({ fields: f }));
+  competingDraft = await invoke(
+    "saveScheduleDraft",
+    req({ ...identity(competingDraft), fields: f, assignments }),
+  );
+  competingDraft = await invoke(
+    "validateScheduleDraft",
+    req(identity(competingDraft)),
+  );
   let op = await begin(draft);
+  await assert.rejects(
+    begin(competingDraft),
+    (e) => e.details?.domainCode === "SCHEDULING_BUSY",
+  );
   assert.equal(op.total, 210);
   const initial = op;
   const exact = req({
@@ -330,6 +339,16 @@ test("bounded publication hides staging and promotion, verifies complete set, re
   });
   op = await invoke("advanceSchedulePublication", exact);
   assert.equal(op.stagingCursor, 100);
+  const stagedRows = await db
+    .collection("events")
+    .where("publicationOperationId", "==", op.operationId)
+    .get();
+  for (const row of stagedRows.docs) {
+    assert.equal(row.data().resourceOccupancy.availabilityRevision, 1);
+    const history = (await row.ref.collection("resourceHistory").get()).docs;
+    assert.equal(history.length, 1);
+    assert.deepEqual(history[0].data().occupancy, row.data().resourceOccupancy);
+  }
   await hidden(op); // process interruption during staging
   assert.deepEqual(await invoke("advanceSchedulePublication", exact), op);
   const loaded = await invoke("getSchedulePublication", {
@@ -440,6 +459,18 @@ test("bounded publication hides staging and promotion, verifies complete set, re
   await hidden(op); // process interruption immediately before commit
   // A cursor alone cannot prove an event is intact.
   const saved = (await db.doc(opPath(op)).get()).data();
+  await db.doc(opPath(op)).update({ stagingCursor: 209 });
+  await assert.rejects(
+    advance(op),
+    (e) => e.details?.domainCode === "INCOMPLETE_PUBLICATION",
+  );
+  await db.doc(opPath(op)).update({ stagingCursor: 210 });
+  await db.doc(opPath(op)).update({ expected: saved.expected.slice(1) });
+  await assert.rejects(
+    advance(op),
+    (e) => e.details?.domainCode === "EVENT_CHANGED",
+  );
+  await db.doc(opPath(op)).update({ expected: saved.expected });
   const target = db.doc(`events/${saved.expected[0].eventId}`);
   await target.update({ title: "Changed payload" });
   await assert.rejects(
@@ -497,6 +528,91 @@ test("bounded publication hides staging and promotion, verifies complete set, re
   assert.equal(new Set(agendaIds).size, 20);
   await invoke("getCanonicalEvent", { eventId: saved.expected[0].eventId });
   assert.equal((await advance(op)).state, "committed");
+  const lockRef = db.doc(`organizations/${orgId}/schedulingLock/current`);
+  const version = (await lockRef.get()).data().visibilityRevision;
+  assert.equal(version, 1);
+  const teamPage = await invoke("listCanonicalTeamEvents", {
+    teamId: "p207-a",
+    pageSize: 7,
+  });
+  const agendaPage = await call("p207-self", "listHouseholdAgenda", {
+    from: at(1),
+    to: "2035-04-01T00:00:00.000Z",
+    pageSize: 7,
+  });
+  // Simulate the next committed publication's visibility epoch between page requests.
+  await lockRef.update({ visibilityRevision: version + 1 });
+  await assert.rejects(
+    invoke("listCanonicalTeamEvents", {
+      teamId: "p207-a",
+      pageSize: 7,
+      cursor: teamPage.nextCursor,
+    }),
+    { code: "functions/invalid-argument" },
+  );
+  await assert.rejects(
+    call("p207-self", "listHouseholdAgenda", {
+      from: at(1),
+      to: "2035-04-01T00:00:00.000Z",
+      pageSize: 7,
+      cursor: agendaPage.nextCursor,
+    }),
+    (e) => e.details?.domainCode === "AGENDA_CHANGED",
+  );
+  await lockRef.update({ visibilityRevision: version });
+  const { saveFacility } = require("./lib/facilities/service.js");
+  const transact = db.runTransaction.bind(db),
+    reads = new Map();
+  const count = (ref) => reads.set(ref.path, (reads.get(ref.path) ?? 0) + 1);
+  db.runTransaction = (callback, options) =>
+    transact(
+      (tx) =>
+        callback(
+          new Proxy(tx, {
+            get(target, key) {
+              if (key === "getAll")
+                return (...refs) => {
+                  refs.forEach(count);
+                  return target.getAll(...refs);
+                };
+              if (key === "get")
+                return (ref) => {
+                  if (typeof ref.collection === "function") count(ref);
+                  return target.get(ref);
+                };
+              const value = Reflect.get(target, key);
+              return typeof value === "function" ? value.bind(target) : value;
+            },
+          }),
+        ),
+      options,
+    );
+  try {
+    await assert.rejects(
+      saveFacility.run({
+        auth: { uid: "p207-admin" },
+        data: req({
+          orgId,
+          facilityId: "park",
+          expectedRevision: 1,
+          fields: {
+            name: "Cedar Park",
+            address: "Synthetic park",
+            timeZone: "America/Chicago",
+            status: "inactive",
+          },
+        }),
+      }),
+      (e) => e.details?.domainCode === "SCHEDULE_CONFLICT",
+    );
+  } finally {
+    db.runTransaction = transact;
+  }
+  assert.equal(
+    reads.get(opPath(op)),
+    1,
+    "210 reservations share one transaction-local commit-marker read",
+  );
 });
 
 test("trusted 201-event protocol fixture crosses 100/100/1 boundaries and stays hidden through all crash points", async () => {
@@ -514,18 +630,16 @@ test("trusted 201-event protocol fixture crosses 100/100/1 boundaries and stays 
     seasonId: "season",
     divisionId: "division",
   };
-  await db
-    .doc(`organizations/${tenant}`)
-    .set({
-      ...meta,
-      name: "Synthetic protocol league",
-      timeZone: "UTC",
-      features: {
-        organizationV2: true,
-        households: true,
-        calendarSubscriptions: true,
-      },
-    });
+  await db.doc(`organizations/${tenant}`).set({
+    ...meta,
+    name: "Synthetic protocol league",
+    timeZone: "UTC",
+    features: {
+      organizationV2: true,
+      households: true,
+      calendarSubscriptions: true,
+    },
+  });
   await db
     .doc(`organizations/${tenant}/members/p207-admin`)
     .set({ ...meta, orgId: tenant, roles: ["orgAdmin"], programIds: [] });
@@ -539,22 +653,18 @@ test("trusted 201-event protocol fixture crosses 100/100/1 boundaries and stays 
       .set({ ...meta, ...parents, name: key });
   const teamIds = ["p207-proto-a", "p207-proto-b"];
   for (const [i, teamId] of teamIds.entries()) {
-    await db
-      .doc(`teams/${teamId}`)
-      .set({
-        ...meta,
-        ...parents,
-        name: `Synthetic team ${i}`,
-        sport: "soccer",
-      });
-    await db
-      .doc(`organizations/${tenant}/participants/child${i}`)
-      .set({
-        ...meta,
-        orgId: tenant,
-        displayName: `Child ${i}`,
-        linkedUserId: "p207-guardian",
-      });
+    await db.doc(`teams/${teamId}`).set({
+      ...meta,
+      ...parents,
+      name: `Synthetic team ${i}`,
+      sport: "soccer",
+    });
+    await db.doc(`organizations/${tenant}/participants/child${i}`).set({
+      ...meta,
+      orgId: tenant,
+      displayName: `Child ${i}`,
+      linkedUserId: "p207-guardian",
+    });
     await db
       .doc(`teams/${teamId}/roster/child${i}`)
       .set({ ...meta, orgId: tenant, participantId: `child${i}` });
@@ -761,6 +871,14 @@ test("live rollout and resource revisions block recovery; abort releases lease a
     .update({ "features.scheduler": false });
   await deny(advance(op));
   await db.doc(`organizations/${orgId}`).update({ "features.scheduler": true });
+  const lock = db.doc(`organizations/${orgId}/schedulingLock/current`);
+  const inputRevision = (await lock.get()).data().inputRevision;
+  await lock.update({ inputRevision: inputRevision + 1 });
+  await assert.rejects(
+    advance(op),
+    (e) => e.details?.domainCode === "INPUT_CHANGED",
+  );
+  await lock.update({ inputRevision });
   await db
     .doc(`organizations/${orgId}/facilities/park/resources/north`)
     .update({ revision: 2 });
@@ -811,5 +929,28 @@ test("live rollout and resource revisions block recovery; abort releases lease a
         .get()
     ).size,
     0,
+  );
+  // Do not begin a batch that its own staged records would push beyond the recovery snapshot budget.
+  const existing = (
+    await db.collection("events").where("orgId", "==", orgId).get()
+  ).size;
+  for (let offset = existing; offset < 800; offset += 250) {
+    const batch = db.batch();
+    for (let n = offset; n < Math.min(800, offset + 250); n++)
+      batch.set(db.doc(`events/p207-capacity-${n}`), {
+        orgId,
+        publicationState: "staged",
+        status: "scheduled",
+      });
+    await batch.commit();
+  }
+  await assert.rejects(
+    begin(draft),
+    (e) => e.details?.domainCode === "PUBLICATION_CAPACITY",
+  );
+  assert.equal(
+    (await db.doc(`organizations/${orgId}/schedulingLock/current`).get()).data()
+      .operationId,
+    null,
   );
 });

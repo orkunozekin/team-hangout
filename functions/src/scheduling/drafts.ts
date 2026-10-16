@@ -319,6 +319,7 @@ export async function draftSnapshot(
   );
   bounded(closures.size, 1000, "Closures");
   bindings.push(closures.docs.map((t) => [t.id, t.data()]));
+  const availabilityRecords = new Map<string, Data[]>();
   const resources: ScheduleInput["resources"] = [],
     resourceMap = new Map<string, string>();
   for (const slot of f.slots) {
@@ -351,6 +352,10 @@ export async function draftSnapshot(
         .limit(129),
     );
     bounded(revisions.size, 128, "Availability revisions");
+    availabilityRecords.set(
+      key,
+      revisions.docs.map((row) => row.data()),
+    );
     bindings.push(
       a,
       r,
@@ -433,7 +438,12 @@ export async function draftSnapshot(
         Date.parse(f.endsAt) + (f.minimumRestMinutes + 1440) * 60000
     )
       continue;
-    bindings.push([doc.id, e.revision ?? null, e.scheduleVersion ?? null, e.publicationOperationId ?? null]);
+    bindings.push([
+      doc.id,
+      e.revision ?? null,
+      e.scheduleVersion ?? null,
+      e.publicationOperationId ?? null,
+    ]);
     const actorIds = [
       ...new Set<string>(
         e.teamIds.flatMap((t: string) => coachMap.get(t) || []),
@@ -487,6 +497,8 @@ export async function draftSnapshot(
   return {
     input,
     inputHash: fingerprint({ input, bindings }),
+    availabilityRecords,
+    eventDocumentCount: events.size,
     timeZone: zone,
     teams: s.teams.map((t) => ({ id: t.id, name: t.data().name })),
     canonicalTeamIds,

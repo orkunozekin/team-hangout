@@ -676,3 +676,32 @@ test("deliberate publication recovers an uncertain chunk, reloads progress and c
   await expect(page.getByText("Published. The complete schedule is available to authorized teams and households.")).toBeVisible();
   expect((await db.collection(`organizations/${orgId}/outbox`).get()).size).toBe(1);
 });
+
+test("abort then save and revalidate restarts publication without focus or reload", async ({ page }) => {
+  await open(page);
+  await fill(page);
+  await page.getByLabel("Range start (UTC)", { exact: true }).fill("2035-02-02T12:00:00.000Z");
+  await page.getByLabel("Range end (UTC, exclusive)", { exact: true }).fill("2035-02-07T13:00:00.000Z");
+  await page.getByText("Candidate slots and team constraints", { exact: true }).click();
+  for (let i = 0; i < 6; i++) {
+    await page.getByLabel(`UTC start for slot ${i + 1}`, { exact: true }).fill(`2035-02-0${i + 2}T12:00:00.000Z`);
+    await page.getByLabel(`UTC end for slot ${i + 1}`, { exact: true }).fill(`2035-02-0${i + 2}T13:00:00.000Z`);
+  }
+  await page.getByText("Candidate slots and team constraints", { exact: true }).click();
+  await page.getByRole("button", { name: "Generate private draft", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Complete schedule", exact: true })).toBeVisible();
+  await page.getByLabel("I have reviewed this complete schedule and want to publish it.").check();
+  await page.getByRole("button", { name: "Start publication", exact: true }).click();
+  await expect(page.getByText("Staged 0 of 6 · Promoted 0 of 6")).toBeVisible();
+  await page.getByRole("button", { name: "Abort hidden publication", exact: true }).click();
+  await expect(page.getByText("Publication aborted. Batch events remain hidden.")).toBeVisible();
+  await page.getByLabel("Draft title", { exact: true }).fill("Reviewed after abort");
+  await page.getByRole("button", { name: "Save edits as unvalidated draft", exact: true }).click();
+  await page.getByRole("button", { name: "Revalidate saved draft", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Complete schedule", exact: true })).toBeVisible();
+  await page.getByLabel("I have reviewed this complete schedule and want to publish it.").check();
+  await page.getByRole("button", { name: "Start publication", exact: true }).click();
+  await expect(page.getByText("Staged 0 of 6 · Promoted 0 of 6")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Continue next chunk", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Abort hidden publication", exact: true }).click();
+});

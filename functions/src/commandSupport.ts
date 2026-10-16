@@ -1,3 +1,4 @@
+import { cacheDocumentReads } from './operations/reads';
 import { commandScheduleMutation } from './scheduling/lease';
 import { accountAvailable } from './accountAccess';
 import { fingerprint, receiptId } from './operations/requests';
@@ -45,6 +46,7 @@ export function command(name: string, normalize: (data: Data) => Data,
     const db = getFirestore();
     const receipt = db.doc(`commandRequests/${receiptId(uid, name, requestId, payload.orgId)}`);
     return db.runTransaction(async tx => {
+      tx = cacheDocumentReads(tx);
       const actor = await accountAvailable(tx, uid);
       const previous = await tx.get(receipt);
       if (previous.exists && previous.data()?.fingerprint !== payloadFingerprint) {

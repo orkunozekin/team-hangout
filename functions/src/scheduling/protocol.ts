@@ -53,8 +53,25 @@ export async function publicationPass(
         );
     }
     if (staging)
-      for (const w of writes)
+      for (const w of writes) {
         tx.create(db().doc(`events/${w.eventId}`), w.event);
+        if (w.event.resourceOccupancy)
+          tx.create(db().doc(`events/${w.eventId}/resourceHistory/1`), {
+            schemaVersion: 2,
+            revision: 1,
+            orgId: w.event.orgId,
+            facilityId: w.event.facilityId,
+            resourceId: w.event.resourceId,
+            status: w.event.status,
+            occupancy: w.event.resourceOccupancy,
+            previousFacilityId: null,
+            previousResourceId: null,
+            previousOccupancy: null,
+            createdAt: op.createdAt,
+            updatedAt: op.createdAt,
+            auditCorrelationId: `${w.eventId}:1`,
+          });
+      }
     else
       for (const e of entries)
         tx.update(db().doc(`events/${e.eventId}`), {

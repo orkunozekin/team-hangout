@@ -81,6 +81,14 @@ async function eventPayload(
   const endsAt = Timestamp.fromMillis(
     Date.parse(slot.startsAt) + row.fields.durationMinutes * 60000,
   );
+  const occupancyEnd = new Date(
+    endsAt.toMillis() + resource.cleanupMinutes * 60000,
+  ).toISOString();
+  const availability = current.availabilityRecords
+    .get(`${slot.facilityId}/${slot.resourceId}`)
+    ?.filter((row) => row.effectiveFrom < occupancyEnd)
+    .at(-1);
+  if (!availability) fail("INPUT_CHANGED", "Resource availability is missing.");
   return {
     schemaVersion: 2,
     orgId: d.orgId,
@@ -135,6 +143,7 @@ async function eventPayload(
       setupMinutes: resource.setupMinutes,
       cleanupMinutes: resource.cleanupMinutes,
       resourceRevision: resource.revision,
+      availabilityRevision: availability.revision,
       sports: [current.input.sport],
     },
     notes: null,
@@ -190,6 +199,11 @@ export const publishScheduleDraft = command(
     });
     d = { ...d, operationId };
     const current = await live(tx, d, uid, row);
+    if (current.eventDocumentCount + row.assignments.length > 1000)
+      fail(
+        "PUBLICATION_CAPACITY",
+        "This publication would exceed the 1,000-document tenant snapshot budget during recovery. Narrow the batch or ask an administrator before starting.",
+      );
     const expected = [];
     for (const a of row.assignments) {
       const eventId = fingerprint({ operationId, fixtureId: a.fixtureId });
@@ -405,6 +419,10 @@ export const advanceSchedulePublication = command(
         revision: 1,
         state: "pending",
         templateKey: "schedulePublished",
+        audienceScope: {
+          divisionId: draft.divisionId,
+          teamIds: current.teams.map((team) => team.id),
+        },
         createdAt: now,
         updatedAt: now,
         auditCorrelationId: d.operationId,

@@ -58,7 +58,7 @@ export function SchedulePublication({
       epoch.current++;
       window.removeEventListener("focus", refresh);
     };
-  }, [services, orgId, draft.draftId]);
+  }, [services, orgId, draft.draftId, draft.revision]);
   async function run(action: "start" | "advance" | "resume" | "abort") {
     const n = epoch.current;
     const base = {
