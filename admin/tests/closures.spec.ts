@@ -19,6 +19,7 @@ const password = "SyntheticPassword123!",
   orgId = "browser-closures";
 const at = (day: number, hour = 0) =>
   `2035-01-${String(day).padStart(2, "0")}T${String(hour).padStart(2, "0")}:00:00.000Z`;
+const inputAt = (day: number, hour = 0) => at(day, hour).slice(0, 16);
 const meta = { schemaVersion: 2, status: "active", revision: 1 };
 async function seed(count = 1) {
   await db
@@ -34,19 +35,17 @@ async function seed(count = 1) {
   for (const row of previous.docs) await db.recursiveDelete(row.ref);
   // Each test uses a unique facility so retained closure history cannot alter another scenario.
   const facilityId = `park-${Date.now()}`;
-  await db
-    .doc(`organizations/${orgId}/facilities/${facilityId}`)
-    .set({
-      ...meta,
-      orgId,
-      name: facilityId,
-      address: "100 Sample Street",
-      timeZone: "UTC",
-      latitude: null,
-      longitude: null,
-      parking: null,
-      accessibility: null,
-    });
+  await db.doc(`organizations/${orgId}/facilities/${facilityId}`).set({
+    ...meta,
+    orgId,
+    name: facilityId,
+    address: "100 Sample Street",
+    timeZone: "UTC",
+    latitude: null,
+    longitude: null,
+    parking: null,
+    accessibility: null,
+  });
   await db
     .doc(`organizations/${orgId}/facilities/${facilityId}/resources/field`)
     .set({
@@ -75,48 +74,46 @@ async function seed(count = 1) {
   for (let i = 0; i < count; i++) {
     const eventId = `${facilityId}-event-${i}`;
     events.push(eventId);
-    await db
-      .doc(`events/${eventId}`)
-      .set({
-        ...meta,
-        orgId,
-        programId: "closure-program",
-        seasonId: "closure-season",
-        divisionId: "closure-division",
-        teamId: "closure-a",
-        teamIds: ["closure-a", "closure-b"],
-        homeTeamId: "closure-a",
-        awayTeamId: "closure-b",
-        title: `Falcons vs Comets ${i + 1}`,
-        type: "match",
-        status: "scheduled",
-        publicationState: "published",
-        publicationOperationId: null,
+    await db.doc(`events/${eventId}`).set({
+      ...meta,
+      orgId,
+      programId: "closure-program",
+      seasonId: "closure-season",
+      divisionId: "closure-division",
+      teamId: "closure-a",
+      teamIds: ["closure-a", "closure-b"],
+      homeTeamId: "closure-a",
+      awayTeamId: "closure-b",
+      title: `Falcons vs Comets ${i + 1}`,
+      type: "match",
+      status: "scheduled",
+      publicationState: "published",
+      publicationOperationId: null,
+      startsAt: Timestamp.fromDate(new Date(at(2 + i, 23))),
+      endsAt: Timestamp.fromDate(new Date(at(3 + i))),
+      timeZone: "UTC",
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+      createdBy: uid,
+      updatedBy: uid,
+      scheduleVersion: 1,
+      deletedAt: null,
+      facilityId,
+      resourceId: "field",
+      location: {
+        name: "Cedar Park · Field 2 North",
+        address: "100 Sample Street",
+      },
+      resourceOccupancy: {
         startsAt: Timestamp.fromDate(new Date(at(2 + i, 23))),
-        endsAt: Timestamp.fromDate(new Date(at(3 + i))),
-        timeZone: "UTC",
-        createdAt: Timestamp.now(),
-        updatedAt: Timestamp.now(),
-        createdBy: uid,
-        updatedBy: uid,
-        scheduleVersion: 1,
-        deletedAt: null,
-        facilityId,
-        resourceId: "field",
-        location: {
-          name: "Cedar Park · Field 2 North",
-          address: "100 Sample Street",
-        },
-        resourceOccupancy: {
-          startsAt: Timestamp.fromDate(new Date(at(2 + i, 23))),
-          endsAt: Timestamp.fromMillis(Date.parse(at(3 + i)) + 10 * 60000),
-          setupMinutes: 15,
-          cleanupMinutes: 10,
-          sports: ["soccer"],
-          availabilityRevision: 1,
-          resourceRevision: 1,
-        },
-      });
+        endsAt: Timestamp.fromMillis(Date.parse(at(3 + i)) + 10 * 60000),
+        setupMinutes: 15,
+        cleanupMinutes: 10,
+        sports: ["soccer"],
+        availabilityRevision: 1,
+        resourceRevision: 1,
+      },
+    });
   }
   return { facilityId, events };
 }
@@ -126,8 +123,8 @@ async function open(page: Page, f: string) {
   await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await page.getByLabel("Facility", { exact: true }).selectOption(f);
-  await page.getByLabel("Starts at (UTC)").fill(at(3));
-  await page.getByLabel("Ends at (UTC)").fill(at(3, 2));
+  await page.getByLabel("Starts at (UTC)").fill(inputAt(3));
+  await page.getByLabel("Ends at (UTC)").fill(inputAt(3, 2));
   await page
     .getByLabel("Reason", { exact: true })
     .fill("Staff reviewed unsafe field");
@@ -141,47 +138,41 @@ test.beforeAll(async () => {
     password,
   });
   await db.doc(`users/${uid}`).set({ uid, appRole: "user" });
-  await db
-    .doc(`organizations/${orgId}`)
-    .set({
-      ...meta,
-      name: "Cedar Park Athletics",
-      timeZone: "UTC",
-      features: { organizationV2: true, adminWorkspace: true },
-    });
+  await db.doc(`organizations/${orgId}`).set({
+    ...meta,
+    name: "Cedar Park Athletics",
+    timeZone: "UTC",
+    features: { organizationV2: true, adminWorkspace: true },
+  });
   for (const [kind, id] of [
     ["programs", "closure-program"],
     ["seasons", "closure-season"],
     ["divisions", "closure-division"],
   ])
-    await db
-      .doc(`organizations/${orgId}/${kind}/${id}`)
-      .set({
-        ...meta,
-        orgId,
-        programId: "closure-program",
-        seasonId: "closure-season",
-        name: id,
-        sportCode: "soccer",
-        timeZone: "UTC",
-        startsOn: "2035-01-01",
-        endsOn: "2035-01-31",
-      });
+    await db.doc(`organizations/${orgId}/${kind}/${id}`).set({
+      ...meta,
+      orgId,
+      programId: "closure-program",
+      seasonId: "closure-season",
+      name: id,
+      sportCode: "soccer",
+      timeZone: "UTC",
+      startsOn: "2035-01-01",
+      endsOn: "2035-01-31",
+    });
   for (const [teamId, name] of [
     ["closure-a", "Falcons"],
     ["closure-b", "Comets"],
   ])
-    await db
-      .doc(`teams/${teamId}`)
-      .set({
-        ...meta,
-        orgId,
-        programId: "closure-program",
-        seasonId: "closure-season",
-        divisionId: "closure-division",
-        name,
-        sport: "soccer",
-      });
+    await db.doc(`teams/${teamId}`).set({
+      ...meta,
+      orgId,
+      programId: "closure-program",
+      seasonId: "closure-season",
+      divisionId: "closure-division",
+      name,
+      sport: "soccer",
+    });
 });
 test.afterAll(async () => {
   await deleteApp(app);
@@ -242,8 +233,8 @@ test("review impact, immediate pending state, lost chunk response, reload and de
   await expect(
     page.getByText("Postponed. Awaiting a reviewed makeup."),
   ).toBeVisible();
-  await page.getByLabel("Starts at (UTC)").fill(at(20, 12));
-  await page.getByLabel("Ends at (UTC)").fill(at(20, 13));
+  await page.getByLabel("Starts at (UTC)").fill(inputAt(20, 12));
+  await page.getByLabel("Ends at (UTC)").fill(inputAt(20, 13));
   await page.getByLabel("Resource", { exact: true }).selectOption("field");
   await page.getByLabel("Postponed event ID").fill(f.events[0]);
   await page
@@ -295,7 +286,7 @@ test("impact lists are paged, midnight events stay visible and narrow screens do
 }) => {
   const f = await seed(12);
   await open(page, f.facilityId);
-  await page.getByLabel("Ends at (UTC)").fill(at(16));
+  await page.getByLabel("Ends at (UTC)").fill(inputAt(16));
   await page.getByRole("button", { name: "Preview closure impact" }).click();
   const panel = page.getByRole("region", { name: "Closure impact" });
   await expect(panel.locator("article")).toHaveCount(10);

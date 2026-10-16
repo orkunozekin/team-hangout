@@ -240,15 +240,17 @@ export function Closures({ services, orgId }: Props) {
           </button>
         )}
         <p>
-          Use explicit UTC times, for example 2035-01-03T00:00:00.000Z. The full
-          occupied interval includes setup and cleanup.
+          Choose dates and times in UTC. The full occupied interval includes
+          setup and cleanup.
         </p>
         <label>
           Starts at (UTC)
           <input
-            value={startsAt}
+            type="datetime-local"
+            step={60}
+            value={startsAt.slice(0, 16)}
             onChange={(e) => {
-              setStart(e.target.value);
+              setStart(e.target.value ? `${e.target.value}:00.000Z` : "");
               invalidate();
             }}
           />
@@ -256,9 +258,11 @@ export function Closures({ services, orgId }: Props) {
         <label>
           Ends at (UTC)
           <input
-            value={endsAt}
+            type="datetime-local"
+            step={60}
+            value={endsAt.slice(0, 16)}
             onChange={(e) => {
-              setEnd(e.target.value);
+              setEnd(e.target.value ? `${e.target.value}:00.000Z` : "");
               invalidate();
             }}
           />
