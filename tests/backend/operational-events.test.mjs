@@ -328,6 +328,16 @@ test('published soft deletion requires cancellation history while staged deletio
 });
 
 test('family history excludes staff freeform reasons and keeps safe lifecycle timing', async () => {
+  const agendaEvent = async (uid, eventId) => {
+    let cursor;
+    do {
+      const page = await call(uid, 'listHouseholdAgenda', { from: '2026-10-01T00:00:00.000Z', to: '2026-11-01T00:00:00.000Z', ...(cursor ? { cursor } : {}) });
+      const row = page.items.find(item => item.id === eventId);
+      if (row) return row;
+      cursor = page.nextCursor;
+    } while (cursor);
+    assert.fail('Expected lifecycle event in the complete authorized agenda.');
+  };
   const event = await create();
   const edited = await mutate(event, 'edit', { notes: 'Private staff note' }, { reason: 'Private note explanation' });
   const postponed = await mutate(edited, 'postpone', {}, { reason: 'Private freeform scheduling explanation' });
@@ -337,13 +347,11 @@ test('family history excludes staff freeform reasons and keeps safe lifecycle ti
     assert.deepEqual(loaded.history.map(row => row.action), ['postpone', 'edit']);
     for (const row of loaded.history) for (const key of ['reason', 'actorUid', 'privateFutureField']) assert.equal(Object.hasOwn(row, key), false);
     assert.ok(loaded.history[0].previousStartsAt); assert.equal(loaded.status, 'postponed');
-    const agenda = await call(uid, 'listHouseholdAgenda', { from: '2026-10-01T00:00:00.000Z', to: '2026-11-01T00:00:00.000Z' });
-    assert.equal(agenda.items.find(row => row.id === event.id).status, 'postponed');
+    assert.equal((await agendaEvent(uid, event.id)).status, 'postponed');
   }
   assert.equal((await call('p202-admin', 'getCanonicalEvent', { eventId: event.id })).history[0].reason, 'Private freeform scheduling explanation');
   await mutate(postponed, 'cancel');
-  const agenda = await call('p202-guardian', 'listHouseholdAgenda', { from: '2026-10-01T00:00:00.000Z', to: '2026-11-01T00:00:00.000Z' });
-  assert.equal(agenda.items.find(row => row.id === event.id).status, 'cancelled');
+  assert.equal((await agendaEvent('p202-guardian', event.id)).status, 'cancelled');
 });
 
 test('native upcoming pages bypass a large archive and past pages remain available', async () => {
