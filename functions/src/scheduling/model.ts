@@ -20,7 +20,7 @@ export type Assignment = { fixtureId: string; slotId: string };
 export type TeamMetrics = { teamId: string; home: number; away: number; byes: number; early: number; late: number;
   minimumRestMinutes: number | null; unmetPreferences: number };
 export type Validation = {
-  valid: boolean; conflicts: { code: string; fixtureIds: string[] }[]; unscheduledFixtureIds: string[];
+  valid: boolean; conflictCount: number; conflictsTruncated: boolean; conflicts: { code: string; fixtureIds: string[] }[]; unscheduledFixtureIds: string[];
   teams: TeamMetrics[]; objective: [number, number, number, number]; disclosures: string[];
 };
 export type SearchOptions = { maxNodes?: number; maxMilliseconds?: number; now?: () => number };

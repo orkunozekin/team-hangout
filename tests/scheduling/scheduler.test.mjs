@@ -221,3 +221,26 @@ for (const count of [31, 32]) test(`${count}-team full witness validates even wh
   assert.ok(validated.teams.every(t => Math.abs(t.home - t.away) <= 1 && t.byes === count % 2));
   assert.equal(assignSchedule(input, { maxNodes: 1000 }).status, 'budgetExhausted');
 });
+
+test('maximum accepted busy snapshot validates 992 fixtures with 16 coaches per game', async () => {
+  const { busyBoundary } = await import('./fixtures.mjs'); const input = busyBoundary();
+  const rows = assignments(input); const result = validateSchedule(input, rows);
+  assert.equal(rows.length, 992); assert.equal(result.valid, true); assert.equal(result.unscheduledFixtureIds.length, 0);
+  assert.equal(result.conflictCount, 0); assert.equal(result.conflictsTruncated, false);
+  // A matching actor still rejects every overlap even at the ceiling; diagnostic truncation is explicit.
+  input.teams.forEach(t => { t.coachIds[0] = 'shared'; }); input.busy.forEach(b => { b.coachIds[0] = 'shared'; });
+  const denied = validateSchedule(input, rows);
+  assert.equal(denied.valid, false); assert.equal(denied.conflictCount, 992000);
+  assert.equal(denied.conflicts.length, 1000); assert.equal(denied.conflictsTruncated, true);
+  assert.ok(denied.conflicts.every(c => c.code === 'COACH_OVERLAP'));
+  input.busy.forEach(b => Object.assign(b, window(120000, 120060))); // Same actors, disjoint times.
+  assert.equal(validateSchedule(input, rows).valid, true);
+});
+
+test('assignment search indexes the same maximum-size busy actor groups without skipping matching coaches', async () => {
+  const { busyBoundary } = await import('./fixtures.mjs'); const input = busyBoundary();
+  input.teams = input.teams.slice(0, 2); input.slots = input.slots.slice(0, 1); input.repetitions = 1;
+  assert.equal(assignSchedule(input).status, 'feasible');
+  input.busy[999].coachIds[255] = input.teams[0].coachIds[7];
+  const denied = assignSchedule(input); assert.equal(denied.status, 'impossible'); assert.equal(denied.assignments.length, 0);
+});

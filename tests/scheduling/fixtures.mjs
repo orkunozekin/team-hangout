@@ -25,3 +25,13 @@ export function cases() {
     { name: 'truthful-node-exhaustion', input: sample(), options: { maxNodes: 2 }, expected: 'budgetExhausted' },
   ];
 }
+
+/** Accepted actor-heavy ceiling, with a complete witness independent of assignment search. */
+export function busyBoundary() {
+  const input = sample(32, 1000); input.repetitions = 2; input.crossOrganizationBusy = 'coachApprovedBusyProvided';
+  input.teams.forEach((t, index) => { t.coachIds = Array.from({ length: 8 }, (_, n) => `coach-${index}-${n}`); });
+  input.busy = Array.from({ length: 1000 }, (_, n) => ({ ...window(0, 161280), resourceId: null,
+    teamIds: Array.from({ length: 32 }, (_, t) => `unrelated-team-${t}`),
+    coachIds: Array.from({ length: 256 }, (_, c) => `unrelated-coach-${n}-${c}`), setupMinutes: 0, cleanupMinutes: 0 }));
+  return input;
+}

@@ -3,13 +3,13 @@ import { checkInput } from './input';
 import { generatePairings } from './pairings';
 import { validateSchedule } from './validator';
 
-type Game = { start: number; end: number; occupiedStart: number; occupiedEnd: number; resourceId: string | null; teams: string[]; coaches: string[] };
+type Game = { start: number; end: number; occupiedStart: number; occupiedEnd: number; resourceId: string | null; teams: string[]; teamSet: Set<string>; coaches: string[]; coachSet: Set<string> };
 const overlap = (a: number, b: number, c: number, d: number) => a < d && c < b;
 function conflicts(a: Game, b: Game, rest: number) {
   if (a.resourceId === b.resourceId && a.resourceId !== null && overlap(a.occupiedStart, a.occupiedEnd, b.occupiedStart, b.occupiedEnd)) return true;
-  const shared = a.teams.some(t => b.teams.includes(t));
+  const shared = a.teams.some(t => b.teamSet.has(t));
   if (shared && (overlap(a.start, a.end, b.start, b.end) || Math.max(a.start, b.start) - Math.min(a.end, b.end) < rest * 60000)) return true;
-  return a.coaches.some(c => b.coaches.includes(c)) && overlap(a.start, a.end, b.start, b.end);
+  return overlap(a.start, a.end, b.start, b.end) && a.coaches.some(c => b.coachSet.has(c));
 }
 function better(a: number[], b: number[]) { for (let i = 0; i < a.length; i++) { if (a[i] !== b[i]) return a[i] < b[i]; } return false; }
 function random(seed: number) { let s = seed; return () => { s = (Math.imul(1664525, s) + 1013904223) >>> 0; return s / 0x100000000; }; }
@@ -23,11 +23,15 @@ export function assignSchedule(input: ScheduleInput, options: SearchOptions = {}
   const teams = new Map(input.teams.map(t => [t.id, t])); const resources = new Map(input.resources.map(r => [r.id, r]));
   const existing: Game[] = input.busy.map(b => ({ start: Date.parse(b.startsAt), end: Date.parse(b.endsAt),
     occupiedStart: Date.parse(b.startsAt) - b.setupMinutes * 60000, occupiedEnd: Date.parse(b.endsAt) + b.cleanupMinutes * 60000,
-    resourceId: b.resourceId, teams: b.teamIds, coaches: b.coachIds }));
+    resourceId: b.resourceId, teams: b.teamIds, teamSet: new Set(b.teamIds), coaches: b.coachIds, coachSet: new Set(b.coachIds) }));
+  const actors = new Map(pairings.fixtures.map(f => {
+    const tids = [f.homeTeamId, f.awayTeamId]; const coaches = [...new Set(tids.flatMap(t => teams.get(t)!.coachIds))];
+    return [f.id, { teams: tids, teamSet: new Set(tids), coaches, coachSet: new Set(coaches) }] as const;
+  }));
   const makeGame = (f: Fixture, s: Slot): Game => {
-    const r = resources.get(s.resourceId)!; const tids = [f.homeTeamId, f.awayTeamId];
+    const r = resources.get(s.resourceId)!;
     return { start: Date.parse(s.startsAt), end: Date.parse(s.endsAt), occupiedStart: Date.parse(s.startsAt) - r.setupMinutes * 60000,
-      occupiedEnd: Date.parse(s.endsAt) + r.cleanupMinutes * 60000, resourceId: r.id, teams: tids, coaches: [...new Set(tids.flatMap(t => teams.get(t)!.coachIds))] };
+      occupiedEnd: Date.parse(s.endsAt) + r.cleanupMinutes * 60000, resourceId: r.id, ...actors.get(f.id)! };
   };
   let exhausted = false; let nodes = 0; let budgetReason: 'nodes' | 'time' | null = null;
   const timeUp = () => { if (!exhausted && now() - started >= maxMs) { exhausted = true; budgetReason = 'time'; } return exhausted; };

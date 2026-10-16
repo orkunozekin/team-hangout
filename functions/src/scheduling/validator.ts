@@ -10,13 +10,13 @@ export function validateSchedule(input: ScheduleInput, assignments: Assignment[]
   const fixtures = new Map(pairings.fixtures.map(f => [f.id, f]));
   const slots = new Map(input.slots.map(s => [s.id, s]));
   const teams = new Map(input.teams.map(t => [t.id, t]));
-  const conflicts: Validation['conflicts'] = []; const seen = new Set<string>();
-  const report = (code: string, ...fixtureIds: string[]) => conflicts.push({ code, fixtureIds });
+  const conflicts: Validation['conflicts'] = []; const seen = new Set<string>(); let conflictCount = 0;
+  const report = (code: string, ...fixtureIds: string[]) => { conflictCount++; if (conflicts.length < 1000) conflicts.push({ code, fixtureIds }); };
   const interval = (i: Interval): [number, number] => [Date.parse(i.startsAt), Date.parse(i.endsAt)];
   const intersects = (a: [number, number], b: [number, number]) => Math.max(a[0], b[0]) < Math.min(a[1], b[1]);
   const metrics = new Map<string, TeamMetrics>(input.teams.map(t => [t.id, { teamId: t.id, home: 0, away: 0,
     byes: pairings.byes.filter(b => b.teamId === t.id).length, early: 0, late: 0, minimumRestMinutes: null, unmetPreferences: 0 }]));
-  const games: { id: string; time: [number, number]; occupied: [number, number]; resourceId: string; teamIds: string[]; coachIds: string[] }[] = [];
+  const games: { id: string; time: [number, number]; occupied: [number, number]; resourceId: string; teamIds: string[]; teamSet: Set<string>; coachIds: Set<string> }[] = [];
   for (const assignment of assignments) {
     const f = fixtures.get(assignment.fixtureId); const s = slots.get(assignment.slotId);
     if (!f || !s) { report('UNKNOWN_REFERENCE', assignment.fixtureId); continue; }
@@ -42,20 +42,22 @@ export function validateSchedule(input: ScheduleInput, assignments: Assignment[]
       m[tid === f.homeTeamId ? 'home' : 'away']++; m[s.late ? 'late' : 'early']++;
       if (team.preferredSlotIds?.length && !team.preferredSlotIds.includes(s.id)) m.unmetPreferences++;
     }
-    games.push({ id: f.id, time, occupied, resourceId: r.id, teamIds, coachIds });
+    games.push({ id: f.id, time, occupied, resourceId: r.id, teamIds, teamSet: new Set(teamIds), coachIds: new Set(coachIds) });
   }
   // Existing occupancy is an anonymous authorized snapshot, including approved external busy intervals.
   const existing = input.busy.map((b, i) => ({ id: `busy:${i}`, time: interval(b),
     occupied: [Date.parse(b.startsAt) - b.setupMinutes * 60000, Date.parse(b.endsAt) + b.cleanupMinutes * 60000] as [number, number],
-    resourceId: b.resourceId, teamIds: b.teamIds, coachIds: b.coachIds }));
+    resourceId: b.resourceId, teamIds: b.teamIds, teamSet: new Set(b.teamIds), coachIds: new Set(b.coachIds) }));
   for (let i = 0; i < games.length; i++) {
     const a = games[i];
     for (const b of [...games.slice(i + 1), ...existing]) {
       const ids = b.id.startsWith('busy:') ? [a.id] : [a.id, b.id];
       if (a.resourceId === b.resourceId && intersects(a.occupied, b.occupied)) report('RESOURCE_OVERLAP', ...ids);
-      const sharedTeams = a.teamIds.filter(t => b.teamIds.includes(t));
+      const sharedTeams = a.teamIds.filter(t => b.teamSet.has(t));
       if (sharedTeams.length && intersects(a.time, b.time)) report('TEAM_OVERLAP', ...ids);
-      if (a.coachIds.some(c => b.coachIds.includes(c)) && intersects(a.time, b.time)) report('COACH_OVERLAP', ...ids);
+      if (intersects(a.time, b.time)) {
+        for (const coach of a.coachIds) if (b.coachIds.has(coach)) { report('COACH_OVERLAP', ...ids); break; }
+      }
       if (sharedTeams.length) {
         const rest = (Math.max(a.time[0], b.time[0]) - Math.min(a.time[1], b.time[1])) / 60000;
         if (rest < input.minimumRestMinutes) report('MINIMUM_REST', ...ids);
@@ -66,7 +68,7 @@ export function validateSchedule(input: ScheduleInput, assignments: Assignment[]
   const unscheduledFixtureIds = pairings.fixtures.filter(f => !seen.has(f.id)).map(f => f.id);
   const values = [...metrics.values()].sort((a, b) => (a.teamId < b.teamId ? -1 : a.teamId > b.teamId ? 1 : 0));
   const lateCounts = values.map(m => m.late);
-  return { valid: conflicts.length === 0, conflicts, unscheduledFixtureIds, teams: values,
+  return { valid: conflictCount === 0, conflictCount, conflictsTruncated: conflictCount > conflicts.length, conflicts, unscheduledFixtureIds, teams: values,
     objective: [unscheduledFixtureIds.length, Math.max(...values.map(m => Math.abs(m.home - m.away))),
       Math.max(...lateCounts) - Math.min(...lateCounts), values.reduce((n, m) => n + m.unmetPreferences, 0)],
     disclosures: [input.crossOrganizationBusy === 'notChecked' ? 'Cross-organization coach conflicts are not checked.' : 'Only supplied coach-approved external busy intervals are checked.',
