@@ -43,6 +43,9 @@ export function ScheduleDrafts({
     [denied, setDenied] = useState(false),
     [busy, setBusy] = useState(false);
   const [fixturePage, setFixturePage] = useState(0);
+  const [blackoutPages, setBlackoutPages] = useState<Record<number, number>>(
+    {},
+  );
   const [slotPage, setSlotPage] = useState(0),
     [preferencePage, setPreferencePage] = useState(0),
     [assignmentSlotPage, setAssignmentSlotPage] = useState(0);
@@ -132,6 +135,7 @@ export function ScheduleDrafts({
   }
   function accept(result: ScheduleDraft, loaded = false) {
     setFixturePage(0);
+    setBlackoutPages({});
     setSlotPage(0);
     setPreferencePage(0);
     setAssignmentSlotPage(0);
@@ -209,6 +213,14 @@ export function ScheduleDrafts({
     assignmentStart,
     assignmentStart + 20,
   );
+  function blackoutStart(index: number, length: number) {
+    return (
+      Math.min(
+        blackoutPages[index] || 0,
+        Math.max(0, Math.ceil(length / 5) - 1),
+      ) * 5
+    );
+  }
   function fixtureChoices(fixtureId: string) {
     const selected = fields.slots.find(
       (slot) =>
@@ -583,66 +595,137 @@ export function ScheduleDrafts({
                         />
                       )}
                     </label>
-                    {c.blackouts.map((b, n) => (
-                      <div className="form-grid" key={n}>
-                        {(["startsAt", "endsAt"] as const).map((k, z) => (
-                          <label key={k}>
-                            {z === 0
-                              ? "Blackout UTC start"
-                              : "Blackout UTC end"}{" "}
-                            for constraint {i + 1} interval {n + 1}
-                            <input
-                              value={b[k]}
-                              onChange={(e) =>
-                                patch({
-                                  teamConstraints: fields.teamConstraints.map(
-                                    (t, j) =>
-                                      j === i
-                                        ? {
-                                            ...t,
-                                            blackouts: t.blackouts.map(
-                                              (v, m) =>
-                                                m === n
-                                                  ? {
-                                                      ...v,
-                                                      [k]: e.target.value,
-                                                    }
-                                                  : v,
-                                            ),
-                                          }
-                                        : t,
-                                  ),
-                                })
-                              }
-                            />
-                          </label>
-                        ))}
-                        <button
-                          type="button"
-                          onClick={() =>
-                            patch({
-                              teamConstraints: fields.teamConstraints.map(
-                                (t, j) =>
-                                  j === i
-                                    ? {
-                                        ...t,
-                                        blackouts: t.blackouts.filter(
-                                          (_, m) => m !== n,
-                                        ),
-                                      }
-                                    : t,
+                    <p>
+                      Blackouts{" "}
+                      {c.blackouts.length
+                        ? blackoutStart(i, c.blackouts.length) + 1
+                        : 0}{" "}
+                      through{" "}
+                      {Math.min(
+                        blackoutStart(i, c.blackouts.length) + 5,
+                        c.blackouts.length,
+                      )}{" "}
+                      of {c.blackouts.length}. Intervals on other pages are
+                      retained.
+                    </p>
+                    <button
+                      type="button"
+                      disabled={blackoutStart(i, c.blackouts.length) === 0}
+                      onClick={() =>
+                        setBlackoutPages((p) => ({
+                          ...p,
+                          [i]: blackoutStart(i, c.blackouts.length) / 5 - 1,
+                        }))
+                      }
+                    >
+                      Previous blackouts for constraint {i + 1}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={
+                        blackoutStart(i, c.blackouts.length) + 5 >=
+                        c.blackouts.length
+                      }
+                      onClick={() =>
+                        setBlackoutPages((p) => ({
+                          ...p,
+                          [i]: blackoutStart(i, c.blackouts.length) / 5 + 1,
+                        }))
+                      }
+                    >
+                      Next blackouts for constraint {i + 1}
+                    </button>
+                    <label>
+                      Blackout page for constraint {i + 1}
+                      <input
+                        type="number"
+                        min="1"
+                        max={Math.max(1, Math.ceil(c.blackouts.length / 5))}
+                        value={blackoutStart(i, c.blackouts.length) / 5 + 1}
+                        onChange={(e) =>
+                          setBlackoutPages((p) => ({
+                            ...p,
+                            [i]: Math.max(
+                              0,
+                              Math.min(
+                                Math.ceil(c.blackouts.length / 5) - 1,
+                                Math.trunc(Number(e.target.value)) - 1,
                               ),
-                            })
-                          }
-                        >
-                          Remove blackout {n + 1} for constraint {i + 1}
-                        </button>
-                      </div>
-                    ))}
+                            ),
+                          }))
+                        }
+                      />
+                    </label>
+                    {c.blackouts
+                      .map((b, n) => ({ b, n }))
+                      .slice(
+                        blackoutStart(i, c.blackouts.length),
+                        blackoutStart(i, c.blackouts.length) + 5,
+                      )
+                      .map(({ b, n }) => (
+                        <div className="form-grid" key={n}>
+                          {(["startsAt", "endsAt"] as const).map((k, z) => (
+                            <label key={k}>
+                              {z === 0
+                                ? "Blackout UTC start"
+                                : "Blackout UTC end"}{" "}
+                              for constraint {i + 1} interval {n + 1}
+                              <input
+                                value={b[k]}
+                                onChange={(e) =>
+                                  patch({
+                                    teamConstraints: fields.teamConstraints.map(
+                                      (t, j) =>
+                                        j === i
+                                          ? {
+                                              ...t,
+                                              blackouts: t.blackouts.map(
+                                                (v, m) =>
+                                                  m === n
+                                                    ? {
+                                                        ...v,
+                                                        [k]: e.target.value,
+                                                      }
+                                                    : v,
+                                              ),
+                                            }
+                                          : t,
+                                    ),
+                                  })
+                                }
+                              />
+                            </label>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              patch({
+                                teamConstraints: fields.teamConstraints.map(
+                                  (t, j) =>
+                                    j === i
+                                      ? {
+                                          ...t,
+                                          blackouts: t.blackouts.filter(
+                                            (_, m) => m !== n,
+                                          ),
+                                        }
+                                      : t,
+                                ),
+                              })
+                            }
+                          >
+                            Remove blackout {n + 1} for constraint {i + 1}
+                          </button>
+                        </div>
+                      ))}
                     <button
                       type="button"
                       disabled={c.blackouts.length >= 128}
-                      onClick={() =>
+                      onClick={() => {
+                        setBlackoutPages((p) => ({
+                          ...p,
+                          [i]: Math.floor(c.blackouts.length / 5),
+                        }));
                         patch({
                           teamConstraints: fields.teamConstraints.map((t, j) =>
                             j === i
@@ -655,8 +738,8 @@ export function ScheduleDrafts({
                                 }
                               : t,
                           ),
-                        })
-                      }
+                        });
+                      }}
                     >
                       Add blackout for constraint {i + 1}
                     </button>

@@ -225,3 +225,10 @@
 - **Gap:** Paging fixtures alone still multiplied 1,000 slot options across 32 preferences and 20 assignment selectors, in addition to rendering every slot form.
 - **Going forward:** Page slot forms and each choice universe too. Retain off-page selections, keep the current assignment visible, and verify rendered node bounds and saved values on an accepted maximum-size draft through real callables. Removing a slot must also clear assignments that reference it.
 - **Pointers:** `admin/src/ScheduleDrafts.tsx`, `admin/tests/schedule-drafts.spec.ts`.
+
+### 2026-10-16: Exercise nested array ceilings in rendered tests
+
+- **Source:** PR #30, GitHub Codex review 5550772551.
+- **Gap:** The large slot/constraint regression used empty blackout arrays, leaving 32 constraints times 128 interval editors unbounded even after slot paging.
+- **Going forward:** Include accepted nested-array ceilings in rendered tests. Page interval controls per constraint, preserve hidden intervals on save, and assert input counts on a real callable-created maximum-blackout draft.
+- **Pointers:** `admin/src/ScheduleDrafts.tsx`, accepted 32-team/128-blackouts-per-team browser regression.

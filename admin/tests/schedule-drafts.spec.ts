@@ -506,3 +506,135 @@ test("accepted 1000-slot 32-team draft keeps editor and selector DOM bounded whi
     for (const id of extra) await db.doc(`teams/${id}`).delete();
   }
 });
+
+test("accepted 32-team draft with 128 blackouts per team pages interval controls and preserves hidden intervals", async ({
+  page,
+}) => {
+  const extra = Array.from(
+    { length: 28 },
+    (_, i) => `draft-blackout-${String(i).padStart(2, "0")}`,
+  );
+  const scope = {
+    orgId,
+    programId: "draft-program",
+    seasonId: "draft-season",
+    divisionId: "draft-division",
+  };
+  for (const id of extra)
+    await db
+      .doc(`teams/${id}`)
+      .set({ ...meta, ...scope, name: `Blackout team ${id}`, sport: "soccer" });
+  const clientApp = require("firebase/app"),
+    clientAuth = require("firebase/auth"),
+    clientFunctions = require("firebase/functions");
+  const client = clientApp.initializeApp(
+    { projectId: "demo-team-hangout", apiKey: "demo-key" },
+    "blackout-capacity",
+  );
+  try {
+    const auth = clientAuth.getAuth(client);
+    clientAuth.connectAuthEmulator(auth, "http://127.0.0.1:9099", {
+      disableWarnings: true,
+    });
+    await clientAuth.signInWithEmailAndPassword(
+      auth,
+      `${uid}@example.test`,
+      password,
+    );
+    const functions = clientFunctions.getFunctions(client);
+    clientFunctions.connectFunctionsEmulator(functions, "127.0.0.1", 5001);
+    const teamIds = ["draft-a", "draft-b", "draft-c", "draft-d", ...extra];
+    const blocked = {
+      startsAt: "2035-01-01T00:00:00.000Z",
+      endsAt: "2035-04-01T00:00:00.000Z",
+    };
+    const result = (
+      await clientFunctions.httpsCallable(
+        functions,
+        "generateScheduleDraft",
+      )({
+        orgId,
+        divisionId: scope.divisionId,
+        draftId: "blackout-capacity-draft",
+        expectedRevision: 0,
+        requestId: "blackout-capacity-generate",
+        fields: {
+          title: "Bounded blackout editor",
+          startsAt: "2035-01-02T12:00:00.000Z",
+          endsAt: "2035-01-02T13:00:00.000Z",
+          durationMinutes: 60,
+          minimumRestMinutes: 60,
+          repetitions: 1,
+          seed: 206,
+          slots: [
+            {
+              id: "slot-1",
+              facilityId: "cedar",
+              resourceId: "north",
+              startsAt: "2035-01-02T12:00:00.000Z",
+              endsAt: "2035-01-02T13:00:00.000Z",
+              late: false,
+            },
+          ],
+          teamConstraints: teamIds.map((teamId) => ({
+            teamId,
+            blackouts: Array.from({ length: 128 }, () => ({ ...blocked })),
+            preferredSlotIds: [],
+          })),
+        },
+      })
+    ).data;
+    await open(page);
+    await page.getByLabel("Existing draft ID").fill(result.draftId);
+    await page.getByRole("button", { name: "Load draft", exact: true }).click();
+    await expect(page.getByText(/Loaded revision 1/)).toBeVisible();
+    await page
+      .getByText("Candidate slots and team constraints", { exact: true })
+      .click();
+    expect(
+      await page
+        .getByRole("textbox", { name: /Blackout UTC start for constraint/ })
+        .count(),
+    ).toBe(160);
+    expect(await page.locator("input").count()).toBeLessThan(500);
+    await page
+      .getByLabel("Blackout page for constraint 1", { exact: true })
+      .fill("26");
+    await expect(
+      page.getByLabel("Blackout UTC start for constraint 1 interval 128", {
+        exact: true,
+      }),
+    ).toHaveValue(blocked.startsAt);
+    await page
+      .getByLabel("Blackout UTC start for constraint 1 interval 128", {
+        exact: true,
+      })
+      .fill("2035-01-01T00:01:00.000Z");
+    await page
+      .getByRole("button", { name: "Save edits as unvalidated draft" })
+      .click();
+    await expect(
+      page.getByText(/Saved private draft revision 2/),
+    ).toBeVisible();
+    const saved = (
+      await db
+        .doc(`organizations/${orgId}/scheduleDrafts/blackout-capacity-draft`)
+        .get()
+    ).data();
+    expect(saved.fields.teamConstraints.length).toBe(32);
+    expect(
+      saved.fields.teamConstraints.every(
+        (t: any) => t.blackouts.length === 128,
+      ),
+    ).toBe(true);
+    expect(saved.fields.teamConstraints[0].blackouts[0]).toEqual(blocked);
+    expect(saved.fields.teamConstraints[0].blackouts[127].startsAt).toBe(
+      "2035-01-01T00:01:00.000Z",
+    );
+    expect(saved.fields.teamConstraints[1].blackouts[127]).toEqual(blocked);
+    expect(saved.validation).toBeNull();
+  } finally {
+    await clientApp.deleteApp(client);
+    for (const id of extra) await db.doc(`teams/${id}`).delete();
+  }
+});
