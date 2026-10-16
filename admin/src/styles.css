@@ -739,3 +739,6 @@ button { overflow-wrap: anywhere; }
 .schedule-drafts details { margin: 16px 0; }
 .schedule-drafts summary { cursor: pointer; font-weight: 600; min-height: 44px; }
 .schedule-drafts select { max-width: 540px; }
+
+.draft-preferences label { flex-direction: row; align-items: center; gap: 10px; }
+.draft-preferences input { width: 20px; height: 20px; flex: 0 0 20px; }

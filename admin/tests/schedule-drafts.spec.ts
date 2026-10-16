@@ -316,8 +316,8 @@ test("labeled blackout and preference controls invalidate validation and expose 
     .getByLabel("Blackout UTC end for constraint 1 interval 1")
     .fill("2035-01-08T00:00:00.000Z");
   await page
-    .getByLabel("Preferred slots for constraint 1")
-    .selectOption("slot-1");
+    .getByLabel("Prefer slot-1 for constraint 1", { exact: true })
+    .check();
   await expect(
     page.getByRole("heading", { name: "Fairness diagnostics", exact: true }),
   ).toHaveCount(0);
@@ -336,4 +336,173 @@ test("labeled blackout and preference controls invalidate validation and expose 
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
+});
+
+test("removing an assigned candidate slot clears its assignment and saves a truthful partial draft", async ({
+  page,
+}) => {
+  await open(page);
+  await fill(page);
+  await page
+    .getByRole("button", { name: "Generate private draft", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Complete schedule", exact: true }),
+  ).toBeVisible();
+  const firstFixture = page.getByRole("combobox", { name: /Slot for/ }).first();
+  const slotId = await firstFixture.inputValue();
+  await page
+    .getByText("Candidate slots and team constraints", { exact: true })
+    .click();
+  await page
+    .getByRole("button", {
+      name: `Remove slot ${Number(slotId.split("-")[1])}`,
+      exact: true,
+    })
+    .click();
+  await page
+    .getByText("Candidate slots and team constraints", { exact: true })
+    .click();
+  await expect(firstFixture).toHaveValue("");
+  await expect(
+    page.getByRole("heading", { name: "Fairness diagnostics", exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Save edits as unvalidated draft" })
+    .click();
+  await expect(page.getByText(/Saved private draft revision 2/)).toBeVisible();
+  await page.getByRole("button", { name: "Revalidate saved draft" }).click();
+  await expect(
+    page.getByText(/5 of 6 games assigned · 1 unscheduled/),
+  ).toBeVisible();
+});
+
+test("accepted 1000-slot 32-team draft keeps editor and selector DOM bounded while preserving off-page choices", async ({
+  page,
+}) => {
+  const extra = Array.from(
+    { length: 28 },
+    (_, i) => `draft-large-${String(i).padStart(2, "0")}`,
+  );
+  const scope = {
+    orgId,
+    programId: "draft-program",
+    seasonId: "draft-season",
+    divisionId: "draft-division",
+  };
+  for (const id of extra)
+    await db
+      .doc(`teams/${id}`)
+      .set({ ...meta, ...scope, name: `Large team ${id}`, sport: "soccer" });
+  const clientApp = require("firebase/app"),
+    clientAuth = require("firebase/auth"),
+    clientFunctions = require("firebase/functions");
+  const client = clientApp.initializeApp(
+    { projectId: "demo-team-hangout", apiKey: "demo-key" },
+    "draft-capacity",
+  );
+  try {
+    const auth = clientAuth.getAuth(client);
+    clientAuth.connectAuthEmulator(auth, "http://127.0.0.1:9099", {
+      disableWarnings: true,
+    });
+    await clientAuth.signInWithEmailAndPassword(
+      auth,
+      `${uid}@example.test`,
+      password,
+    );
+    const functions = clientFunctions.getFunctions(client);
+    clientFunctions.connectFunctionsEmulator(functions, "127.0.0.1", 5001);
+    const start = Date.parse("2035-01-02T12:00:00.000Z");
+    const slots = Array.from({ length: 1000 }, (_, i) => ({
+      id: `slot-${i + 1}`,
+      facilityId: "cedar",
+      resourceId: "north",
+      startsAt: new Date(start + i * 2 * 3600000).toISOString(),
+      endsAt: new Date(start + i * 2 * 3600000 + 3600000).toISOString(),
+      late: false,
+    }));
+    const teamIds = ["draft-a", "draft-b", "draft-c", "draft-d", ...extra];
+    const result = (
+      await clientFunctions.httpsCallable(
+        functions,
+        "generateScheduleDraft",
+      )({
+        orgId,
+        divisionId: scope.divisionId,
+        draftId: "capacity-draft",
+        expectedRevision: 0,
+        requestId: "capacity-generate",
+        fields: {
+          title: "Bounded full-size editor",
+          startsAt: slots[0].startsAt,
+          endsAt: slots.at(-1)!.endsAt,
+          durationMinutes: 60,
+          minimumRestMinutes: 60,
+          repetitions: 1,
+          seed: 206,
+          slots,
+          teamConstraints: teamIds.map((teamId) => ({
+            teamId,
+            blackouts: [],
+            preferredSlotIds: ["slot-1000"],
+          })),
+        },
+      })
+    ).data;
+    await open(page);
+    await page.getByLabel("Existing draft ID").fill(result.draftId);
+    await page.getByRole("button", { name: "Load draft", exact: true }).click();
+    await expect(page.getByText(/Loaded revision 1/)).toBeVisible();
+    await page
+      .getByText("Candidate slots and team constraints", { exact: true })
+      .click();
+    expect(
+      await page.getByRole("textbox", { name: /Facility ID for slot/ }).count(),
+    ).toBe(10);
+    expect(await page.locator("option").count()).toBeLessThan(2000);
+    const selected = await page
+      .getByRole("combobox", { name: /Slot for/ })
+      .first()
+      .inputValue();
+    await page.getByLabel("Assignment slot page", { exact: true }).fill("50");
+    await expect(
+      page.getByRole("combobox", { name: /Slot for/ }).first(),
+    ).toHaveValue(selected);
+    await page.getByLabel("Candidate slot page", { exact: true }).fill("100");
+    await expect(
+      page.getByLabel("Facility ID for slot 1000", { exact: true }),
+    ).toHaveValue("cedar");
+    await page.getByLabel("Preference slot page", { exact: true }).fill("50");
+    await expect(
+      page.getByLabel("Prefer slot-1000 for constraint 1", { exact: true }),
+    ).toBeChecked();
+    await page
+      .getByLabel("Prefer slot-1000 for constraint 1", { exact: true })
+      .uncheck();
+    await page
+      .getByLabel("Prefer slot-999 for constraint 1", { exact: true })
+      .check();
+    await page
+      .getByRole("button", { name: "Save edits as unvalidated draft" })
+      .click();
+    await expect(
+      page.getByText(/Saved private draft revision 2/),
+    ).toBeVisible();
+    const saved = (
+      await db.doc(`organizations/${orgId}/scheduleDrafts/capacity-draft`).get()
+    ).data();
+    expect(saved.fields.slots.length).toBe(1000);
+    expect(saved.fields.teamConstraints.length).toBe(32);
+    expect(saved.fields.teamConstraints[0].preferredSlotIds).toEqual([
+      "slot-999",
+    ]);
+    expect(saved.fields.teamConstraints[1].preferredSlotIds).toEqual([
+      "slot-1000",
+    ]);
+    expect(saved.assignments).toEqual(result.assignments);
+  } finally {
+    await clientApp.deleteApp(client);
+    for (const id of extra) await db.doc(`teams/${id}`).delete();
+  }
 });

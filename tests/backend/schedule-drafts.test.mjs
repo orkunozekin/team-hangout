@@ -498,37 +498,31 @@ test("shared coaches are discovered from current canonical assignments across sa
           .get()
       ).data(),
     );
-  await db
-    .doc("teams/p206-other")
-    .set({
-      ...meta,
-      ...scope,
-      divisionId: "other-division",
-      name: "Private other division",
-      sport: "soccer",
-    });
-  await db
-    .doc("teamMembers/p206-other_p206-coach")
-    .set({
-      ...meta,
-      orgId,
-      teamId: "p206-other",
-      userId: "p206-coach",
-      roles: ["coach"],
-    });
-  await db
-    .doc("events/p206-coach-busy")
-    .set({
-      ...meta,
-      ...scope,
-      divisionId: "other-division",
-      publicationState: "published",
-      status: "scheduled",
-      teamIds: ["p206-other"],
-      startsAt: Timestamp.fromDate(new Date(at(2))),
-      endsAt: Timestamp.fromDate(new Date(end(2))),
-      notes: "PRIVATE-OTHER-DIVISION",
-    });
+  await db.doc("teams/p206-other").set({
+    ...meta,
+    ...scope,
+    divisionId: "other-division",
+    name: "Private other division",
+    sport: "soccer",
+  });
+  await db.doc("teamMembers/p206-other_p206-coach").set({
+    ...meta,
+    orgId,
+    teamId: "p206-other",
+    userId: "p206-coach",
+    roles: ["coach"],
+  });
+  await db.doc("events/p206-coach-busy").set({
+    ...meta,
+    ...scope,
+    divisionId: "other-division",
+    publicationState: "published",
+    status: "scheduled",
+    teamIds: ["p206-other"],
+    startsAt: Timestamp.fromDate(new Date(at(2))),
+    endsAt: Timestamp.fromDate(new Date(end(2))),
+    notes: "PRIVATE-OTHER-DIVISION",
+  });
   const f = fields();
   f.slots = [{ ...f.slots[0], resourceId: "south" }];
   const r = await generate(input({ fields: f }));
@@ -599,6 +593,78 @@ test("known feasible 32-team input can exhaust search and remains a private part
   for (let i = 0; i < 28; i++)
     cleanup.delete(db.doc(`teams/p206-large-${String(i).padStart(2, "0")}`));
   await cleanup.commit();
+});
+test("canonical 81 and 128 character team IDs retain constraints, manual edits and revalidation", async () => {
+  const ids = ["a".repeat(81), "b".repeat(128)],
+    divisionId = "p206-long-division";
+  await db
+    .doc(`organizations/${orgId}/divisions/${divisionId}`)
+    .set({ ...meta, ...scope, divisionId, name: "Migrated IDs" });
+  for (const teamId of ids)
+    await db
+      .doc(`teams/${teamId}`)
+      .set({
+        ...meta,
+        ...scope,
+        divisionId,
+        name: teamId === ids[0] ? "Long A" : "Long B",
+        sport: "soccer",
+      });
+  const f = fields();
+  f.slots = f.slots.slice(0, 1);
+  f.teamConstraints = [
+    { teamId: ids[1], blackouts: [], preferredSlotIds: ["s0"] },
+  ];
+  const d = input({ divisionId, fields: f });
+  const r = await generate(d);
+  assert.equal(r.search.status, "feasible");
+  assert.equal(r.assignments.length, 1);
+  assert.deepEqual(
+    new Set([r.fixtures[0].homeTeamId, r.fixtures[0].awayTeamId]),
+    new Set(ids),
+  );
+  assert.deepEqual(
+    new Set(r.validation.teams.map((t) => t.teamId)),
+    new Set(ids),
+  );
+  assert.equal(
+    r.validation.teams.find((t) => t.teamId === ids[1]).unmetPreferences,
+    0,
+  );
+  const edited = await invoke(
+    "saveScheduleDraft",
+    req({ ...identity(r), fields: r.fields, assignments: r.assignments }),
+  );
+  assert.equal(edited.validation, null);
+  const validated = await invoke(
+    "validateScheduleDraft",
+    req(identity(edited)),
+  );
+  assert.equal(validated.validation.valid, true);
+  assert.equal(validated.validation.unscheduledFixtureIds.length, 0);
+  assert.deepEqual(await generate(d), r);
+  await db
+    .doc("events/p206-long-busy")
+    .set({
+      ...meta,
+      ...scope,
+      divisionId,
+      publicationState: "published",
+      status: "scheduled",
+      teamIds: [ids[1]],
+      startsAt: Timestamp.fromDate(new Date(at(2))),
+      endsAt: Timestamp.fromDate(new Date(end(2))),
+    });
+  const occupied = await invoke(
+    "validateScheduleDraft",
+    req(identity(validated)),
+  );
+  assert.equal(occupied.validation.valid, false);
+  assert.ok(
+    occupied.validation.conflicts.some((c) => c.code === "TEAM_OVERLAP"),
+  );
+  await db.doc("events/p206-long-busy").delete();
+  for (const teamId of ids) await db.doc(`teams/${teamId}`).delete();
 });
 test("event and team discovery overflows fail closed without truncation", async () => {
   const batch = db.batch();

@@ -115,7 +115,7 @@ function fields(value: unknown): DraftFields {
     )
       invalid("Unknown or duplicate preferred slot.");
     return {
-      teamId: opaque(t.teamId, "teamId"),
+      teamId: id(t.teamId, "teamId"),
       blackouts: t.blackouts.map(span),
       preferredSlotIds,
     };
@@ -271,6 +271,12 @@ async function snapshot(
       "The range must fit explicit season dates in the canonical timezone.",
     );
   const teamIds = s.teams.map((t) => t.id);
+  const internalTeamIds = new Map(
+    teamIds.map((teamId) => [teamId, fingerprint({ teamId })]),
+  );
+  const canonicalTeamIds = new Map(
+    [...internalTeamIds].map(([canonical, internal]) => [internal, canonical]),
+  );
   if (f.teamConstraints.some((t) => !teamIds.includes(t.teamId)))
     invalid("A constraint references a team outside the active division.");
   const coaches = await query(
@@ -395,7 +401,9 @@ async function snapshot(
     busy.push({
       startsAt: e.startsAt.toDate().toISOString(),
       endsAt: e.endsAt.toDate().toISOString(),
-      teamIds: e.teamIds.filter((t: string) => teamIds.includes(t)),
+      teamIds: e.teamIds
+        .filter((t: string) => teamIds.includes(t))
+        .map((t: string) => internalTeamIds.get(t)!),
       coachIds: actorIds,
       resourceId: resourceMap.get(`${e.facilityId}/${e.resourceId}`) || null,
       setupMinutes: e.resourceOccupancy?.setupMinutes ?? 0,
@@ -404,7 +412,7 @@ async function snapshot(
   }
   const input: ScheduleInput = {
     teams: s.teams.map((t) => ({
-      id: t.id,
+      id: internalTeamIds.get(t.id)!,
       coachIds: coachMap.get(t.id) || [],
       blackouts:
         f.teamConstraints.find((c) => c.teamId === t.id)?.blackouts || [],
@@ -440,7 +448,27 @@ async function snapshot(
     inputHash: fingerprint(input),
     timeZone: zone,
     teams: s.teams.map((t) => ({ id: t.id, name: t.data().name })),
-    fixtures: generatePairings(teamIds, f.repetitions).fixtures,
+    canonicalTeamIds,
+    fixtures: generatePairings(
+      [...internalTeamIds.values()],
+      f.repetitions,
+    ).fixtures.map((fixture) => ({
+      ...fixture,
+      homeTeamId: canonicalTeamIds.get(fixture.homeTeamId)!,
+      awayTeamId: canonicalTeamIds.get(fixture.awayTeamId)!,
+    })),
+  };
+}
+function publicValidation(
+  current: Awaited<ReturnType<typeof snapshot>>,
+  validation: import("./model").Validation,
+) {
+  return {
+    ...validation,
+    teams: validation.teams.map((team) => ({
+      ...team,
+      teamId: current.canonicalTeamIds.get(team.teamId)!,
+    })),
   };
 }
 function persist(
@@ -501,7 +529,7 @@ export const generateScheduleDraft = command(
       fixtures: current.fixtures,
       teams: current.teams,
       timeZone: current.timeZone,
-      validation,
+      validation: publicValidation(current, validation),
       validationRevision: (before?.revision ?? 0) + 1,
       inputHash: current.inputHash,
       search,
@@ -591,7 +619,10 @@ export const validateScheduleDraft = command(
       fixtures: current.fixtures,
       teams: current.teams,
       timeZone: current.timeZone,
-      validation: validateSchedule(current.input, before.assignments),
+      validation: publicValidation(
+        current,
+        validateSchedule(current.input, before.assignments),
+      ),
       validationRevision: before.revision + 1,
       inputHash: current.inputHash,
       search: before.search,

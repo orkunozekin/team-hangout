@@ -43,6 +43,9 @@ export function ScheduleDrafts({
     [denied, setDenied] = useState(false),
     [busy, setBusy] = useState(false);
   const [fixturePage, setFixturePage] = useState(0);
+  const [slotPage, setSlotPage] = useState(0),
+    [preferencePage, setPreferencePage] = useState(0),
+    [assignmentSlotPage, setAssignmentSlotPage] = useState(0);
   const [draftId, setDraftId] = useState<string>(() => crypto.randomUUID()),
     [loadId, setLoadId] = useState(""),
     [divisionId, setDivisionId] = useState("");
@@ -129,6 +132,9 @@ export function ScheduleDrafts({
   }
   function accept(result: ScheduleDraft, loaded = false) {
     setFixturePage(0);
+    setSlotPage(0);
+    setPreferencePage(0);
+    setAssignmentSlotPage(0);
     setDraft(result);
     setDraftId(result.draftId);
     setDivisionId(result.divisionId);
@@ -186,6 +192,32 @@ export function ScheduleDrafts({
     !dirty && draft?.validationRevision === draft?.revision
       ? draft?.validation
       : null;
+  const slotStart =
+    Math.min(slotPage, Math.max(0, Math.ceil(fields.slots.length / 10) - 1)) *
+    10;
+  const preferenceStart =
+    Math.min(
+      preferencePage,
+      Math.max(0, Math.ceil(fields.slots.length / 20) - 1),
+    ) * 20;
+  const assignmentStart =
+    Math.min(
+      assignmentSlotPage,
+      Math.max(0, Math.ceil(fields.slots.length / 20) - 1),
+    ) * 20;
+  const assignmentChoices = fields.slots.slice(
+    assignmentStart,
+    assignmentStart + 20,
+  );
+  function fixtureChoices(fixtureId: string) {
+    const selected = fields.slots.find(
+      (slot) =>
+        slot.id === assignments.find((a) => a.fixtureId === fixtureId)?.slotId,
+    );
+    return selected && !assignmentChoices.includes(selected)
+      ? [selected, ...assignmentChoices]
+      : assignmentChoices;
+  }
   const name = (id: string) =>
     draft?.teams.find((t) => t.id === id)?.name || id;
   return (
@@ -315,85 +347,133 @@ export function ScheduleDrafts({
                     intervals to assign games.
                   </p>
                 )}
-                {fields.slots.map((slot, i) => (
-                  <fieldset className="draft-slot" key={slot.id}>
-                    <legend>
-                      Slot {i + 1} · {slot.id}
-                    </legend>
-                    <div className="form-grid">
-                      {(
-                        [
-                          "facilityId",
-                          "resourceId",
-                          "startsAt",
-                          "endsAt",
-                        ] as const
-                      ).map((k, n) => (
-                        <label key={k}>
-                          {
-                            [
-                              "Facility ID",
-                              "Resource ID",
-                              "UTC start",
-                              "UTC end",
-                            ][n]
-                          }{" "}
-                          for slot {i + 1}
-                          <input
-                            value={slot[k]}
+                <p>
+                  Candidate slots {fields.slots.length ? slotStart + 1 : 0}{" "}
+                  through {Math.min(slotStart + 10, fields.slots.length)} of{" "}
+                  {fields.slots.length}
+                </p>
+                <button
+                  type="button"
+                  disabled={slotStart === 0}
+                  onClick={() => setSlotPage(Math.floor(slotStart / 10) - 1)}
+                >
+                  Previous candidate slots
+                </button>
+                <button
+                  type="button"
+                  disabled={slotStart + 10 >= fields.slots.length}
+                  onClick={() => setSlotPage(Math.floor(slotStart / 10) + 1)}
+                >
+                  Next candidate slots
+                </button>
+                <label>
+                  Candidate slot page
+                  <input
+                    type="number"
+                    min="1"
+                    max={Math.max(1, Math.ceil(fields.slots.length / 10))}
+                    value={slotStart / 10 + 1}
+                    onChange={(e) =>
+                      setSlotPage(
+                        Math.max(
+                          0,
+                          Math.min(
+                            Math.ceil(fields.slots.length / 10) - 1,
+                            Number(e.target.value) - 1,
+                          ),
+                        ),
+                      )
+                    }
+                  />
+                </label>
+                {fields.slots
+                  .map((slot, i) => ({ slot, i }))
+                  .slice(slotStart, slotStart + 10)
+                  .map(({ slot, i }) => (
+                    <fieldset className="draft-slot" key={slot.id}>
+                      <legend>
+                        Slot {i + 1} · {slot.id}
+                      </legend>
+                      <div className="form-grid">
+                        {(
+                          [
+                            "facilityId",
+                            "resourceId",
+                            "startsAt",
+                            "endsAt",
+                          ] as const
+                        ).map((k, n) => (
+                          <label key={k}>
+                            {
+                              [
+                                "Facility ID",
+                                "Resource ID",
+                                "UTC start",
+                                "UTC end",
+                              ][n]
+                            }{" "}
+                            for slot {i + 1}
+                            <input
+                              value={slot[k]}
+                              onChange={(e) =>
+                                patch({
+                                  slots: fields.slots.map((v, j) =>
+                                    j === i ? { ...v, [k]: e.target.value } : v,
+                                  ),
+                                })
+                              }
+                            />
+                          </label>
+                        ))}
+                        <label>
+                          Time band for slot {i + 1}
+                          <select
+                            value={slot.late ? "late" : "early"}
                             onChange={(e) =>
                               patch({
                                 slots: fields.slots.map((v, j) =>
-                                  j === i ? { ...v, [k]: e.target.value } : v,
+                                  j === i
+                                    ? { ...v, late: e.target.value === "late" }
+                                    : v,
                                 ),
                               })
                             }
-                          />
+                          >
+                            <option value="early">Early</option>
+                            <option value="late">Late</option>
+                          </select>
                         </label>
-                      ))}
-                      <label>
-                        Time band for slot {i + 1}
-                        <select
-                          value={slot.late ? "late" : "early"}
-                          onChange={(e) =>
-                            patch({
-                              slots: fields.slots.map((v, j) =>
-                                j === i
-                                  ? { ...v, late: e.target.value === "late" }
-                                  : v,
-                              ),
-                            })
-                          }
-                        >
-                          <option value="early">Early</option>
-                          <option value="late">Late</option>
-                        </select>
-                      </label>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        patch({
-                          slots: fields.slots.filter((_, j) => j !== i),
-                          teamConstraints: fields.teamConstraints.map((t) => ({
-                            ...t,
-                            preferredSlotIds: t.preferredSlotIds.filter(
-                              (id) => id !== slot.id,
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAssignments((current) =>
+                            current.filter((a) => a.slotId !== slot.id),
+                          );
+                          patch({
+                            slots: fields.slots.filter((_, j) => j !== i),
+                            teamConstraints: fields.teamConstraints.map(
+                              (t) => ({
+                                ...t,
+                                preferredSlotIds: t.preferredSlotIds.filter(
+                                  (id) => id !== slot.id,
+                                ),
+                              }),
                             ),
-                          })),
-                        })
-                      }
-                    >
-                      Remove slot {i + 1}
-                    </button>
-                  </fieldset>
-                ))}
+                          });
+                        }}
+                      >
+                        Remove slot {i + 1}
+                      </button>
+                    </fieldset>
+                  ))}
                 <button
                   type="button"
                   disabled={fields.slots.length >= 1000}
                   onClick={() => {
                     let n = fields.slots.length + 1;
                     while (fields.slots.some((s) => s.id === `slot-${n}`)) n++;
+                    setSlotPage(Math.floor(fields.slots.length / 10));
                     patch({
                       slots: [
                         ...fields.slots,
@@ -412,6 +492,50 @@ export function ScheduleDrafts({
                   Add candidate slot
                 </button>
                 <h3>Team blackouts and preferences</h3>
+                <p>
+                  Preference choices{" "}
+                  {fields.slots.length ? preferenceStart + 1 : 0} through{" "}
+                  {Math.min(preferenceStart + 20, fields.slots.length)} of{" "}
+                  {fields.slots.length}. Selections on other pages are retained.
+                </p>
+                <button
+                  type="button"
+                  disabled={preferenceStart === 0}
+                  onClick={() =>
+                    setPreferencePage(Math.floor(preferenceStart / 20) - 1)
+                  }
+                >
+                  Previous preference slots
+                </button>
+                <button
+                  type="button"
+                  disabled={preferenceStart + 20 >= fields.slots.length}
+                  onClick={() =>
+                    setPreferencePage(Math.floor(preferenceStart / 20) + 1)
+                  }
+                >
+                  Next preference slots
+                </button>
+                <label>
+                  Preference slot page
+                  <input
+                    type="number"
+                    min="1"
+                    max={Math.max(1, Math.ceil(fields.slots.length / 20))}
+                    value={preferenceStart / 20 + 1}
+                    onChange={(e) =>
+                      setPreferencePage(
+                        Math.max(
+                          0,
+                          Math.min(
+                            Math.ceil(fields.slots.length / 20) - 1,
+                            Number(e.target.value) - 1,
+                          ),
+                        ),
+                      )
+                    }
+                  />
+                </label>
                 {fields.teamConstraints.length === 0 && (
                   <p>No extra team blackouts or slot preferences.</p>
                 )}
@@ -536,35 +660,41 @@ export function ScheduleDrafts({
                     >
                       Add blackout for constraint {i + 1}
                     </button>
-                    <label>
-                      Preferred slots for constraint {i + 1}
-                      <select
-                        multiple
-                        value={c.preferredSlotIds}
-                        onChange={(e) =>
-                          patch({
-                            teamConstraints: fields.teamConstraints.map(
-                              (t, j) =>
-                                j === i
-                                  ? {
-                                      ...t,
-                                      preferredSlotIds: Array.from(
-                                        e.target.selectedOptions,
-                                        (o) => o.value,
-                                      ),
-                                    }
-                                  : t,
-                            ),
-                          })
-                        }
-                      >
-                        {fields.slots.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.id} · {s.startsAt || "No start set"}
-                          </option>
+                    <fieldset className="draft-preferences">
+                      <legend>
+                        Preferred slots for constraint {i + 1} (
+                        {c.preferredSlotIds.length} selected across all pages)
+                      </legend>
+                      {fields.slots
+                        .slice(preferenceStart, preferenceStart + 20)
+                        .map((slot) => (
+                          <label key={slot.id}>
+                            <input
+                              type="checkbox"
+                              aria-label={`Prefer ${slot.id} for constraint ${i + 1}`}
+                              checked={c.preferredSlotIds.includes(slot.id)}
+                              onChange={(e) =>
+                                patch({
+                                  teamConstraints: fields.teamConstraints.map(
+                                    (t, j) =>
+                                      j === i
+                                        ? {
+                                            ...t,
+                                            preferredSlotIds: e.target.checked
+                                              ? [...t.preferredSlotIds, slot.id]
+                                              : t.preferredSlotIds.filter(
+                                                  (id) => id !== slot.id,
+                                                ),
+                                          }
+                                        : t,
+                                  ),
+                                })
+                              }
+                            />
+                            {slot.id} · {slot.startsAt || "No start set"}
+                          </label>
                         ))}
-                      </select>
-                    </label>
+                    </fieldset>
                     <button
                       type="button"
                       onClick={() =>
@@ -769,6 +899,51 @@ export function ScheduleDrafts({
                 )}
                 <h3>Manual assignments</h3>
                 <p>
+                  Assignment slot choices{" "}
+                  {fields.slots.length ? assignmentStart + 1 : 0} through{" "}
+                  {Math.min(assignmentStart + 20, fields.slots.length)} of{" "}
+                  {fields.slots.length}. An assigned slot remains visible when
+                  it is on another page.
+                </p>
+                <button
+                  type="button"
+                  disabled={assignmentStart === 0}
+                  onClick={() =>
+                    setAssignmentSlotPage(Math.floor(assignmentStart / 20) - 1)
+                  }
+                >
+                  Previous assignment slots
+                </button>
+                <button
+                  type="button"
+                  disabled={assignmentStart + 20 >= fields.slots.length}
+                  onClick={() =>
+                    setAssignmentSlotPage(Math.floor(assignmentStart / 20) + 1)
+                  }
+                >
+                  Next assignment slots
+                </button>
+                <label>
+                  Assignment slot page
+                  <input
+                    type="number"
+                    min="1"
+                    max={Math.max(1, Math.ceil(fields.slots.length / 20))}
+                    value={assignmentStart / 20 + 1}
+                    onChange={(e) =>
+                      setAssignmentSlotPage(
+                        Math.max(
+                          0,
+                          Math.min(
+                            Math.ceil(fields.slots.length / 20) - 1,
+                            Number(e.target.value) - 1,
+                          ),
+                        ),
+                      )
+                    }
+                  />
+                </label>
+                <p>
                   Fixtures {fixturePage * 20 + 1} through{" "}
                   {Math.min((fixturePage + 1) * 20, draft.fixtures.length)} of{" "}
                   {draft.fixtures.length}
@@ -838,7 +1013,7 @@ export function ScheduleDrafts({
                                 }}
                               >
                                 <option value="">Unscheduled</option>
-                                {fields.slots.map((s) => (
+                                {fixtureChoices(f.id).map((s) => (
                                   <option key={s.id} value={s.id}>
                                     {s.id} · {s.startsAt} · {s.resourceId}
                                   </option>
