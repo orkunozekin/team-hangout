@@ -93,13 +93,13 @@ test("finite preview, repeated-time correction, save, reload and revision retain
   await expect(
     page.getByRole("button", { name: "Save reviewed draft" }),
   ).toHaveCount(0);
-  await page.getByLabel("UTC offset for 2035-11-04").selectOption("-360");
+  await page.getByLabel("UTC offset for Sunday, Nov 4").selectOption("-360");
   await expect(
     page.getByRole("heading", { name: /Review \d+ occurrences/ }),
   ).toHaveCount(0);
   await page.getByRole("button", { name: "Preview finite range" }).click();
   await expect(
-    page.getByText("2035-11-04T07:30:00.000Z", { exact: true }),
+    page.getByText("Sunday, Nov 4 at 7:30 AM UTC", { exact: true }),
   ).toBeVisible();
   await page
     .getByLabel("I reviewed this finite range", { exact: false })

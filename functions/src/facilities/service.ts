@@ -1,3 +1,4 @@
+import { requireOpenInterval } from './closures';
 import { publishedEvent } from '../scheduling/visibility';
 import { FieldPath, getFirestore, Timestamp, Transaction } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
@@ -180,6 +181,7 @@ export async function validateResourceAssignment(tx: Transaction, event: Data, e
   const startsAt = event.startsAt.toDate().toISOString(), endsAt = event.endsAt.toDate().toISOString();
   if (Date.parse(endsAt) - Date.parse(startsAt) > 24 * 3600000) invalid('Resource bookings are limited to 24 hours.');
   const span = occupancy({ startsAt, endsAt }, r.setupMinutes, r.cleanupMinutes);
+  await requireOpenInterval(tx, { ...event, resourceOccupancy: { startsAt: Timestamp.fromDate(new Date(span.startsAt)), endsAt: Timestamp.fromDate(new Date(span.endsAt)) } });
   // Select by occupancy start, then ensure no revision boundary splits the occupied interval.
   const revisions = await tx.get(resourceRef(event.orgId, event.facilityId, event.resourceId).collection('availability')
     .where('effectiveFrom', '<', span.endsAt).orderBy('effectiveFrom', 'desc').limit(1));

@@ -68,6 +68,10 @@ export type FacilityCommands = {
       revision: number;
       title: string;
       canManage: boolean;
+      status: string;
+      startsAt: string;
+      endsAt: string;
+      timeZone: string;
       facilityId?: string | null;
       resourceId?: string | null;
       location: { name: string; address?: string } | null;

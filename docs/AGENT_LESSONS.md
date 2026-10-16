@@ -239,3 +239,17 @@
 - **Gap:** A publication panel keyed only by draft ID retained an aborted operation after the same draft was edited and revalidated. Facility reservation scans also read the same operation marker once per event.
 - **Going forward:** Refresh operation state when the draft revision changes, and share transaction-local canonical document reads across command fencing, authority checks and visibility scans. Exercise abort/edit/revalidate/restart without focus or reload, and measure repeated marker reads against a real multi-event publication.
 - **Pointers:** `admin/src/SchedulePublication.tsx`, `functions/src/commandSupport.ts`, `tests/backend/schedule-publication.test.mjs`.
+
+### 2026-10-16 — Bound operational queries by the current decision
+
+- **Source:** PR #32 · actual GitHub Codex review at `b756154`.
+- **Gap:** Lifetime facility closure/event scans and tenant-wide membership scans let unrelated retained history exhaust current read and makeup budgets.
+- **Going forward:** Apply interval and lifecycle filters at the database boundary, include maximum booking/buffer lookback, and scope coach reads to participating and overlapping-event teams. Prime finite visible pages per facility within each transaction attempt. Exercise actual handlers with more than 1,000 unrelated historical records and assert returned query document counts.
+- **Pointers:** `functions/src/facilities/{closures,makeups}.ts`, `functions/src/scheduling/drafts.ts`, `tests/backend/closures.test.mjs`.
+
+### 2026-10-16 — Guard compatibility mutations as well as new workflows
+
+- **Source:** PR #32 · actual second GitHub Codex review at `27daeb0`.
+- **Gap:** The reviewed makeup callable enforced policy but ordinary native lifecycle rescheduling could bypass it after a closure was materialized. Interval-bounded makeup queries still counted inactive events before filtering.
+- **Going forward:** Enforce the reviewed transition at the shared mutation boundary with a server-only adapter flag; exercise the existing client callable for staff and coach bypass attempts, ordinary later postponement, and deliberate mismatch reconciliation. Apply lifecycle/publication/deletion predicates before query limits and seed more than 1,000 inactive records in the exact proposed interval.
+- **Pointers:** `functions/src/operations/events.ts`, `functions/src/facilities/makeups.ts`, `tests/backend/closures.test.mjs`.

@@ -742,3 +742,6 @@ button { overflow-wrap: anywhere; }
 
 .draft-preferences label { flex-direction: row; align-items: center; gap: 10px; }
 .draft-preferences input { width: 20px; height: 20px; flex: 0 0 20px; }
+
+.closures label:has(input[type="checkbox"]) { display: flex; flex-direction: row; align-items: center; gap: 12px; min-height: 44px; }
+.closures input[type="checkbox"] { width: 20px; height: 20px; flex: 0 0 20px; }

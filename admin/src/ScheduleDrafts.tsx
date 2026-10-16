@@ -1,3 +1,4 @@
+import { formatDateTime } from "../../shared/dates";
 import { SchedulePublication } from "./SchedulePublication";
 import { useEffect, useRef, useState } from "react";
 import type { DraftFields, ScheduleDraft } from "../../shared/scheduleDrafts";
@@ -782,7 +783,10 @@ export function ScheduleDrafts({
                                 })
                               }
                             />
-                            {slot.id} · {slot.startsAt || "No start set"}
+                            {slot.id} ·{" "}
+                            {slot.startsAt
+                              ? formatDateTime(slot.startsAt, "UTC")
+                              : "No start set"}
                           </label>
                         ))}
                     </fieldset>
@@ -1111,7 +1115,8 @@ export function ScheduleDrafts({
                                 <option value="">Unscheduled</option>
                                 {fixtureChoices(f.id).map((s) => (
                                   <option key={s.id} value={s.id}>
-                                    {s.id} · {s.startsAt} · {s.resourceId}
+                                    {s.id} · {formatDateTime(s.startsAt, "UTC")}{" "}
+                                    · {s.resourceId}
                                   </option>
                                 ))}
                               </select>

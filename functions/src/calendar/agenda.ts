@@ -1,3 +1,4 @@
+import { effectiveEvent, primeClosureReads } from '../facilities/closures';
 import { publishedEvent } from '../scheduling/visibility';
 import { cacheDocumentReads } from '../operations/reads';
 import { createHash } from "node:crypto";
@@ -403,9 +404,11 @@ export async function readAgenda(
       valid = 0;
     while (valid <= payload.pageSize) {
       const rows = await tx.get(query.limit(payload.pageSize + 1));
+      await primeClosureReads(tx, rows.docs.map(doc => doc.data()));
       for (const doc of rows.docs) {
         if (++scanned > 500 || ++totalScanned > 5000) exhausted();
-        const event = doc.data();
+        const event = await effectiveEvent(tx, doc.data());
+        if (options.scheduledOnly && event.status !== "scheduled") continue;
         if (
           event.schemaVersion !== 2 ||
           !["scheduled", "postponed", "cancelled", "completed"].includes(event.status) ||

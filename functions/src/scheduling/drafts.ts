@@ -1,3 +1,4 @@
+import { resourceClosures } from "../facilities/closures";
 import { publishedEvent } from "./visibility";
 import { publicationError } from "./lease";
 import { getFirestore, Transaction } from "firebase-admin/firestore";
@@ -314,11 +315,20 @@ export async function draftSnapshot(
     s.teams.map((t) => [t.id, t.data()]),
     coaches.docs.map((t) => [t.id, t.data()]),
   ];
-  const closures = await query(
-    db().collection(`organizations/${d.orgId}/closures`).limit(1001),
-  );
-  bounded(closures.size, 1000, "Closures");
-  bindings.push(closures.docs.map((t) => [t.id, t.data()]));
+  const closureRows = new Map<
+    string,
+    FirebaseFirestore.QueryDocumentSnapshot[]
+  >();
+  for (const facilityId of new Set(f.slots.map((slot) => slot.facilityId))) {
+    const rows = await resourceClosures(tx, d.orgId, facilityId, {
+      startsAt: new Date(Date.parse(f.startsAt) - 3 * 3600000).toISOString(),
+      endsAt: new Date(Date.parse(f.endsAt) + 3 * 3600000).toISOString(),
+    });
+    count += rows.size;
+    bounded(count, 5000, "Snapshot query documents");
+    closureRows.set(facilityId, rows.docs);
+    bindings.push([facilityId, rows.docs.map((t) => [t.id, t.data()])]);
+  }
   const availabilityRecords = new Map<string, Data[]>();
   const resources: ScheduleInput["resources"] = [],
     resourceMap = new Map<string, string>();
@@ -386,9 +396,10 @@ export async function draftSnapshot(
       setupMinutes: r.setupMinutes,
       cleanupMinutes: r.cleanupMinutes,
       availability,
-      closures: closures.docs.flatMap((doc) => {
+      closures: (closureRows.get(slot.facilityId) ?? []).flatMap((doc) => {
         const c = doc.data();
         return c.status !== "cancelled" &&
+          (c.facilityId == null || c.facilityId === slot.facilityId) &&
           Array.isArray(c.resourceIds) &&
           c.resourceIds.includes(slot.resourceId)
           ? [

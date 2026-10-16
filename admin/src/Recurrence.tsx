@@ -1,3 +1,8 @@
+import {
+  formatCalendarDate,
+  formatDateTime,
+  formatClockTime,
+} from "../../shared/dates";
 import { useEffect, useRef, useState } from "react";
 import type {
   RecurrenceInput,
@@ -363,8 +368,9 @@ export function Recurrence({
               <section className="panel">
                 <h2>Review {preview.occurrences.length} occurrences</h2>
                 <p>
-                  {fields.startsOn} through {fields.endsOn} · {fields.timeZone}{" "}
-                  · {fields.exclusions.length} explicit exclusions
+                  {formatCalendarDate(fields.startsOn)} through{" "}
+                  {formatCalendarDate(fields.endsOn)} · {fields.timeZone} ·{" "}
+                  {fields.exclusions.length} explicit exclusions
                 </p>
                 <div className="table-scroll">
                   <table>
@@ -379,15 +385,21 @@ export function Recurrence({
                       {preview.occurrences.map((o) => (
                         <tr key={o.id}>
                           <td>
-                            {o.localDate} {o.localTime}
+                            {formatCalendarDate(o.localDate)} at{" "}
+                            {formatClockTime(o.localTime)}
                           </td>
-                          <td>{o.startsAt || "Unresolved"}</td>
+                          <td>
+                            {o.startsAt
+                              ? formatDateTime(o.startsAt, "UTC")
+                              : "Unresolved"}
+                          </td>
                           <td>
                             {o.issue && <p className="error">{o.issue}</p>}
                             {o.choices.length > 1 && (
                               <label>
-                                UTC offset for {o.localDate}
+                                UTC offset for {formatCalendarDate(o.localDate)}
                                 <select
+                                  aria-label={`UTC offset for ${formatCalendarDate(o.localDate)}`}
                                   value={fields.offsets[o.localDate] ?? ""}
                                   onChange={(e) =>
                                     change({
@@ -403,12 +415,12 @@ export function Recurrence({
                                   </option>
                                   {o.choices.map((c) => (
                                     <option
-                                      key={c.startsAt}
+                                      key={formatDateTime(c.startsAt, "UTC")}
                                       value={c.offsetMinutes}
                                     >
                                       UTC{c.offsetMinutes >= 0 ? "+" : "−"}
                                       {Math.abs(c.offsetMinutes) / 60} ·{" "}
-                                      {c.startsAt}
+                                      {formatDateTime(c.startsAt, "UTC")}
                                     </option>
                                   ))}
                                 </select>
