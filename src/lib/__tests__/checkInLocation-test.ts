@@ -77,3 +77,28 @@ test("obsolete request and background never begin positioning", async () => {
     AppState.currentState = original;
   }
 });
+
+test("a permission granted while still backgrounded makes no sample request and marks resume for reauthorization", async () => {
+  const helper = require("../checkInLocation");
+  const original = AppState.currentState;
+  let resolve!: (value: unknown) => void;
+  permission.mockImplementationOnce(
+    () =>
+      new Promise((r) => {
+        resolve = r;
+      }),
+  );
+  const pending = currentCheckInLocation();
+  const rejection = expect(pending).rejects.toThrow("interrupted");
+  expect(helper.isCheckInPermissionPending()).toBe(true);
+  AppState.currentState = "background";
+  try {
+    resolve({ status: "granted" });
+    await rejection;
+    expect(position).not.toHaveBeenCalled();
+    expect(helper.canResumeCheckInPermission()).toBe(false);
+    expect(helper.isCheckInPermissionPending()).toBe(false);
+  } finally {
+    AppState.currentState = original;
+  }
+});

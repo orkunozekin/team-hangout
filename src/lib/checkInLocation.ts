@@ -2,7 +2,10 @@ import { AppState } from "react-native";
 import * as Location from "expo-location";
 import type { LocationSample } from "../../shared/checkIn";
 let pendingPermissions = 0;
+let permissionReturnedInBackground = false;
 export const isCheckInPermissionPending = () => pendingPermissions > 0;
+export const canResumeCheckInPermission = () =>
+  pendingPermissions > 0 || !permissionReturnedInBackground;
 export async function currentCheckInLocation(
   isCurrent: () => boolean = () => true,
 ): Promise<LocationSample> {
@@ -12,10 +15,13 @@ export async function currentCheckInLocation(
     return await Promise.race([
       (async () => {
         pendingPermissions++;
+        permissionReturnedInBackground = false;
         let permission: Location.LocationPermissionResponse;
         try {
           permission = await Location.requestForegroundPermissionsAsync();
         } finally {
+          permissionReturnedInBackground =
+            AppState.currentState === "background";
           pendingPermissions--;
         }
         if (permission.status !== "granted")

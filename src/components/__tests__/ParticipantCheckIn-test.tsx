@@ -6,7 +6,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react-native";
-import { AppState } from "react-native";
+import { AppState, Platform } from "react-native";
 import ParticipantCheckIn from "../ParticipantCheckIn";
 import {
   getParticipantCheckIn,
@@ -23,6 +23,7 @@ jest.mock("../../firebase/attendance", () => ({
 jest.mock("../../lib/checkInLocation", () => ({
   currentCheckInLocation: jest.fn(),
   isCheckInPermissionPending: jest.fn(() => false),
+  canResumeCheckInPermission: jest.fn(() => true),
 }));
 const read = getParticipantCheckIn as jest.Mock,
   save = checkInParticipant as jest.Mock,
@@ -187,13 +188,88 @@ test("stale schedule clears controls and requires reload", async () => {
 });
 
 test("permission denial remains visible when the OS prompt returns active after acquisition settles", async () => {
-  const marker = require("../../lib/checkInLocation").isCheckInPermissionPending as jest.Mock;
+  const marker = require("../../lib/checkInLocation")
+    .isCheckInPermissionPending as jest.Mock;
   marker.mockReturnValue(true);
   let reject!: (value: unknown) => void;
-  locate.mockImplementationOnce(() => new Promise((_resolve, r) => { reject = r; }));
-  await open(); await fireEvent.press(screen.getByText("Use location for Jamie"));
+  locate.mockImplementationOnce(
+    () =>
+      new Promise((_resolve, r) => {
+        reject = r;
+      }),
+  );
+  await open();
+  await fireEvent.press(screen.getByText("Use location for Jamie"));
   await act(async () => change("inactive"));
-  await act(async () => reject(new Error("Location permission denied. Use simple check-in.")));
-  marker.mockReturnValue(false); await act(async () => change("active"));
-  expect(screen.getByText("Location permission denied. Use simple check-in.")).toBeTruthy(); expect(read).toHaveBeenCalledTimes(1);
+  await act(async () =>
+    reject(new Error("Location permission denied. Use simple check-in.")),
+  );
+  marker.mockReturnValue(false);
+  await act(async () => change("active"));
+  expect(
+    screen.getByText("Location permission denied. Use simple check-in."),
+  ).toBeTruthy();
+  expect(read).toHaveBeenCalledTimes(1);
+});
+
+test("Android temporary permission Activity preserves the in-flight assertion across background/active", async () => {
+  const platform = jest.replaceProperty(Platform, "OS", "android");
+  const helper = require("../../lib/checkInLocation");
+  helper.isCheckInPermissionPending.mockReturnValue(true);
+  helper.canResumeCheckInPermission.mockReturnValue(true);
+  let resolve!: (value: unknown) => void;
+  locate.mockImplementationOnce(
+    () =>
+      new Promise((r) => {
+        resolve = r;
+      }),
+  );
+  try {
+    await open();
+    await fireEvent.press(screen.getByText("Use location for Jamie"));
+    await act(async () => change("background"));
+    expect(screen.getByText(/Actual attendance: unknown/)).toBeTruthy();
+    await act(async () => change("active"));
+    expect(read).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      resolve({ latitude: 1, longitude: 2, accuracy: 10, timestamp: 100 }),
+    );
+    expect(save).toHaveBeenCalledTimes(1);
+  } finally {
+    helper.isCheckInPermissionPending.mockReturnValue(false);
+    platform.restore();
+  }
+});
+test("Android permission completion in a genuine background cancels and reauthorizes on return", async () => {
+  const platform = jest.replaceProperty(Platform, "OS", "android");
+  const helper = require("../../lib/checkInLocation");
+  helper.isCheckInPermissionPending.mockReturnValue(true);
+  helper.canResumeCheckInPermission.mockReturnValue(true);
+  let reject!: (value: unknown) => void;
+  locate.mockImplementationOnce(
+    () =>
+      new Promise((_r, r) => {
+        reject = r;
+      }),
+  );
+  try {
+    await open();
+    await fireEvent.press(screen.getByText("Use location for Jamie"));
+    await act(async () => change("background"));
+    await act(async () =>
+      reject(
+        new Error("Check-in interrupted. Try again while the app is open."),
+      ),
+    );
+    helper.isCheckInPermissionPending.mockReturnValue(false);
+    helper.canResumeCheckInPermission.mockReturnValue(false);
+    read.mockRejectedValueOnce({ code: "functions/permission-denied" });
+    await act(async () => change("active"));
+    await screen.findByText(/Check-in access is unavailable/);
+    expect(save).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Actual attendance/)).toBeNull();
+  } finally {
+    helper.canResumeCheckInPermission.mockReturnValue(true);
+    platform.restore();
+  }
 });

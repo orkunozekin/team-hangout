@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   AppState,
+  Platform,
   Text,
   View,
   StyleSheet,
@@ -9,7 +10,11 @@ import {
 import type { ParticipantCheckIn as CheckIn } from "../../shared/checkIn";
 import { getParticipantCheckIn, checkInParticipant } from "../firebase/checkIn";
 import { attendanceRequestId } from "../firebase/attendance";
-import { currentCheckInLocation, isCheckInPermissionPending } from "../lib/checkInLocation";
+import {
+  currentCheckInLocation,
+  isCheckInPermissionPending,
+  canResumeCheckInPermission,
+} from "../lib/checkInLocation";
 import { SecondaryButton } from "./ui";
 import { colors, type } from "../theme/theme";
 const uncertain = (error: unknown) =>
@@ -69,10 +74,25 @@ export default function ParticipantCheckIn({
   useEffect(() => {
     let permissionDialog = false;
     const sub = AppState.addEventListener("change", (state) => {
-      if (state === "inactive" && isCheckInPermissionPending()) { permissionDialog = true; return; }
-      if (state === "active" && permissionDialog) { permissionDialog = false; return; }
+      if (
+        (state === "inactive" ||
+          (Platform.OS === "android" && state === "background")) &&
+        isCheckInPermissionPending()
+      ) {
+        permissionDialog = true;
+        return;
+      }
+      if (state === "active" && permissionDialog) {
+        permissionDialog = false;
+        if (canResumeCheckInPermission()) return;
+        generation.current++;
+        pending.current = null;
+        locked.current = false;
+        setData(null);
+        setBusy(false);
+      }
       permissionDialog = false;
-      // The OS permission dialog can make iOS inactive. Cancel only when actually backgrounded.
+      // Android permission activities can report background; all other background transitions cancel.
       if (state === "background") {
         generation.current++;
         pending.current = null;

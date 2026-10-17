@@ -6,7 +6,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react-native";
-import { AppState } from "react-native";
+import { AppState, Platform } from "react-native";
 import EventAvailability from "../EventAvailability";
 import {
   getEventAvailability,
@@ -19,9 +19,19 @@ jest.mock("../../firebase/availability", () => ({
   setEventRsvpDeadline: jest.fn(),
   availabilityRequestId: jest.fn(() => "stable-id"),
 }));
-jest.mock("../../firebase/checkIn", () => ({ getParticipantCheckIn: jest.fn(), checkInParticipant: jest.fn(), setEventCheckInPolicy: jest.fn() }));
-jest.mock("../../firebase/attendance", () => ({ attendanceRequestId: jest.fn() }));
-jest.mock("expo-location", () => ({ requestForegroundPermissionsAsync: jest.fn(), getCurrentPositionAsync: jest.fn(), Accuracy: { High: 4 } }));
+jest.mock("../../firebase/checkIn", () => ({
+  getParticipantCheckIn: jest.fn(),
+  checkInParticipant: jest.fn(),
+  setEventCheckInPolicy: jest.fn(),
+}));
+jest.mock("../../firebase/attendance", () => ({
+  attendanceRequestId: jest.fn(),
+}));
+jest.mock("expo-location", () => ({
+  requestForegroundPermissionsAsync: jest.fn(),
+  getCurrentPositionAsync: jest.fn(),
+  Accuracy: { High: 4 },
+}));
 jest.mock("../ParticipantCheckIn", () => () => null);
 const api = getEventAvailability as jest.Mock;
 const save = respondToEvent as jest.Mock;
@@ -39,7 +49,12 @@ const item = {
   actor: null,
 };
 const data = {
-  checkInPolicy: { beforeMinutes: 40, afterMinutes: 120, radiusMeters: 500, locationEnabled: true },
+  checkInPolicy: {
+    beforeMinutes: 40,
+    afterMinutes: 120,
+    radiusMeters: 500,
+    locationEnabled: true,
+  },
   eventId: "event",
   canManage: true,
   eventRevision: 4,
@@ -63,7 +78,9 @@ const data = {
 };
 beforeEach(() => {
   jest.clearAllMocks();
-  jest.spyOn(AppState, "addEventListener").mockImplementation(() => ({ remove: jest.fn() }));
+  jest
+    .spyOn(AppState, "addEventListener")
+    .mockImplementation(() => ({ remove: jest.fn() }));
   api.mockResolvedValue(data);
   save.mockResolvedValue({ revision: 1 });
 });
@@ -244,13 +261,57 @@ test("foreground permission dialog preserves the response/check-in subtree but t
   const location = require("expo-location");
   const { currentCheckInLocation } = require("../../lib/checkInLocation");
   let finish: (value: unknown) => void = () => {};
-  jest.spyOn(location, "requestForegroundPermissionsAsync").mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  jest.spyOn(location, "requestForegroundPermissionsAsync").mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
   let change: (state: import("react-native").AppStateStatus) => void = () => {};
-  jest.spyOn(AppState, "addEventListener").mockImplementation((_type, cb) => { change = cb; return { remove: jest.fn() }; });
-  await render(<EventAvailability eventId="event" />); await screen.findByText("Jamie");
+  jest.spyOn(AppState, "addEventListener").mockImplementation((_type, cb) => {
+    change = cb;
+    return { remove: jest.fn() };
+  });
+  await render(<EventAvailability eventId="event" />);
+  await screen.findByText("Jamie");
   const pending = currentCheckInLocation().catch(() => undefined);
-  await act(async () => change("inactive")); expect(screen.getByText("Jamie")).toBeTruthy();
-  await act(async () => change("active")); expect(api).toHaveBeenCalledTimes(1);
-  await act(async () => finish({ status: "denied" })); await pending;
-  await act(async () => change("background")); expect(screen.queryByText("Jamie")).toBeNull();
+  await act(async () => change("inactive"));
+  expect(screen.getByText("Jamie")).toBeTruthy();
+  await act(async () => change("active"));
+  expect(api).toHaveBeenCalledTimes(1);
+  await act(async () => finish({ status: "denied" }));
+  await pending;
+  await act(async () => change("background"));
+  expect(screen.queryByText("Jamie")).toBeNull();
+});
+
+test("Android permission Activity does not tear down the availability subtree", async () => {
+  const platform = jest.replaceProperty(Platform, "OS", "android"),
+    helper = require("../../lib/checkInLocation");
+  const marker = jest
+    .spyOn(helper, "isCheckInPermissionPending")
+    .mockReturnValue(true);
+  const resume = jest
+    .spyOn(helper, "canResumeCheckInPermission")
+    .mockReturnValue(true);
+  let change: (state: import("react-native").AppStateStatus) => void = () => {};
+  jest.spyOn(AppState, "addEventListener").mockImplementation((_type, cb) => {
+    change = cb;
+    return { remove: jest.fn() };
+  });
+  try {
+    await render(<EventAvailability eventId="event" />);
+    await screen.findByText("Jamie");
+    await act(async () => change("background"));
+    expect(screen.getByText("Jamie")).toBeTruthy();
+    await act(async () => change("active"));
+    expect(api).toHaveBeenCalledTimes(1);
+    marker.mockReturnValue(false);
+    await act(async () => change("background"));
+    expect(screen.queryByText("Jamie")).toBeNull();
+  } finally {
+    marker.mockRestore();
+    resume.mockRestore();
+    platform.restore();
+  }
 });

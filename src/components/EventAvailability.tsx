@@ -1,8 +1,12 @@
-import { isCheckInPermissionPending } from "../lib/checkInLocation";
+import {
+  isCheckInPermissionPending,
+  canResumeCheckInPermission,
+} from "../lib/checkInLocation";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   AppState,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -82,8 +86,18 @@ export default function EventAvailability({
   useEffect(() => {
     let permissionDialog = false;
     const sub = AppState.addEventListener("change", (state) => {
-      if (state === "inactive" && isCheckInPermissionPending()) { permissionDialog = true; return; }
-      if (state === "active" && permissionDialog) { permissionDialog = false; return; }
+      if (
+        (state === "inactive" ||
+          (Platform.OS === "android" && state === "background")) &&
+        isCheckInPermissionPending()
+      ) {
+        permissionDialog = true;
+        return;
+      }
+      if (state === "active" && permissionDialog) {
+        permissionDialog = false;
+        if (canResumeCheckInPermission()) return;
+      }
       permissionDialog = false;
       generation.current++;
       setData(null);
@@ -179,7 +193,13 @@ export default function EventAvailability({
           ))}
           {canManage && data.canManage ? (
             <>
-              <CheckInPolicyEditor key={data.eventRevision} eventId={eventId} eventRevision={data.eventRevision} policy={data.checkInPolicy} onSaved={() => setVersion(n => n + 1)} />
+              <CheckInPolicyEditor
+                key={data.eventRevision}
+                eventId={eventId}
+                eventRevision={data.eventRevision}
+                policy={data.checkInPolicy}
+                onSaved={() => setVersion((n) => n + 1)}
+              />
               <Text style={styles.heading}>Response deadline</Text>
               <Text style={styles.small}>
                 Edits close at the deadline. Rescheduling resets the deadline to
@@ -304,7 +324,11 @@ function Response({
           ? "Responding for yourself"
           : "Acting as guardian"}
       </Text>
-      <ParticipantCheckIn eventId={eventId} participantId={item.participantId} displayName={item.displayName} />
+      <ParticipantCheckIn
+        eventId={eventId}
+        participantId={item.participantId}
+        displayName={item.displayName}
+      />
       <Text style={styles.copy}>
         {label[item.status]}
         {item.actor ? ` · Last response: ${item.actor}` : ""}
