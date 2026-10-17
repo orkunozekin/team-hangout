@@ -662,6 +662,7 @@ test("deliberate publication recovers an uncertain chunk, reloads progress and c
   await page.getByRole("button", { name: "Continue next chunk" }).click();
   await expect(page.getByRole("button", { name: "Retry same publication action" })).toBeVisible();
   await page.getByRole("button", { name: "Retry same publication action" }).click();
+  await expect.poll(() => requests.length).toBe(2);
   expect(requests[0]).toEqual(requests[1]);
   await expect(page.getByText("Staged 6 of 6 · Promoted 0 of 6")).toBeVisible();
   const rows = await db.collection(`organizations/${orgId}/scheduleOperations`).get();
