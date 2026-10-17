@@ -177,6 +177,11 @@ export const getEventAvailability = readCommand(
       )
         candidates.add(participantId);
     }
+    if (candidates.size > 100 || candidates.size * teams.length > 500)
+      throw new HttpsError(
+        "resource-exhausted",
+        "This event exceeds the household response read budget. Contact your administrator.",
+      );
     const items: Data[] = [];
     for (const participantId of candidates) {
       let allowed: Awaited<ReturnType<typeof eligible>>;

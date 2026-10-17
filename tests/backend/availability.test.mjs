@@ -612,3 +612,120 @@ test("large staff summaries fail closed without listing another household respon
   });
   assert.equal((await read(e)).items.length, 2);
 });
+
+test("combined self and guardian candidates reject before any roster fan-out", async () => {
+  const e = await create();
+  const uid = "p209-outsider";
+  const batch = db.batch();
+  for (let i = 0; i < 100; i++) {
+    batch.set(db.doc(part(`p209-budget-self-${i}`)), {
+      ...meta,
+      orgId: scope.orgId,
+      displayName: "Synthetic self",
+      linkedUserId: uid,
+    });
+    batch.set(db.doc(part(`p209-budget-child-${i}`)), {
+      ...meta,
+      orgId: scope.orgId,
+      displayName: "Synthetic child",
+    });
+    batch.set(db.doc(grant(`p209-budget-child-${i}`, uid)), {
+      ...meta,
+      orgId: scope.orgId,
+      participantId: `p209-budget-child-${i}`,
+      userId: uid,
+      permissions: { viewSchedule: true, respond: true },
+    });
+  }
+  await batch.commit();
+  await assert.rejects(read(e, uid), { code: "functions/resource-exhausted" });
+  const { getEventAvailability } = require("./lib/operations/availability.js");
+  const transact = db.runTransaction.bind(db);
+  let rosterReads = 0;
+  db.runTransaction = (callback, options) =>
+    transact(
+      (tx) =>
+        callback(
+          new Proxy(tx, {
+            get(target, name) {
+              if (name === "getAll")
+                return (...refs) => {
+                  rosterReads += refs.filter((ref) =>
+                    ref.path.includes("/roster/"),
+                  ).length;
+                  return target.getAll(...refs);
+                };
+              const value = Reflect.get(target, name);
+              return typeof value === "function" ? value.bind(target) : value;
+            },
+          }),
+        ),
+      options,
+    );
+  try {
+    await assert.rejects(
+      getEventAvailability.run({ data: { eventId: e.id }, auth: { uid } }),
+      { code: "resource-exhausted" },
+    );
+  } finally {
+    db.runTransaction = transact;
+  }
+  assert.equal(rosterReads, 0);
+  const cleanup = db.batch();
+  for (let i = 0; i < 100; i++) {
+    cleanup.delete(db.doc(part(`p209-budget-self-${i}`)));
+    cleanup.delete(db.doc(grant(`p209-budget-child-${i}`, uid)));
+    cleanup.delete(db.doc(part(`p209-budget-child-${i}`)));
+  }
+  await cleanup.commit();
+});
+test("accepted candidate count still rejects a multiplying 20-team read budget before fan-out", async () => {
+  const e = await create();
+  const uid = "p209-outsider";
+  const batch = db.batch();
+  const ids = Array.from({ length: 20 }, (_, i) => `p209-budget-team-${i}`);
+  for (const teamId of ids)
+    batch.set(db.doc(`teams/${teamId}`), { ...meta, ...scope, name: teamId });
+  for (let i = 0; i < 26; i++)
+    batch.set(db.doc(part(`p209-multiply-self-${i}`)), {
+      ...meta,
+      orgId: scope.orgId,
+      displayName: "Synthetic self",
+      linkedUserId: uid,
+    });
+  batch.update(db.doc(`events/${e.id}`), { teamId: ids[0], teamIds: ids });
+  await batch.commit();
+  await assert.rejects(read(e, uid), { code: "functions/resource-exhausted" });
+  const { getEventAvailability } = require("./lib/operations/availability.js");
+  const transact = db.runTransaction.bind(db);
+  let rosterReads = 0;
+  db.runTransaction = (callback, options) =>
+    transact(
+      (tx) =>
+        callback(
+          new Proxy(tx, {
+            get(target, name) {
+              if (name === "getAll")
+                return (...refs) => {
+                  rosterReads += refs.filter((ref) =>
+                    ref.path.includes("/roster/"),
+                  ).length;
+                  return target.getAll(...refs);
+                };
+              const value = Reflect.get(target, name);
+              return typeof value === "function" ? value.bind(target) : value;
+            },
+          }),
+        ),
+      options,
+    );
+  try {
+    await assert.rejects(
+      getEventAvailability.run({ data: { eventId: e.id }, auth: { uid } }),
+      { code: "resource-exhausted" },
+    );
+  } finally {
+    db.runTransaction = transact;
+  }
+  assert.equal(rosterReads, 0);
+});

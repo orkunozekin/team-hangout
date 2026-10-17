@@ -260,3 +260,10 @@
 - **Gap:** Reusing full household agenda discovery for one event enumerated unrelated staff teams and could exhaust a 100-team limit before returning that event's responses.
 - **Going forward:** Discover personal canonical sources within the target organization and check enrollment only against participating teams. Staff navigation pointers must not widen an event-specific reader. Test a small event with more than 100 unrelated staff teams and stale participant candidates.
 - **Pointers:** `functions/src/operations/availability.ts`, `tests/backend/availability.test.mjs`.
+
+### 2026-10-16: Bound combined candidates and multiplying read dimensions
+
+- **Source:** PR #33, second actual GitHub Codex review at `fabb018`.
+- **Gap:** Independent self/guardian discovery limits still allowed 200 distinct candidates, each fanning out to every event team.
+- **Going forward:** Bound the deduplicated union and candidate-by-team product before roster reads. Exercise both individually valid source limits and accepted candidate counts multiplied across 20 teams, and instrument the actual handler to prove rejection before fan-out.
+- **Pointers:** `functions/src/operations/availability.ts`, `tests/backend/availability.test.mjs`.
