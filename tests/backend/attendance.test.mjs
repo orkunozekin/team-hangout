@@ -478,6 +478,58 @@ test("paged reporting reads include unknowns and stable completion denominator, 
   );
   assert.ok(frozen.items.every((r) => r.status === "unknown"));
 });
+test("attendance pages batch participant, attendance and availability documents without roster rereads", async () => {
+  const e = await create();
+  const { getEventAttendance } = require("./lib/operations/attendance.js");
+  const transact = db.runTransaction.bind(db);
+  const detailBatches = [];
+  db.runTransaction = (callback, options) =>
+    transact(
+      (tx) =>
+        callback(
+          new Proxy(tx, {
+            get(target, name) {
+              if (name === "getAll")
+                return (...refs) => {
+                  const detailPaths = refs
+                    .map((ref) => ref.path)
+                    .filter(
+                      (path) =>
+                        path.startsWith(
+                          "organizations/p210-org/participants/",
+                        ) ||
+                        path.startsWith(`events/${e.id}/attendance/`) ||
+                        path.startsWith(`events/${e.id}/availability/`) ||
+                        path.startsWith("teams/p210-a/roster/"),
+                    );
+                  if (detailPaths.length) detailBatches.push(detailPaths);
+                  return target.getAll(...refs);
+                };
+              const value = Reflect.get(target, name);
+              return typeof value === "function" ? value.bind(target) : value;
+            },
+          }),
+        ),
+      options,
+    );
+  let page;
+  try {
+    page = await getEventAttendance.run({
+      data: { eventId: e.id, teamId: "p210-a", pageSize: 50 },
+      auth: { uid: "p210-coach" },
+    });
+  } finally {
+    db.runTransaction = transact;
+  }
+  assert.equal(page.items.length, 2);
+  assert.equal(detailBatches.length, 1);
+  assert.equal(detailBatches[0].length, 6);
+  assert.ok(
+    detailBatches[0].every(
+      (path) => !path.startsWith("teams/p210-a/roster/"),
+    ),
+  );
+});
 test("oversized completion fails atomically instead of truncating denominator", async () => {
   const e = await create();
   const batch = db.batch();

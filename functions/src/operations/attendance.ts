@@ -191,19 +191,15 @@ export async function prepareRosterSnapshot(
     },
   };
 }
-async function enrollment(
-  tx: Transaction,
+function enrollmentFromRows(
   event: Data,
-  eventId: string,
   teamId: string,
   participantId: string,
+  rosterOrSnapshot: Data | undefined,
+  participant?: Data,
 ) {
   if (event.status === "completed") {
-    const snap = (
-      await tx.get(
-        db().doc(`events/${eventId}/rosterSnapshots/${participantId}`),
-      )
-    ).data();
+    const snap = rosterOrSnapshot;
     if (
       !snap ||
       !event.rosterSnapshot ||
@@ -215,14 +211,8 @@ async function enrollment(
     if (!e) denied();
     return { row: snap!, eligible: e.eligible === true };
   }
-  const r = (
-    await tx.get(db().doc(`teams/${teamId}/roster/${participantId}`))
-  ).data();
-  const p = (
-    await tx.get(
-      db().doc(`organizations/${event.orgId}/participants/${participantId}`),
-    )
-  ).data();
+  const r = rosterOrSnapshot;
+  const p = participant;
   if (
     !rosterValid(r, event.orgId, participantId) ||
     !participantValid(p, event.orgId)
@@ -232,6 +222,38 @@ async function enrollment(
     row: { ...r, displayName: p!.displayName },
     eligible: r!.status === "active" && p!.status === "active",
   };
+}
+async function enrollment(
+  tx: Transaction,
+  event: Data,
+  eventId: string,
+  teamId: string,
+  participantId: string,
+) {
+  if (event.status === "completed") {
+    const snapshot = (
+      await tx.get(
+        db().doc(`events/${eventId}/rosterSnapshots/${participantId}`),
+      )
+    ).data();
+    return enrollmentFromRows(
+      event,
+      teamId,
+      participantId,
+      snapshot,
+    );
+  }
+  const [roster, participant] = await tx.getAll(
+    db().doc(`teams/${teamId}/roster/${participantId}`),
+    db().doc(`organizations/${event.orgId}/participants/${participantId}`),
+  );
+  return enrollmentFromRows(
+    event,
+    teamId,
+    participantId,
+    roster.data(),
+    participant.data(),
+  );
 }
 function attendance(row: Data | undefined, version: number) {
   return {
@@ -290,21 +312,41 @@ export const getEventAttendance = readCommand(
         canWrite = false;
       }
     }
+    const pageRows = rows.docs.slice(0, data.pageSize);
+    const detailRefs = pageRows.flatMap((doc) => [
+      ...(event.status === "completed"
+        ? []
+        : [
+            db().doc(
+              `organizations/${event.orgId}/participants/${doc.id}`,
+            ),
+          ]),
+      db().doc(`events/${data.eventId}/attendance/${doc.id}`),
+      db().doc(`events/${data.eventId}/availability/${doc.id}`),
+    ]);
+    const detailSnapshots = detailRefs.length
+      ? await tx.getAll(...detailRefs)
+      : [];
+    const details = new Map(
+      detailSnapshots.map((snapshot) => [snapshot.ref.path, snapshot.data()]),
+    );
     const items = [];
-    for (const doc of rows.docs.slice(0, data.pageSize)) {
-      const enrolled = await enrollment(
-        tx,
+    for (const doc of pageRows) {
+      const enrolled = enrollmentFromRows(
         event,
-        data.eventId,
         data.teamId,
         doc.id,
+        doc.data(),
+        details.get(
+          `organizations/${event.orgId}/participants/${doc.id}`,
+        ),
       );
-      const row = (
-        await tx.get(db().doc(`events/${data.eventId}/attendance/${doc.id}`))
-      ).data();
-      const intended = (
-        await tx.get(db().doc(`events/${data.eventId}/availability/${doc.id}`))
-      ).data();
+      const row = details.get(
+        `events/${data.eventId}/attendance/${doc.id}`,
+      );
+      const intended = details.get(
+        `events/${data.eventId}/availability/${doc.id}`,
+      );
       items.push({
         participantId: doc.id,
         displayName: enrolled.row.displayName,
