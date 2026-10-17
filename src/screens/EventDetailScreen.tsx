@@ -1,3 +1,4 @@
+import { agendaTime } from '../lib/agendaTime';
 import EventAttendance from '../components/EventAttendance';
 import EventAvailability from "../components/EventAvailability";
 import React, {
@@ -190,7 +191,7 @@ export default function EventDetailScreen({
         </> : null}
 
         <Text style={styles.row}>
-          {formatEventDateLabel(event.date)} at {event.time}
+          {event.schemaVersion === 2 && event.startsAt && event.endsAt && event.timeZone ? agendaTime(event.startsAt, event.endsAt, event.timeZone) : `${formatEventDateLabel(event.date)} at ${event.time}`}
         </Text>
 
         {event.location?.name ? (
