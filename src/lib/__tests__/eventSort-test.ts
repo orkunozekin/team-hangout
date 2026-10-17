@@ -106,3 +106,21 @@ describe('eventSort', () => {
       '1',
     ]);
   });
+
+
+it('sorts canonical schedules by instant across zones and a repeated DST hour', () => {
+  const canonical = (id: string, startsAt: string, time: string, timeZone: string) => makeEvent({
+    id, schemaVersion: 2, startsAt, time, timeZone, type: 'match', title: id,
+    date: new Date('2026-11-01T00:00:00Z'),
+  });
+  const rows = [
+    canonical('late-east', '2026-11-01T08:00:00Z', '03:00', 'America/New_York'),
+    canonical('early-west', '2026-11-01T07:30:00Z', '00:30', 'America/Los_Angeles'),
+    canonical('second-hour', '2026-11-01T06:15:00Z', '01:15', 'America/New_York'),
+    canonical('first-hour', '2026-11-01T05:45:00Z', '01:45', 'America/New_York'),
+    canonical('late-west', '2026-11-01T08:30:00Z', '01:30', 'America/Los_Angeles'),
+  ];
+  const ids = ['first-hour', 'second-hour', 'early-west', 'late-east', 'late-west'];
+  expect(applyScheduleView(rows, 'match').map(row => row.id)).toEqual(ids);
+  expect(sortEventsByDateTime(rows, 'desc').map(row => row.id)).toEqual([...ids].reverse());
+});

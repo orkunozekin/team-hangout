@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, connectAuthEmulator, signInWithEmailAndPassword } from 'firebase/auth';
 import { getFunctions, connectFunctionsEmulator, httpsCallable } from 'firebase/functions';
-import { projectId, requireEmulators } from './fixtures.mjs';
+import { projectId, requireEmulators, operationalEventFields } from './fixtures.mjs';
 const require = createRequire(new URL('../../functions/package.json', import.meta.url));
 const { initializeApp: adminApp, deleteApp: deleteAdmin } = require('firebase-admin/app');
 const { getAuth: adminAuth } = require('firebase-admin/auth');
@@ -15,7 +15,7 @@ const apps = {}; let sequence = 0;
 const req = payload => ({ requestId: `org-request-${++sequence}`, ...payload });
 const call = async (uid, name, data = {}) => (await httpsCallable(getFunctions(apps[uid]), name)(data)).data;
 const deny = promise => assert.rejects(promise, { code: 'functions/permission-denied' });
-const fields = { title: 'Synthetic practice', type: 'practice', startsAt: '2026-10-11T23:00:00.000Z', endsAt: '2026-10-12T00:00:00.000Z', timeZone: 'America/Chicago', status: 'scheduled', publicationState: 'staged' };
+const fields = operationalEventFields;
 async function entity(orgId, kind, fields, uid = 'org-owner', extra = {}) {
   return (await call(uid, 'saveHierarchyEntity', req({ orgId, kind, fields, expectedRevision: 0, ...extra }))).entity;
 }
@@ -147,27 +147,27 @@ test('v2 event create/update/delete validate every team and deny unrelated/progr
   const edit = req({ eventId: event.id, expectedRevision: 1, patch: { title: 'Published practice', publicationState: 'published' } });
   assert.equal((await call('org-staff', 'updateEvent', edit)).revision, 2);
   assert.equal((await call('org-staff', 'updateEvent', edit)).revision, 2);
-  await assert.rejects(call('org-owner', 'updateEvent', req({ eventId: event.id, expectedRevision: 1, patch: { title: 'Stale' } })), error => error.details.domainCode === 'STALE_REVISION');
+  await assert.rejects(call('org-owner', 'mutateEventSchedule', req({ eventId: event.id, expectedRevision: 1, action: 'edit', reason: 'Stale edit', patch: { title: 'Stale' } })), error => error.details.domainCode === 'STALE_REVISION');
   await db.doc(`events/${event.id}`).update({ orgId: b.orgId });
   await deny(call('org-owner', 'softDeleteEvent', req({ eventId: event.id, expectedRevision: 2 })));
   await db.doc(`events/${event.id}`).update({ orgId: a.orgId });
-  assert.equal((await call('org-owner', 'softDeleteEvent', req({ eventId: event.id, expectedRevision: 2 }))).revision, 3);
+  assert.equal((await call('org-owner', 'mutateEventSchedule', req({ eventId: event.id, expectedRevision: 2, action: 'cancel', reason: 'Cancelled fixture' }))).revision, 3);
 });
 test('successful time edits replay after later edits but still recheck coach authority', async () => {
   const fixtureData = await fixture('Time retry fixture');
   const memberRef = db.doc(`teamMembers/${fixtureData.team.id}_org-coach`);
   await memberRef.set({ orgId: fixtureData.orgId, teamId: fixtureData.team.id, userId: 'org-coach', roles: ['coach'], role: 'coach', status: 'active', schemaVersion: 2 });
-  const event = await call('org-coach', 'createEvent', req({ teamId: fixtureData.team.id, event: { ...fields, teamIds: [fixtureData.team.id] } }));
-  const firstEdit = req({ eventId: event.id, expectedRevision: 1, patch: { endsAt: '2026-10-12T01:00:00.000Z' } });
-  const saved = await call('org-coach', 'updateEvent', firstEdit);
-  await call('org-coach', 'updateEvent', req({ eventId: event.id, expectedRevision: 2, patch: { startsAt: '2026-10-12T02:00:00.000Z', endsAt: '2026-10-12T03:00:00.000Z' } }));
+  const event = await call('org-coach', 'createEvent', req({ teamId: fixtureData.team.id, event: { ...fields, publicationState: 'published', teamIds: [fixtureData.team.id] } }));
+  const firstEdit = req({ eventId: event.id, expectedRevision: 1, action: 'reschedule', reason: 'Extra time', patch: { startsAt: fields.startsAt, endsAt: '2026-10-12T01:00:00.000Z', timeZone: 'America/Chicago' } });
+  const saved = await call('org-coach', 'mutateEventSchedule', firstEdit);
+  await call('org-coach', 'mutateEventSchedule', req({ eventId: event.id, expectedRevision: 2, action: 'reschedule', reason: 'Later start', patch: { startsAt: '2026-10-12T02:00:00.000Z', endsAt: '2026-10-12T03:00:00.000Z', timeZone: 'America/Chicago' } }));
   const beforeReplay = (await db.doc(`events/${event.id}`).get()).data();
   const auditBefore = await db.collection(`organizations/${fixtureData.orgId}/audit`).get();
-  assert.deepEqual(await call('org-coach', 'updateEvent', firstEdit), saved);
+  assert.deepEqual(await call('org-coach', 'mutateEventSchedule', firstEdit), saved);
   assert.deepEqual((await db.doc(`events/${event.id}`).get()).data(), beforeReplay);
   assert.equal((await db.collection(`organizations/${fixtureData.orgId}/audit`).get()).size, auditBefore.size);
   await memberRef.update({ status: 'revoked' });
-  await deny(call('org-coach', 'updateEvent', firstEdit));
+  await deny(call('org-coach', 'mutateEventSchedule', firstEdit));
 });
 test('multi-team events authorize every coach grant, span divisions canonically and recheck rollout flag', async () => {
   const division = await entity(a.orgId, 'division', { name: 'U14', programId: a.program.id, seasonId: a.season.id, status: 'active' });
@@ -281,4 +281,38 @@ test('browser workspace entry requires rollout and live staff; staff lists are a
   await deny(call('org-staff', 'getAdminWorkspace', { orgId }));
   await db.doc(`organizations/${orgId}`).update({ status: 'archived' });
   assert.equal((await call('org-owner', 'getAdminWorkspace', { orgId })).organization.status, 'archived');
+});
+
+
+test('operational foundations reject spoofed actors, malformed grants and cross-org receipt reuse', async () => {
+  const f = await fixture('Operational boundary');
+  const payload = req({ teamId: f.team.id, event: { ...fields, teamIds: [f.team.id] } });
+  for (const patch of [{ userId: 'org-owner' }, { actorUid: 'org-owner' }, { orgId: f.orgId }]) {
+    await assert.rejects(call('org-outsider', 'createEvent', { ...payload, ...patch }), { code: 'functions/invalid-argument' });
+  }
+  const grant = db.doc(`organizations/${f.orgId}/members/org-outsider`);
+  for (const roles of ['orgAdmin', '[orgAdmin]', { orgAdmin: true }]) {
+    await grant.set({ orgId: f.orgId, status: 'active', roles, programIds: [] });
+    await deny(call('org-outsider', 'createEvent', payload));
+  }
+  await grant.delete();
+  const coach = db.doc(`teamMembers/${f.team.id}_org-coach`);
+  await coach.set({ orgId: f.orgId, teamId: f.team.id, userId: 'org-coach', roles: 'coach', status: 'active' });
+  await deny(call('org-coach', 'createEvent', payload));
+  await coach.update({ roles: ['coach'] });
+  const saved = await call('org-coach', 'createEvent', payload);
+  const spoofed = { ...payload, event: { ...payload.event, createdBy: 'org-owner' } };
+  await assert.rejects(call('org-coach', 'createEvent', spoofed), { code: 'functions/invalid-argument' });
+  await assert.rejects(call('org-coach', 'createEvent', { ...payload, teamId: b.team.id,
+    event: { ...fields, teamIds: [b.team.id] } }), error => error.details.domainCode === 'REQUEST_ID_REUSED');
+  const edit = req({ eventId: saved.id, expectedRevision: 1, patch: { title: 'Saved once' } });
+  const results = await Promise.allSettled(['First', 'Second'].map(title => call('org-coach', 'updateEvent', req({ ...edit,
+    requestId: `operational-${title}`, patch: { title } }))));
+  assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
+  assert.equal(results.find(result => result.status === 'rejected').reason.details.domainCode, 'STALE_REVISION');
+  await coach.update({ status: 'revoked' });
+  await deny(call('org-coach', 'createEvent', payload));
+  await db.doc('users/org-coach').update({ accountState: 'deleting' });
+  await deny(call('org-coach', 'createEvent', payload));
+  await db.doc('users/org-coach').update({ accountState: 'active' });
 });

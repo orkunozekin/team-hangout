@@ -42,14 +42,16 @@ export function isoToTimestamp(value: unknown): TimestampLike {
   const seconds = Math.floor(milliseconds / 1000);
   return { seconds, nanoseconds: (milliseconds - seconds * 1000) * 1e6 };
 }
-function common(data: Data) {
+function publicCommon(data: Data) {
   requireValue(data.schemaVersion === 2, 'schemaVersion');
   requireValue(Number.isSafeInteger(data.revision) && (data.revision as number) >= 1, 'revision');
   return {
     schemaVersion: 2 as const, revision: data.revision as number,
-    createdBy: opaqueId(data.createdBy, 'createdBy'), updatedBy: opaqueId(data.updatedBy, 'updatedBy'),
     createdAt: timestampToIso(data.createdAt), updatedAt: timestampToIso(data.updatedAt),
   };
+}
+function common(data: Data) {
+  return { ...publicCommon(data), createdBy: opaqueId(data.createdBy, 'createdBy'), updatedBy: opaqueId(data.updatedBy, 'updatedBy') };
 }
 export function decodeParents(data: Data): Parents {
   return {
@@ -92,7 +94,7 @@ function assertEventParents(event: Parents, canonical: Parents): void {
   }
   if (event.divisionId !== null) requireValue(event.divisionId === canonical.divisionId, 'divisionId');
 }
-export function decodeEvent(data: Data, canonical: Parents, teams: Record<string, Parents>) {
+export function decodePublicEvent(data: Data, canonical: Parents, teams: Record<string, Parents>) {
   const parents = decodeParents(data);
   assertEventParents(parents, canonical);
   requireValue(Array.isArray(data.teamIds) && data.teamIds.length > 0, 'teamIds');
@@ -107,12 +109,15 @@ export function decodeEvent(data: Data, canonical: Parents, teams: Record<string
   requireValue(Date.parse(endsAt) > Date.parse(startsAt), 'endsAt');
   requireValue(typeof data.timeZone === 'string', 'timeZone');
   new Intl.DateTimeFormat('en', { timeZone: data.timeZone });
-  return { ...common(data), ...parents, teamId: teamIds[0], teamIds, startsAt, endsAt,
+  return { ...publicCommon(data), ...parents, teamId: teamIds[0], teamIds, startsAt, endsAt,
     title: text(data.title, 'title'), type: choice(data.type, ['practice', 'match'], 'type'),
     timeZone: data.timeZone, status: choice(data.status, ['scheduled', 'postponed', 'cancelled', 'completed'], 'status'),
     publicationState: choice(data.publicationState, ['staged', 'published'], 'publicationState'),
     publicationOperationId: data.publicationOperationId === null ? null : opaqueId(data.publicationOperationId),
     deletedAt: data.deletedAt === null ? null : timestampToIso(data.deletedAt) };
+}
+export function decodeEvent(data: Data, canonical: Parents, teams: Record<string, Parents>) {
+  return { ...decodePublicEvent(data, canonical, teams), ...common(data) };
 }
 /** Review tool for legacy dates. Live legacy mappers remain unchanged in Step 1. */
 export function decodeLegacyDates(data: Data, fields: string[]): Record<string, string> {

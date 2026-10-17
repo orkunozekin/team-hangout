@@ -13,6 +13,8 @@ export type AgendaTeam = {
   participants: AgendaParticipant[];
 };
 export type AgendaEvent = {
+  status?: "scheduled" | "postponed" | "cancelled" | "completed";
+  scheduleVersion?: number;
   id: string;
   orgId: string;
   title: string;

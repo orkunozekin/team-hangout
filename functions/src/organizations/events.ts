@@ -16,7 +16,7 @@ function instant(value: unknown, field: string): string {
 }
 export function v2Fields(value: unknown, partial = false): Data {
   const fields = object(value);
-  keys(fields, ['title', 'type', 'startsAt', 'endsAt', 'timeZone', 'status', 'publicationState', 'location', 'notes', ...(partial ? [] : ['teamIds'])]);
+  keys(fields, ['title', 'type', 'startsAt', 'endsAt', 'timeZone', 'status', 'publicationState', 'location', 'notes', 'facilityId', 'resourceId', ...(partial ? [] : ['teamIds'])]);
   const result: Data = {};
   for (const field of ['title', 'type', 'startsAt', 'endsAt', 'timeZone', 'status', 'publicationState']) {
     if (partial && fields[field] === undefined) continue;
@@ -32,6 +32,7 @@ export function v2Fields(value: unknown, partial = false): Data {
       result[field] = value;
     }
   }
+  for (const field of ['facilityId', 'resourceId']) if (!partial || fields[field] !== undefined) result[field] = fields[field] == null ? null : id(fields[field], field);
   if (!partial) result.teamIds = teamIds(fields.teamIds);
   if (!partial || fields.location !== undefined) {
     result.location = null;
@@ -47,7 +48,7 @@ export function v2Fields(value: unknown, partial = false): Data {
 export function validateStoredEvent(event: Data, scope: Awaited<ReturnType<typeof eventScope>>) {
   const ids = teamIds(event.teamIds);
   if (event.orgId !== scope.orgId || event.programId !== scope.programId || event.seasonId !== scope.seasonId
-    || event.teamId !== ids[0] || ids.length !== scope.teams.length
+    || event.teamId !== ids[0] || ids.length !== scope.teamIds.length || ids.some((id, index) => id !== scope.teamIds[index])
     || (event.divisionId !== null && scope.teams.some(team => team.divisionId !== event.divisionId))) denied();
   if (!['scheduled', 'postponed', 'cancelled', 'completed'].includes(event.status)
     || !['staged', 'published'].includes(event.publicationState) || event.publicationOperationId !== null) {

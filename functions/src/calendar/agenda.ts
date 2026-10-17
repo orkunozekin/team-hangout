@@ -1,3 +1,6 @@
+import { effectiveEvent, primeClosureReads } from '../facilities/closures';
+import { publishedEvent } from '../scheduling/visibility';
+import { cacheDocumentReads } from '../operations/reads';
 import { createHash } from "node:crypto";
 import {
   FieldPath,
@@ -124,8 +127,9 @@ export async function readAgenda(
   tx: Transaction,
   payload: Data,
   uid: string,
-  options: { events?: boolean } = {},
+  options: { events?: boolean; scheduledOnly?: boolean } = {},
 ): Promise<Data> {
+  tx = cacheDocumentReads(tx);
   const db = getFirestore();
   const candidates = new Set<string>();
   const labels = new Map<string, AgendaParticipant[]>();
@@ -319,7 +323,8 @@ export async function readAgenda(
     }
   }
   if (options.events === false) return { teams, setupRequired };
-  const accessVersion = hash(teams);
+  const versions = await Promise.all([...new Set(teams.map(t => t.orgId))].sort().map(async orgId => [orgId, (await tx.get(db.doc(`organizations/${orgId}/schedulingLock/current`))).data()?.visibilityRevision ?? 0]));
+  const accessVersion = hash({ teams, versions });
   const { cursor: ignored, ...parameters } = payload;
   const fingerprint = hash({ uid, parameters, accessVersion });
   let after: { time: Timestamp; id: string } | null = null;
@@ -389,22 +394,25 @@ export async function readAgenda(
       .where("teamIds", "array-contains", team.id)
       .where("deletedAt", "==", null)
       .where("publicationState", "==", "published")
-      .where("status", "==", "scheduled")
       .where("startsAt", ">=", Timestamp.fromDate(new Date(payload.from)))
       .where("startsAt", "<", Timestamp.fromDate(new Date(payload.to)))
       .orderBy("startsAt")
       .orderBy(FieldPath.documentId());
+    if (options.scheduledOnly) query = query.where("status", "==", "scheduled");
     if (after) query = query.startAfter(after.time, after.id);
     let scanned = 0,
       valid = 0;
     while (valid <= payload.pageSize) {
       const rows = await tx.get(query.limit(payload.pageSize + 1));
+      await primeClosureReads(tx, rows.docs.map(doc => doc.data()));
       for (const doc of rows.docs) {
         if (++scanned > 500 || ++totalScanned > 5000) exhausted();
-        const event = doc.data();
+        const event = await effectiveEvent(tx, doc.data());
+        if (options.scheduledOnly && event.status !== "scheduled") continue;
         if (
           event.schemaVersion !== 2 ||
-          event.publicationOperationId !== null ||
+          !["scheduled", "postponed", "cancelled", "completed"].includes(event.status) ||
+          !(await publishedEvent(tx, event)) ||
           event.seasonId !== team.seasonId ||
           !Array.isArray(event.teamIds) ||
           event.teamId !== event.teamIds[0] ||
@@ -483,6 +491,8 @@ export async function readAgenda(
           orgId: team.orgId,
           title: event.title,
           type: event.type,
+          status: event.status,
+          scheduleVersion: event.scheduleVersion ?? 1,
           startsAt: event.startsAt.toDate().toISOString(),
           endsAt: event.endsAt.toDate().toISOString(),
           timeZone: event.timeZone,

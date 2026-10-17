@@ -18,6 +18,8 @@ export interface AppUser {
 }
 
 export interface Team {
+  schemaVersion?: number;
+  timeZone?: string;
   id: string;
   name: string;
   sport: string | null;
@@ -49,6 +51,16 @@ export interface EventLocation {
 }
 
 export interface TeamEvent {
+  schemaVersion?: number;
+  startsAt?: string;
+  endsAt?: string;
+  timeZone?: string;
+  status?: import('../../shared/operations').EventStatus;
+  scheduleVersion?: number;
+  teams?: { id: string; name: string }[];
+  canManage?: boolean;
+  history?: { revision: number; action: string; reason?: string; previousStatus: string; status: string; previousStartsAt: string; startsAt: string; previousTimeZone?: string; timeZone?: string }[];
+  historyHasMore?: boolean;
   id: string;
   revision?: number;
   teamId: string;
@@ -83,3 +95,7 @@ export interface UpdateEventInput {
   location?: EventLocation | null;
   notes?: string | null;
 }
+
+/** Canonical operations remain distinct from the legacy split date/time UI contract. */
+export type { CanonicalTeamEvent } from '../firebase/operationalEvents';
+export type { EventStatus, PublicationState, AvailabilityStatus, AttendanceStatus, AttendanceSource, RevisionRequest } from '../../shared/operations';

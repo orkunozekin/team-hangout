@@ -711,3 +711,37 @@ button { overflow-wrap: anywhere; }
 .badge, td button { white-space: nowrap; }
 
 .table-wrap, .table-scroll { position: relative; width: 100%; max-width: 100%; min-width: 0; }
+
+.facilities textarea {
+  font: inherit;
+  width: 100%;
+  min-height: 110px;
+  padding: 10px 12px;
+  border: 1px solid #b7c8bf;
+  border-radius: 7px;
+  color: #203a35;
+  resize: vertical;
+}
+.facilities textarea:focus-visible { outline: 3px solid #bc741c; outline-offset: 3px; }
+.facilities label:has(input[type="checkbox"]) { flex-direction: row; align-items: center; min-height: 44px; gap: 12px; }
+.facilities input[type="checkbox"] { width: 20px; height: 20px; flex: 0 0 20px; }
+.facilities .panel { overflow-wrap: anywhere; }
+.facilities li { margin-bottom: 18px; }
+.facilities button { margin: 4px 8px 4px 0; }
+
+.recurrence-days { display: flex; flex-wrap: wrap; gap: 10px 20px; margin: 12px 0; }
+.recurrence-days legend { margin-bottom: 12px; font-weight: 600; }
+.recurrence-days label, .recurrence-confirmation { flex-direction: row; align-items: center; }
+.recurrence-days input, .recurrence-confirmation input { width: 20px; height: 20px; flex-shrink: 0; }
+
+.schedule-drafts textarea { font: inherit; width: 100%; padding: 12px; border: 1px solid #b7c8bf; border-radius: 7px; resize: vertical; }
+.schedule-drafts button { margin: 6px 10px 6px 0; }
+.schedule-drafts details { margin: 16px 0; }
+.schedule-drafts summary { cursor: pointer; font-weight: 600; min-height: 44px; }
+.schedule-drafts select { max-width: 540px; }
+
+.draft-preferences label { flex-direction: row; align-items: center; gap: 10px; }
+.draft-preferences input { width: 20px; height: 20px; flex: 0 0 20px; }
+
+.closures label:has(input[type="checkbox"]) { display: flex; flex-direction: row; align-items: center; gap: 12px; min-height: 44px; }
+.closures input[type="checkbox"] { width: 20px; height: 20px; flex: 0 0 20px; }

@@ -1,3 +1,5 @@
+const mockNativeTeam = jest.fn();
+jest.mock('firebase/functions', () => ({ httpsCallable: () => mockNativeTeam }));
 const mockRunCommand = jest.fn();
 jest.mock('../commands', () => ({ runCommand: (...args: unknown[]) => mockRunCommand(...args) }));
 const mockGetDoc = jest.fn();
@@ -284,3 +286,55 @@ describe('firebase/teams', () => {
     expect(mockUpdateDoc).not.toHaveBeenCalled();
     expect(mockWriteBatch).not.toHaveBeenCalled();
   });
+
+test('canonical teams use authorized callable fallback and revoked roles do not become coach', async () => {
+  mockGetDoc.mockRejectedValueOnce({ code: 'permission-denied' });
+  mockNativeTeam.mockResolvedValue({ data: { id: 'canonical', name: 'Falcons', schemaVersion: 2, timeZone: 'America/Phoenix' } });
+  expect(await getTeam('canonical')).toEqual(expect.objectContaining({ schemaVersion: 2, timeZone: 'America/Phoenix' }));
+  mockGetDoc.mockRejectedValueOnce(new Error('Offline'));
+  await expect(getTeam('canonical')).rejects.toThrow('Offline');
+  expect(mapMemberDoc('member', { schemaVersion: 2, role: 'coach', roles: ['coach'], status: 'revoked' }).role).toBe('player');
+  expect(mapMemberDoc('member', { schemaVersion: 2, roles: ['coach'], status: 'active' }).role).toBe('coach');
+});
+
+
+it('maps active canonical captains to native management controls and rejects revoked or legacy spoofed roles', () => {
+  expect(mapMemberDoc('member', { schemaVersion: 2, roles: ['captain'], status: 'active' }).role).toBe('coach');
+  expect(mapMemberDoc('member', { schemaVersion: 2, roles: ['captain'], status: 'revoked' }).role).toBe('player');
+  expect(mapMemberDoc('member', { roles: ['captain'], role: 'player' }).role).toBe('player');
+});
+
+it('ignores revoked canonical preferred assignments and resolves an active team', async () => {
+  jest.resetAllMocks();
+  mockGetDocs.mockResolvedValue({ docs: [
+    { id: 'revoked_u', data: () => ({ schemaVersion: 2, teamId: 'revoked', userId: 'u', roles: ['coach'], status: 'revoked' }) },
+    { id: 'active_u', data: () => ({ schemaVersion: 2, teamId: 'active', userId: 'u', roles: ['captain'], status: 'active' }) },
+    { id: 'pending_u', data: () => ({ schemaVersion: 2, teamId: 'pending', userId: 'u', roles: ['coach'], status: 'pending' }) },
+  ] });
+  mockGetDoc.mockRejectedValue({ code: 'permission-denied' });
+  mockNativeTeam.mockResolvedValue({ data: { id: 'active', schemaVersion: 2, name: 'Active team' } });
+  expect(await resolveActiveMembership('u', 'revoked')).toEqual(expect.objectContaining({
+    membership: expect.objectContaining({ teamId: 'active', role: 'coach' }),
+    team: expect.objectContaining({ name: 'Active team' }),
+  }));
+  expect(mockNativeTeam).toHaveBeenCalledTimes(1);
+  expect(mockNativeTeam).toHaveBeenCalledWith({ teamId: 'active' });
+});
+
+it('falls back after a grant is revoked between discovery and the live canonical team read', async () => {
+  jest.resetAllMocks();
+  mockGetDocs.mockResolvedValue({ docs: ['first', 'second'].map(teamId => ({ id: teamId, data: () => ({ schemaVersion: 2, teamId, userId: 'u', roles: ['coach'], status: 'active' }) })) });
+  mockGetDoc.mockRejectedValue({ code: 'permission-denied' });
+  mockNativeTeam.mockRejectedValueOnce({ code: 'functions/permission-denied' }).mockResolvedValueOnce({ data: { id: 'second', schemaVersion: 2, name: 'Still authorized' } });
+  expect((await resolveActiveMembership('u', 'first'))?.team.id).toBe('second');
+  mockNativeTeam.mockRejectedValue({ code: 'functions/permission-denied' });
+  expect(await resolveActiveMembership('u', 'first')).toBeNull();
+  mockNativeTeam.mockRejectedValue(new Error('Service unavailable'));
+  await expect(resolveActiveMembership('u', 'first')).rejects.toThrow('Service unavailable');
+});
+
+it('single revoked canonical membership reads return null', async () => {
+  jest.resetAllMocks();
+  mockGetDoc.mockResolvedValue({ exists: () => true, id: 't_u', data: () => ({ schemaVersion: 2, status: 'revoked', roles: ['coach'] }) });
+  expect(await getMembership('t', 'u')).toBeNull();
+});

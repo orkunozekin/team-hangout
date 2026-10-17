@@ -389,6 +389,7 @@ export default function HouseholdAgenda({
       {items.map((event) => (
         <View key={event.id} style={styles.card}>
           <Text style={styles.eventTitle}>{event.title}</Text>
+          {event.status ? <Text style={styles.copy}>{event.status === "postponed" ? "Postponed: awaiting a new schedule" : event.status === "cancelled" ? "Cancelled" : event.status === "completed" ? "Completed" : "Scheduled"} · Schedule version {event.scheduleVersion ?? 1}</Text> : null}
           <Text style={styles.copy}>
             {event.participants.map((p) => p.displayName).join(" · ") ||
               "Your team role"}

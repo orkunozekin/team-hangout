@@ -1,6 +1,6 @@
 # Phase 1 staging deployment and acceptance package
 
-Prepared 2026-10-13. **Not deployed, not accepted, not pilot-ready.** Candidate application source is merged PR #22, `11aa852a1fe70c272bdddf04d0f8856989684bd3`. Any later implementation changes require a new reviewed candidate. This package specifies proposed actions; it grants no deployment, email, migration or rollout authority. See the [release runbook](phase-1-pilot-runbook.md) for retained local evidence and recovery rules.
+Prepared 2026-10-13 against merged PR #22, `11aa852a1fe70c272bdddf04d0f8856989684bd3`. **Not accepted, not pilot-ready.** The source inventory and pending-input table below retain the original preparation snapshot. Subsequent isolated staging installation and small synthetic smoke are recorded in the [deployment record](phase-1-staging-deployment.md), which supersedes this package for approved infrastructure configuration, artifacts and executed actions. Capacity workloads remain on hold for cost review. Use a newly reviewed candidate and fresh configuration/index inventories for any further deployment; the PR #22 hashes do not describe current main or the deployed staging artifact. This package specifies proposed actions; it grants no deployment, email, migration or rollout authority. See the [release runbook](phase-1-pilot-runbook.md) for retained local evidence and recovery rules.
 
 ## Approval request and scope
 
@@ -29,7 +29,7 @@ Use a clean reviewed checkout and Node 22/Java 21+. Preserve existing changes be
 
 The staging browser build must use `admin/.env.local` based on `admin/.env.example`: all four Firebase public values from the approved staging web application, `VITE_FIREBASE_FUNCTIONS_REGION=us-central1`, `VITE_USE_EMULATORS=0`. Clear inherited Vite overrides before building. Public configuration belongs to the intended project; backend secrets never belong in Vite or Expo variables. Verify direct-route loading, real Auth project identity and callable requests in Codex's in-app browser after deployment.
 
-Backend non-secret configuration belongs in `functions/.env.<approved-project-id>` per [Firebase environment configuration](https://firebase.google.com/docs/functions/config-env). This filename is **not ignored** by the current `.gitignore`; keep it private/untracked and never include it in a commit. Record a redacted configuration manifest, not credentials. Do not inherit emulator or credential overrides into deployment. Authentication for deployment is the expressly authorized staging operator, not arbitrary local default credentials.
+Backend non-secret configuration belongs in `functions/.env.<approved-project-id>` per [Firebase environment configuration](https://firebase.google.com/docs/functions/config-env). Project-specific Functions environment files are now ignored by `.gitignore`; keep them private/untracked and never include them in a commit. Record a redacted configuration manifest, not credentials. Do not inherit emulator or credential overrides into deployment. Authentication for deployment is the expressly authorized staging operator, not arbitrary local default credentials.
 
 | Configuration | Proposed staging value or constraint |
 | --- | --- |

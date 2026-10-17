@@ -127,3 +127,129 @@
 - **Gap:** Fixture initialization happened outside the report finalizer, and enlarged-text tests could pass with empty tables or measure scaled targets instead of phone control size.
 - **Going forward:** Include fixture setup in failure-report cleanup and inject a setup failure. Require populated changed states before asserting accessibility, and measure touch targets at an unzoomed phone viewport independently from zoom/reflow.
 - **Pointers:** `scripts/rehearsal/scenarios.mjs`, `tests/backend/rehearsal-guards.test.mjs`, `admin/tests/accessibility.spec.ts`.
+
+### 2026-10-15 — Use canonical timezone defaults and reuse read authority per transaction
+
+- **Source:** PR #26 · GitHub Codex review
+- **Gap:** New native events defaulted to the device timezone, and canonical event lists repeatedly fetched the same hierarchy and grant documents for every result.
+- **Going forward:** Obtain new-event timezone defaults from the authorized canonical organization; preserve that zone as a selectable value even when it is absent from common presets. Reuse document snapshots and identical management checks only within one read transaction attempt, never across requests or retries. Test a 50-event page's document reads and revoke access before the next request.
+- **Pointers:** `functions/src/operations/events.ts`, `functions/src/operations/reads.ts`, `src/screens/CreateEditEventScreen.tsx`, operational backend and native screen tests.
+
+### 2026-10-15 — Enforce published event history across compatibility commands
+
+- **Source:** PR #26 · GitHub Codex re-review
+- **Gap:** The new lifecycle command recorded reasons/history, but the still-exported compatibility update command could edit published canonical details without those records.
+- **Going forward:** Check every callable entry point when introducing a canonical mutation invariant. Route new published edits through the lifecycle command while preserving authorized, non-mutating replay and server-owned draft promotion. Test both endpoints, not only the new writer.
+- **Pointers:** `functions/src/commands.ts`, `functions/src/operations/events.ts`, `tests/backend/operational-events.test.mjs`.
+
+
+### 2026-10-15 — Preserve canonical instants and approved management roles
+
+- **Source:** PR #26 · GitHub Codex re-review
+- **Gap:** The native schedule sorted display wall times rather than canonical instants, and canonical event authority omitted the captain role explicitly approved in the product plan.
+- **Going forward:** Sort canonical events by `startsAt`, including cross-zone and repeated-hour cases. Check proposed role changes against the approved plan, then apply the same accepted roles to live server grants and native control mapping; retain every-team authority, tenant checks and revocation on replay.
+- **Pointers:** `src/lib/eventSort.ts`, `functions/src/operations/access.ts`, `src/firebase/teams.ts`, `docs/plans/product-plan.md` approved product structure.
+
+
+### 2026-10-15 — Trace navigation through existing readers and revoked assignments
+
+- **Source:** PR #26 · GitHub Codex re-review
+- **Gap:** Enabling canonical active teams exposed a Team tab that still queried the legacy member directory. Revoked canonical assignments also remained preferred navigation candidates and blocked other valid teams.
+- **Going forward:** Follow newly enabled navigation through every existing screen. Keep canonical teams out of legacy roster/invite flows without expanding household directory access. Filter inactive canonical assignments before choosing a team, recheck the live team read, and fall back on denied/missing candidates while surfacing service failures. Test rendered canonical and legacy tabs, retry/switching states and live revocation.
+- **Pointers:** `src/screens/TeamScreen.tsx`, `src/firebase/teams.ts`, TeamScreen and membership tests, `tests/backend/operational-events.test.mjs`.
+
+
+### 2026-10-15 — Separate public projections and expose bounded schedule pages
+
+- **Source:** PR #26 · GitHub Codex full-diff review
+- **Gap:** Canonical family readers exposed private notes/audit identities and full team documents; the native schedule drained all server pages. Staged type edits preserved stale matchup IDs.
+- **Going forward:** Use explicit role-appropriate event/team projections and keep strict storage decoding separate from public decoding. Reauthorize private fields on live staff/coach/captain grants. Render one ordered page at a time, retain earlier results on later-page errors, and test equal-instant cursor boundaries and team switching. Recompute derived matchup fields on every accepted type-change path.
+- **Pointers:** `functions/src/operations/events.ts`, `functions/src/commands.ts`, `shared/contracts.ts`, `shared/operations.ts`, `src/firebase/events.ts`, `src/screens/ScheduleScreen.tsx` and their regression tests.
+
+
+### 2026-10-15 — Preserve page boundaries and defer opponent discovery
+
+- **Source:** PR #26 · GitHub Codex full-diff re-review
+- **Gap:** Reloading a cursor event after rescheduling shifted the ordering boundary and skipped intervening rows. Opponent discovery still drained all team pages during practice form setup.
+- **Going forward:** Encode the original instant/document ID and authorized scope in schedule cursors rather than reconstructing the boundary from mutable records. Load optional opponent teams only on explicit request, one page per action, with retained choices and retry. Reauthorize each request and test moved boundaries, equal timestamps and grant revocation between pages.
+- **Pointers:** `functions/src/operations/events.ts`, `src/firebase/events.ts`, `src/screens/CreateEditEventScreen.tsx`, operational backend and native event-screen regressions.
+
+
+### 2026-10-15 — Trace lifecycle privacy through history and compatibility views
+
+- **Source:** PR #26 · GitHub Codex full-diff re-review and CI
+- **Gap:** Family history still exposed freeform staff reasons, published soft deletion bypassed cancellation history, household calendars omitted lifecycle states, and bounded schedules opened at the oldest archive. CI also caught a cursor variable's definite-assignment error that an unchecked local command sequence missed.
+- **Going forward:** Public history must use an allowlist without freeform staff reasons. Guard both compatibility update and delete paths for published events while preserving authorized receipt replay and staged/legacy compatibility. Show lifecycle status consistently in household calendars, with explicit scheduled-only subscription policy. Open native schedules near current/upcoming events with bounded past navigation. Check every validation command exit and confirm the Functions build succeeds before running tests against its generated output.
+- **Pointers:** canonical event readers/history, `functions/src/commands.ts`, household agenda/subscription callers, native schedule modes and full backend regressions.
+
+
+### 2026-10-15 — Return live capabilities with bounded reads
+
+- **Source:** PR #26 · GitHub Codex full-diff review
+- **Gap:** Canonical Add event controls trusted stale navigation roles, and every page performed team discovery before the authorized page request repeated household discovery.
+- **Going forward:** Return current mutation capability from the same authorized schedule response, including empty pages, and clear it on failed refreshes. Reuse resolved schema only to select the reader; every server page still reauthorizes current grants. Do not use platform support or cached membership as canonical mutation authority.
+- **Pointers:** `functions/src/operations/events.ts`, `src/firebase/events.ts`, `src/screens/ScheduleScreen.tsx`, `App.tsx` and revocation/paging regressions.
+
+### 2026-10-15: Keep capability refresh and object denial scoped
+
+- **Source:** PR #27, GitHub Codex review 5540542434.
+- **Gap:** A successful read-only staff refresh collapsed the selected safe catalog view; denial of an individual event lookup was treated as loss of organization catalog access.
+- **Going forward:** Preserve authorized reader state when write capability is absent. Treat object lookup/assignment denial locally unless the canonical catalog request also denies access. Fence late page responses and capability results so a newer revocation or demotion cannot be undone by an older successful request. Test normal focus, unknown IDs, revocation and demotion with held in-flight responses.
+- **Pointers:** `admin/src/Facilities.tsx`, `admin/tests/facilities.spec.ts`.
+
+### 2026-10-15: Align catalog rollout and history snapshots
+
+- **Source:** PR #27, GitHub Codex review 5540687530.
+- **Gap:** Catalog reads enforced the workspace rollout flag while writes only checked the organization flag; detachment history paired null resource IDs with a previous occupancy fallback.
+- **Going forward:** Apply the same rollout predicate to every catalog mutation and replay. Record consistent before/after resource identity and occupancy, including explicit null after detachment; avoid nullish fallbacks that combine states. Test flag-disabled new writes/replay and the complete immutable detachment row.
+- **Pointers:** `functions/src/facilities/service.ts`, `tests/backend/facilities.test.mjs`.
+
+
+### 2026-10-15: Bound actor intersection cost in pure validators
+
+- **Source:** PR #29, GitHub Codex review 5542781923.
+- **Gap:** Accepted maximum busy snapshots multiplied linear coach-ID membership scans across every game/busy pair, including nonoverlapping intervals, outside the search deadline.
+- **Going forward:** Prefilter temporal conflicts before actor intersection, index actor membership once per snapshot and share immutable fixture indexes across candidate slots. Benchmark accepted array-size combinations as well as team/slot ceilings. Cap detailed conflict output explicitly while retaining the full count and invalid result.
+- **Pointers:** `functions/src/scheduling/validator.ts`, `functions/src/scheduling/search.ts`, maximum busy-snapshot regression and benchmark.
+
+### 2026-10-16: Preserve canonical identity domains at pure-module boundaries
+
+- **Source:** PR #30, GitHub Codex review 5550600840.
+- **Gap:** The scheduler accepted 80-character internal IDs while canonical organization/event contracts permit 128-character team IDs. Passing stored IDs directly broke migrated teams and constraints before generation or revalidation.
+- **Going forward:** Map canonical identities to bounded internal handles and map staff-facing results back to full canonical IDs. Cover generation, nonempty manual saves, replay, constraints and current occupancy with identities beyond the pure module's limit; do not truncate IDs or silently narrow existing contracts.
+- **Pointers:** `functions/src/scheduling/drafts.ts`, `tests/backend/schedule-drafts.test.mjs`.
+
+### 2026-10-16: Bound every multiplying UI dimension
+
+- **Source:** PR #30, GitHub Codex review 5550600840.
+- **Gap:** Paging fixtures alone still multiplied 1,000 slot options across 32 preferences and 20 assignment selectors, in addition to rendering every slot form.
+- **Going forward:** Page slot forms and each choice universe too. Retain off-page selections, keep the current assignment visible, and verify rendered node bounds and saved values on an accepted maximum-size draft through real callables. Removing a slot must also clear assignments that reference it.
+- **Pointers:** `admin/src/ScheduleDrafts.tsx`, `admin/tests/schedule-drafts.spec.ts`.
+
+### 2026-10-16: Exercise nested array ceilings in rendered tests
+
+- **Source:** PR #30, GitHub Codex review 5550772551.
+- **Gap:** The large slot/constraint regression used empty blackout arrays, leaving 32 constraints times 128 interval editors unbounded even after slot paging.
+- **Going forward:** Include accepted nested-array ceilings in rendered tests. Page interval controls per constraint, preserve hidden intervals on save, and assert input counts on a real callable-created maximum-blackout draft.
+- **Pointers:** `admin/src/ScheduleDrafts.tsx`, accepted 32-team/128-blackouts-per-team browser regression.
+
+### 2026-10-16 — Publication recovery and shared marker reads
+
+- **Source:** PR #31 · GitHub Codex review at `2680eed`.
+- **Gap:** A publication panel keyed only by draft ID retained an aborted operation after the same draft was edited and revalidated. Facility reservation scans also read the same operation marker once per event.
+- **Going forward:** Refresh operation state when the draft revision changes, and share transaction-local canonical document reads across command fencing, authority checks and visibility scans. Exercise abort/edit/revalidate/restart without focus or reload, and measure repeated marker reads against a real multi-event publication.
+- **Pointers:** `admin/src/SchedulePublication.tsx`, `functions/src/commandSupport.ts`, `tests/backend/schedule-publication.test.mjs`.
+
+### 2026-10-16 — Bound operational queries by the current decision
+
+- **Source:** PR #32 · actual GitHub Codex review at `b756154`.
+- **Gap:** Lifetime facility closure/event scans and tenant-wide membership scans let unrelated retained history exhaust current read and makeup budgets.
+- **Going forward:** Apply interval and lifecycle filters at the database boundary, include maximum booking/buffer lookback, and scope coach reads to participating and overlapping-event teams. Prime finite visible pages per facility within each transaction attempt. Exercise actual handlers with more than 1,000 unrelated historical records and assert returned query document counts.
+- **Pointers:** `functions/src/facilities/{closures,makeups}.ts`, `functions/src/scheduling/drafts.ts`, `tests/backend/closures.test.mjs`.
+
+### 2026-10-16 — Guard compatibility mutations as well as new workflows
+
+- **Source:** PR #32 · actual second GitHub Codex review at `27daeb0`.
+- **Gap:** The reviewed makeup callable enforced policy but ordinary native lifecycle rescheduling could bypass it after a closure was materialized. Interval-bounded makeup queries still counted inactive events before filtering.
+- **Going forward:** Enforce the reviewed transition at the shared mutation boundary with a server-only adapter flag; exercise the existing client callable for staff and coach bypass attempts, ordinary later postponement, and deliberate mismatch reconciliation. Apply lifecycle/publication/deletion predicates before query limits and seed more than 1,000 inactive records in the exact proposed interval.
+- **Pointers:** `functions/src/operations/events.ts`, `functions/src/facilities/makeups.ts`, `tests/backend/closures.test.mjs`.

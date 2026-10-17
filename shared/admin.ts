@@ -6,6 +6,10 @@ import type {
 
 /** Callable JSON only. No browser, native or Firebase runtime dependencies. */
 export type AdminSection =
+  | "closures"
+  | "drafts"
+  | "recurrence"
+  | "facility"
   | "import"
   | "schedule"
   | "invitation"
@@ -70,7 +74,7 @@ export type TeamInput = {
     status: "active" | "archived";
   };
 };
-export type AdminCommands = import("./email").EmailCommands & import("./scheduleImports").ScheduleCommands & import("./imports").ImportCommands & import("./calendarSubscriptions").CalendarCommands & import("./participants").ParticipantCommands & import("./invitations").InvitationCommands & {
+export type AdminCommands = import("./closures").ClosureCommands & import("./scheduleDrafts").DraftCommands & import("./recurrence").RecurrenceCommands & import("./facilities").FacilityCommands & import("./email").EmailCommands & import("./scheduleImports").ScheduleCommands & import("./imports").ImportCommands & import("./calendarSubscriptions").CalendarCommands & import("./participants").ParticipantCommands & import("./invitations").InvitationCommands & {
   listMyOrganizations: {
     input: { cursor?: string; pageSize?: number };
     output: Page<OrganizationLink>;

@@ -2,9 +2,13 @@
 
 Phase 1 is **not pilot-ready**. This runbook prepares a reviewable release decision; it does not authorize a deployment, production migration, live email, sender changes or pilot enrollment. Step 15 implements local accessibility corrections and executable synthetic rehearsals. Owner acceptance and the external evidence below remain incomplete.
 
-## Staging preparation
+## Approved staging installation
 
-The [staging deployment and acceptance package](phase-1-staging-acceptance.md) specifies the proposed isolated deployment, artifact/configuration record, index/scheduler verification, HTTPS capacity protocol, real accessibility/calendar sessions and separately reviewed webhook/migration paths. Copy [one acceptance record](phase-1-acceptance-record.md) per gate/session. Prepared 2026-10-13; project/domain/budget/operator approvals, testers and owners remain pending. No deployment, live email, migration or pilot exposure has been performed.
+Owner authorized isolated `team-hangout-staging` deployment and small synthetic fixtures on 2026-10-13, targeting $10 with a few dollars of overage acceptable. See the [deployment record](phase-1-staging-deployment.md) for artifact/release/index inventories, actual HTTPS/browser smoke results, bounded resource settings, retained failed attempts and cost-reporting limits. This authorization excludes production, real migration, live email and pilot enrollment. The 5,000-row/capacity workloads remain on hold for cost review. Infrastructure/smoke evidence is not acceptance of the remaining release gates.
+
+## Staging acceptance preparation
+
+The [staging deployment and acceptance package](phase-1-staging-acceptance.md) provides the capacity, real accessibility/calendar and separately reviewed webhook/migration protocols. Copy [one acceptance record](phase-1-acceptance-record.md) per gate/session. Its original 2026-10-13 PR #22 source inventory is historical preparation evidence; the approved staging installation above supersedes its initial pending-infrastructure status. Remaining external actions and release acceptance require their own recorded approval and results.
 
 Step 15 PR #22 merged as `11aa852a1fe70c272bdddf04d0f8856989684bd3`. This closes local implementation/review, not external release acceptance.
 
@@ -63,7 +67,7 @@ Every row requires a named owner, dated decision and attached result. Empty owne
 
 | Gate | Required evidence/action | Current status |
 | --- | --- | --- |
-| Staging project and indexes | Authorized isolated project, deployed artifact SHA, matching `firestore.indexes.json`, all indexes READY, Storage rules, Auth domains, region and resource limits. Read-only staging access must be demonstrably authorized. | Not available/verified; no deployment authorized. |
+| Staging project and indexes | Authorized isolated project, deployed artifact SHA, matching `firestore.indexes.json`, all indexes READY, Storage rules, Auth domains, region and resource limits. Read-only staging access must be demonstrably authorized. | Isolated staging deployment authorized 2026-10-13; Hosting/rules installed and all 13 composite indexes verified READY. All 62 selected Functions are ACTIVE with bounded resources; three OIDC scheduler jobs and the import Eventarc trigger are installed. Email sender worker omitted. Artifact and smoke inventories are in the deployment record. Owner gate acceptance pending. |
 | Capacity | HTTPS agenda p95 under 2 seconds for 20 teams/93 days with at least 20 warm samples plus explicit cold samples; both 5,000-row imports finish preview+commit under 10 minutes with actual triggers/scheduler. Capture measured reads/index entries, cost, job fanout, queue wait, concurrency, region and hardware/client network. | Local subset only; staging incomplete. |
 | Migration | Review ownership/timezones/default duration, unresolved/orphan counts and legacy coach assignments; stop writers; save checksum and private plan; rehearse apply/resume/replay/access reconciliation. | Synthetic local only. Existing migration CLI intentionally refuses staging/production; adapting it requires separate owner authorization and review. |
 | Native and browser accessibility | Real manual sessions above, including dialogs and keyboard; fix defects before acceptance. | AX/unit/keyboard/enlarged-text subset only. |
@@ -90,7 +94,7 @@ Rollback first stops new exposure and new import/mail work for the affected org 
 
 ## Owner acceptance record
 
-Release owner: **unassigned**. Support/on-call owner: **unassigned**. Pilot organizations/partners: **not approved**. Artifact/deploy SHA: **not deployed**. Staging evidence links: **none**. Policy/retention approval: **pending**. Accessibility tester/session links: **pending**. Calendar/email external acceptance: **pending**. Accepted rollout/rollback decision and date: **pending**.
+Release owner: **unassigned**. Support/on-call owner: **unassigned**. Pilot organizations/partners: **not approved**. Staging implementation SHA: **`2152c66`**; deployment inventory in [record](phase-1-staging-deployment.md). Staging evidence: **HTTPS/browser smoke and 13 READY index definitions verified; full gate acceptance pending**. Policy/retention approval: **pending**. Accessibility tester/session links: **pending**. Calendar/email external acceptance: **pending**. Accepted rollout/rollback decision and date: **pending**.
 
 Do not mark Phase 1 complete or pilot-ready until this record and every blocking ledger row contain actual accepted evidence. Later phases require a new user instruction.
 

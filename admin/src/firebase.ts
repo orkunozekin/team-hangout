@@ -52,11 +52,29 @@ export function initializeBrowserFirebase() {
     env.VITE_FIREBASE_FUNCTIONS_REGION || "us-central1",
   );
   if (emulator) {
-    connectAuthEmulator(auth, "http://127.0.0.1:9099", {
-      disableWarnings: true,
-    });
-    connectFirestoreEmulator(db, "127.0.0.1", 8080);
-    connectFunctionsEmulator(functions, "127.0.0.1", 5001);
+    const port = (value: string | undefined, fallback: number) => {
+      const result = value ? Number(value) : fallback;
+      if (!Number.isInteger(result) || result < 1 || result > 65535)
+        throw new Error("Invalid local emulator port.");
+      return result;
+    };
+    connectAuthEmulator(
+      auth,
+      `http://127.0.0.1:${port(env.VITE_AUTH_EMULATOR_PORT, 9099)}`,
+      {
+        disableWarnings: true,
+      },
+    );
+    connectFirestoreEmulator(
+      db,
+      "127.0.0.1",
+      port(env.VITE_FIRESTORE_EMULATOR_PORT, 8080),
+    );
+    connectFunctionsEmulator(
+      functions,
+      "127.0.0.1",
+      port(env.VITE_FUNCTIONS_EMULATOR_PORT, 5001),
+    );
   }
   async function call<K extends keyof AdminCommands>(
     name: K,

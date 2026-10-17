@@ -61,9 +61,9 @@ if (process.env.EXPO_PUBLIC_USE_EMULATORS === '1') {
     throw new Error('Emulators require a development build and demo-team-hangout.');
   }
   if (isFirstInit) {
-  connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
-  connectFirestoreEmulator(db, '127.0.0.1', 8080);
-  connectFunctionsEmulator(functions, '127.0.0.1', 5001);
+  connectAuthEmulator(auth, `http://127.0.0.1:${process.env.EXPO_PUBLIC_AUTH_EMULATOR_PORT || '9099'}`, { disableWarnings: true });
+  connectFirestoreEmulator(db, '127.0.0.1', Number(process.env.EXPO_PUBLIC_FIRESTORE_EMULATOR_PORT || 8080));
+  connectFunctionsEmulator(functions, '127.0.0.1', Number(process.env.EXPO_PUBLIC_FUNCTIONS_EMULATOR_PORT || 5001));
   }
 } else if (firebaseConfig.projectId?.startsWith('demo-')) {
   throw new Error('Demo projects require EXPO_PUBLIC_USE_EMULATORS=1.');
