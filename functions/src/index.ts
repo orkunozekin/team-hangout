@@ -50,3 +50,5 @@ export { previewFacilityClosure, applyFacilityClosure, getFacilityClosureOperati
 export { previewEventMakeup, confirmEventMakeup } from './facilities/makeups';
 
 export { getEventAvailability, respondToEvent, setEventRsvpDeadline } from './operations/availability';
+
+export { getEventAttendance, recordEventAttendance, getAttendanceHistory } from './operations/attendance';

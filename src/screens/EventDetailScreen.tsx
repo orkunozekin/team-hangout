@@ -1,3 +1,4 @@
+import EventAttendance from '../components/EventAttendance';
 import EventAvailability from "../components/EventAvailability";
 import React, {
   useCallback,
@@ -204,6 +205,7 @@ export default function EventDetailScreen({
         ) : null}
 
         {event.schemaVersion === 2 ? <EventAvailability key={`${event.id}:${event.revision}`} eventId={event.id} canManage={canManage} /> : null}
+        {event.schemaVersion === 2 ? <EventAttendance key={`attendance:${event.id}:${event.revision}`} eventId={event.id} teamId={membership.teamId} /> : null}
         {event.history?.length ? <>
           <Text style={styles.row}>Schedule history{event.historyHasMore ? ' (latest 20)' : ''}</Text>
           {event.history.map(row => <Text key={row.revision} style={styles.row}>

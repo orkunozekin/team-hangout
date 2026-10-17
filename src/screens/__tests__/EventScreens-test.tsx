@@ -6,6 +6,7 @@ import { createCanonicalEvent, getEvent, listEventTeamChoices, mutateEventSchedu
 import { getTeam } from '../../firebase/teams';
 jest.mock('../../firebase/events', () => ({ getEvent: jest.fn(), createCanonicalEvent: jest.fn(), mutateEventSchedule: jest.fn(), listEventTeamChoices: jest.fn() }));
 jest.mock('../../firebase/availability', () => ({ getEventAvailability: jest.fn().mockRejectedValue(new Error('Unavailable')) }));
+jest.mock('../../firebase/attendance', () => ({ getEventAttendance: jest.fn().mockRejectedValue(new Error('Unavailable')) }));
 jest.mock('../../firebase/teams', () => ({ getTeam: jest.fn() }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 jest.mock('@react-navigation/native', () => ({ useFocusEffect: (callback: () => void) => require('react').useEffect(callback, [callback]) }));
