@@ -58,6 +58,7 @@ const data = {
 };
 beforeEach(() => {
   jest.clearAllMocks();
+  jest.spyOn(AppState, "addEventListener").mockImplementation(() => ({ remove: jest.fn() }));
   api.mockResolvedValue(data);
   save.mockResolvedValue({ revision: 1 });
 });

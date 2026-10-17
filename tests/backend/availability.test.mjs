@@ -542,3 +542,19 @@ test("admin explicitly grants response access without enabling profile edits, wi
     { code: "functions/invalid-argument" },
   );
 });
+
+test('live management revocation preserves household responses but removes policy authority', async () => {
+  const e = await create(); const path = 'organizations/p209-org/members/p209-parent1';
+  await db.doc(path).set({ ...meta, orgId: scope.orgId, roles: ['orgAdmin'], programIds: [] });
+  assert.equal((await read(e)).canManage, true);
+  await db.doc(path).update({ status: 'revoked' });
+  const loaded = await read(e); assert.equal(loaded.canManage, false); assert.equal(loaded.items.length, 2); assert.equal(loaded.summaries.length, 0);
+  await deny(call('p209-parent1', 'setEventRsvpDeadline', req({ eventId: e.id, expectedRevision: 1, deadline: null })));
+});
+test('large staff summaries fail closed without listing another household response to a family', async () => {
+  const e = await create(); const batch = db.batch();
+  for (let i = 0; i < 201; i++) batch.set(db.doc(`teams/p209-a/roster/p209-bound-${i}`), { ...meta, orgId: scope.orgId, participantId: `p209-bound-${i}` });
+  await batch.commit();
+  await assert.rejects(read(e, 'p209-coach'), { code: 'functions/resource-exhausted' });
+  assert.equal((await read(e)).items.length, 2);
+});
