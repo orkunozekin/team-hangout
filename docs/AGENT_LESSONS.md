@@ -272,5 +272,5 @@
 
 - **Source:** PR #35 · GitHub Codex review at `f3aebbc`
 - **Gap:** iOS inactive handling preserved the location prompt, but Android temporary system Activities can report background and invalidate acquisition or unmount ancestor household state.
-- **Going forward:** Audit the requesting component and every ancestor refresh handler for platform permission transitions. Preserve the explicit prompt transition while checking actual foreground state after permission returns; genuine background results must cancel acquisition and reauthorize on foreground. Test both event orderings and retain original screenshot provenance after feedback.
+- **Going forward:** Audit the requesting component and every ancestor refresh handler for platform permission transitions, including secondary location-settings dialogs after permission resolves. Disable optional settings Activities when manual fallback is available. Preserve the explicit prompt transition while checking actual foreground state after permission returns; genuine background results must cancel acquisition and reauthorize on foreground. Test both event orderings and retain original screenshot provenance after feedback.
 - **Pointers:** `src/lib/checkInLocation.ts`, `src/components/ParticipantCheckIn.tsx`, `src/components/EventAvailability.tsx`, `src/screens/HouseholdScreen.tsx`.

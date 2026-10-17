@@ -34,6 +34,11 @@ export async function currentCheckInLocation(
           );
         const sample = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.High,
+          mayShowUserSettingsDialog: false,
+        }).catch(() => {
+          throw new Error(
+            "Location unavailable. Check device location settings, use simple check-in or ask your coach for manual attendance.",
+          );
         });
         return {
           latitude: sample.coords.latitude,

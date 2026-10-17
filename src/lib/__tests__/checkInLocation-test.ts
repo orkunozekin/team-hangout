@@ -25,7 +25,10 @@ test("one foreground request returns only transient sample fields", async () => 
     timestamp: 3,
   });
   expect(permission).toHaveBeenCalledTimes(1);
-  expect(position).toHaveBeenCalledWith({ accuracy: 4 });
+  expect(position).toHaveBeenCalledWith({
+    accuracy: 4,
+    mayShowUserSettingsDialog: false,
+  });
 });
 test("denied permission makes no sample request", async () => {
   permission.mockResolvedValue({ status: "denied" });
@@ -101,4 +104,15 @@ test("a permission granted while still backgrounded makes no sample request and 
   } finally {
     AppState.currentState = original;
   }
+});
+
+test("disabled location settings fail to simple/manual fallback without opening a secondary settings Activity", async () => {
+  position.mockRejectedValueOnce(new Error("E_LOCATION_SETTINGS_UNSATISFIED"));
+  await expect(currentCheckInLocation()).rejects.toThrow(
+    "Location unavailable. Check device location settings, use simple check-in or ask your coach for manual attendance.",
+  );
+  expect(position).toHaveBeenCalledWith({
+    accuracy: 4,
+    mayShowUserSettingsDialog: false,
+  });
 });
