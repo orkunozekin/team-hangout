@@ -1,3 +1,4 @@
+import { prepareRosterSnapshot } from './attendance';
 import { effectiveEvent, requireOpenInterval, primeClosureReads } from '../facilities/closures';
 import { fingerprint } from './requests';
 import { publishedEvent } from '../scheduling/visibility';
@@ -209,13 +210,15 @@ export async function lifecycleMutation(tx: Transaction, data: Data, uid: string
     Object.assign(changes, storageFields({ ...data.patch }), { status: 'scheduled', rsvpDeadline: null, scheduleVersion: (event.scheduleVersion ?? 1) + 1,
       rescheduledFromRevision: event.revision, originalInterval: event.originalInterval ?? { startsAt: event.startsAt, endsAt: event.endsAt, timeZone: event.timeZone } });
   } else if (data.action !== 'edit') changes.status = { postpone: 'postponed', cancel: 'cancelled', complete: 'completed' }[data.action as string];
-  if (data.action === 'complete') changes.completedAt = now;
+  const snapshot = data.action === 'complete' ? await prepareRosterSnapshot(tx, ref.id, event, uid, nextRevision, now) : null;
+  if (snapshot) Object.assign(changes, { completedAt: now, rosterSnapshot: snapshot.metadata });
   if (data.action === 'postpone') changes.postponementReason = data.reason;
   let assignment: Data = {};
   const assigning = data.patch.facilityId !== undefined || data.patch.resourceId !== undefined;
   if (data.action === 'reschedule' || assigning) assignment = await validateResourceAssignment(tx, { ...event, ...changes }, ref.id, scope.teams.map(team => team.sport));
   if (!assigning && event.resourceId && data.patch.location !== undefined && JSON.stringify(data.patch.location) !== JSON.stringify(event.location)) invalid('Assigned resources determine the location. Remove the resource assignment before entering a custom location.');
   Object.assign(changes, commitResourceAssignment(tx, { ...event, ...changes }, assignment, ref.id, nextRevision, event));
+  snapshot?.write();
   // History is immutable and retains the previous interval and status for each committed transition.
   tx.create(ref.collection('scheduleHistory').doc(String(nextRevision)), { schemaVersion: 2, revision: nextRevision,
     action: data.action, reason: data.reason, previousStatus: event.status, status: changes.status ?? event.status,
