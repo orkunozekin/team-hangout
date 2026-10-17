@@ -15,6 +15,7 @@ export type ParticipantAvailability = {
   actor: string | null;
 };
 export type EventAvailability = {
+  checkInPolicy: import("./checkIn").CheckInPolicy;
   eventId: string;
   canManage: boolean;
   eventRevision: number;

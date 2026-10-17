@@ -12,6 +12,14 @@ export default ({ config }: ConfigContext): ExpoConfig => {
 
   const plugins: ExpoConfig['plugins'] = [
     'expo-font',
+    ['expo-location', {
+      locationWhenInUsePermission: 'Use your location once to assist with participant check-in. Location is optional and does not prove presence.',
+      locationAlwaysPermission: false,
+      locationAlwaysAndWhenInUsePermission: false,
+      isIosBackgroundLocationEnabled: false,
+      isAndroidBackgroundLocationEnabled: false,
+      isAndroidForegroundServiceEnabled: false,
+    }],
     'expo-apple-authentication',
     '@react-native-google-signin/google-signin',
   ];

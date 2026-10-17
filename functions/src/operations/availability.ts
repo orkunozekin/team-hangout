@@ -10,9 +10,10 @@ import { checkRevision, denied, eventScope, hierarchy } from "./access";
 import { householdAccess, metadata, readCommand } from "../participants/policy";
 import { publishedEvent } from "../scheduling/visibility";
 import { effectiveEvent } from "../facilities/closures";
+import { checkInPolicy } from "./checkInPolicy";
 import { cacheDocumentReads } from "./reads";
 
-async function eventFor(tx: Transaction, eventId: string) {
+export async function householdEvent(tx: Transaction, eventId: string) {
   const event = (await tx.get(getFirestore().doc(`events/${eventId}`))).data();
   if (!event || event.schemaVersion !== 2 || !(await publishedEvent(tx, event)))
     denied();
@@ -76,7 +77,7 @@ function closedReason(event: Data, archived: boolean): string | null {
     return "The RSVP deadline has passed. Responses are closed.";
   return null;
 }
-async function eligible(
+export async function eligibleHousehold(
   tx: Transaction,
   event: Data,
   teams: Data[],
@@ -143,7 +144,7 @@ export const getEventAvailability = readCommand(
   },
   async (tx, data, uid) => {
     tx = cacheDocumentReads(tx);
-    const { event, teams } = await eventFor(tx, data.eventId);
+    const { event, teams } = await householdEvent(tx, data.eventId);
     // Discover only this household's canonical sources in the event organization.
     // Staff organization pointers must not enumerate unrelated teams here.
     const db = getFirestore();
@@ -184,9 +185,9 @@ export const getEventAvailability = readCommand(
       );
     const items: Data[] = [];
     for (const participantId of candidates) {
-      let allowed: Awaited<ReturnType<typeof eligible>>;
+      let allowed: Awaited<ReturnType<typeof eligibleHousehold>>;
       try {
-        allowed = await eligible(tx, event, teams, participantId, uid);
+        allowed = await eligibleHousehold(tx, event, teams, participantId, uid);
       } catch (error) {
         if (error instanceof HttpsError && error.code === "permission-denied")
           continue;
@@ -290,6 +291,7 @@ export const getEventAvailability = readCommand(
     }
     return {
       eventId: data.eventId,
+      checkInPolicy: checkInPolicy(event.checkInPolicy),
       canManage,
       eventRevision: event.revision,
       scheduleVersion: event.scheduleVersion ?? 1,
@@ -331,8 +333,8 @@ export const respondToEvent = command(
     };
   },
   async (tx, data, uid, _actor, replay) => {
-    const { event, teams } = await eventFor(tx, data.eventId);
-    const { access, enrolled } = await eligible(
+    const { event, teams } = await householdEvent(tx, data.eventId);
+    const { access, enrolled } = await eligibleHousehold(
       tx,
       event,
       teams,
@@ -400,7 +402,7 @@ export const setEventRsvpDeadline = command(
     };
   },
   async (tx, data, uid, _actor, replay) => {
-    const { event } = await eventFor(tx, data.eventId);
+    const { event } = await householdEvent(tx, data.eventId);
     await eventScope(tx, event.teamIds, uid, !replay);
     if (replay) return replay;
     checkRevision(event, data.expectedRevision);

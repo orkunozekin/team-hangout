@@ -1,3 +1,7 @@
+import {
+  isCheckInPermissionPending,
+  canResumeCheckInPermission,
+} from "../lib/checkInLocation";
 import CalendarSubscriptionsScreen from "./CalendarSubscriptionsScreen";
 import HouseholdAgenda from "../components/HouseholdAgenda";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -5,6 +9,7 @@ import {
   ActivityIndicator,
   Alert,
   AppState,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -99,7 +104,21 @@ export default function HouseholdScreen({
     }, []),
   );
   useEffect(() => {
+    let permissionDialog = false;
     const sub = AppState.addEventListener("change", (state) => {
+      if (
+        (state === "inactive" ||
+          (Platform.OS === "android" && state === "background")) &&
+        isCheckInPermissionPending()
+      ) {
+        permissionDialog = true;
+        return;
+      }
+      if (state === "active" && permissionDialog) {
+        permissionDialog = false;
+        if (canResumeCheckInPermission()) return;
+      }
+      permissionDialog = false;
       householdGeneration.current++;
       setSelected(null);
       setItems(null);
@@ -159,7 +178,11 @@ export default function HouseholdScreen({
         </Subtitle>
         <Button label="Open Teams" onPress={onTeams} />
         {error ? (
-          <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>
+          <Text
+            accessibilityRole="alert"
+            accessibilityLiveRegion="polite"
+            style={styles.error}
+          >
             {error}
           </Text>
         ) : null}
@@ -210,7 +233,9 @@ export default function HouseholdScreen({
               label="Calendar subscriptions"
               onPress={() => setSubscriptions(true)}
             />
-            <Text accessibilityRole="header" style={styles.heading}>Your participants</Text>
+            <Text accessibilityRole="header" style={styles.heading}>
+              Your participants
+            </Text>
             <Text style={styles.copy}>
               Choose who you are acting for. Team roles stay separate.
             </Text>
@@ -234,7 +259,9 @@ export default function HouseholdScreen({
                 }}
                 style={styles.card}
               >
-                <Text accessibilityRole="header" style={styles.heading}>{item.displayName}</Text>
+                <Text accessibilityRole="header" style={styles.heading}>
+                  {item.displayName}
+                </Text>
                 <Text style={styles.copy}>
                   {item.relationship === "self"
                     ? "Your profile"
@@ -366,18 +393,28 @@ function Profile({
         <ActivityIndicator accessibilityLabel="Loading profile" />
       ) : null}
       {error ? (
-        <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>
+        <Text
+          accessibilityRole="alert"
+          accessibilityLiveRegion="polite"
+          style={styles.error}
+        >
           {error}
         </Text>
       ) : null}
       {notice ? (
-        <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.copy}>
+        <Text
+          accessibilityRole="alert"
+          accessibilityLiveRegion="polite"
+          style={styles.copy}
+        >
           {notice}
         </Text>
       ) : null}
       {data ? (
         <>
-          <Text accessibilityRole="header" style={styles.heading}>{data.participant.displayName}</Text>
+          <Text accessibilityRole="header" style={styles.heading}>
+            {data.participant.displayName}
+          </Text>
           <Text style={styles.copy}>
             Acting as {user.email || user.displayName} for{" "}
             {data.participant.displayName}
@@ -388,7 +425,9 @@ function Profile({
               : "Approved guardian access"}{" "}
             · {data.canEdit ? "Contact editing allowed" : "View only"}
           </Text>
-          <Text accessibilityRole="header" style={styles.heading}>Approved guardians</Text>
+          <Text accessibilityRole="header" style={styles.heading}>
+            Approved guardians
+          </Text>
           {data.guardians.length ? (
             data.guardians.map((g, i) => (
               <Text key={i} style={styles.copy}>

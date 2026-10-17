@@ -181,3 +181,10 @@ test("pagination retains rows and uses continuation; stale write clears controls
   await screen.findByText("Reload changed attendance.");
   expect(screen.queryByText("Casey")).toBeNull();
 });
+
+test("coach view and history label location-assisted guardian assertions as spoofable", async () => {
+  read.mockResolvedValue({ ...data, items: [{ ...item, status: "present", recordedAt: "2026-10-16T23:00:00Z", recordedBy: "guardian", source: "guardian", method: "location", revision: 1 }] });
+  audit.mockResolvedValue({ items: [{ revision: 1, status: "present", previousStatus: "unknown", recordedAt: "2026-10-16T23:00:00Z", recordedBy: "guardian", source: "guardian", method: "location", reason: null, scheduleVersion: 2 }], nextCursor: null });
+  await open(); expect(screen.getByText(/Location assistance \(spoofable, not presence proof\)/)).toBeTruthy();
+  await fireEvent.press(screen.getByText("Correction audit for Jamie")); await screen.findByText(/Schedule 2 · guardian/);
+});

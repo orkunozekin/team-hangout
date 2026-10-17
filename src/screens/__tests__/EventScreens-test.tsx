@@ -1,3 +1,4 @@
+jest.mock("../../firebase/checkIn", () => ({ getParticipantCheckIn: jest.fn(), checkInParticipant: jest.fn(), setEventCheckInPolicy: jest.fn() }));
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react-native';
 import CreateEditEventScreen from '../CreateEditEventScreen';
