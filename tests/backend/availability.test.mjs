@@ -119,13 +119,11 @@ before(async () => {
       "SyntheticPassword123!",
     );
   }
-  await db
-    .doc("organizations/p209-org")
-    .set({
-      ...meta,
-      name: "Synthetic league",
-      features: { organizationV2: true, households: true },
-    });
+  await db.doc("organizations/p209-org").set({
+    ...meta,
+    name: "Synthetic league",
+    features: { organizationV2: true, households: true },
+  });
   for (const [kind, name] of [
     ["programs", scope.programId],
     ["seasons", scope.seasonId],
@@ -139,44 +137,38 @@ before(async () => {
     .set({ ...meta, orgId: scope.orgId, roles: ["orgAdmin"], programIds: [] });
   for (const teamId of ["p209-a", "p209-b"])
     await db.doc(`teams/${teamId}`).set({ ...meta, ...scope, name: teamId });
-  await db
-    .doc("teamMembers/p209-a_p209-coach")
-    .set({
+  await db.doc("teamMembers/p209-a_p209-coach").set({
+    ...meta,
+    orgId: scope.orgId,
+    teamId: "p209-a",
+    userId: "p209-coach",
+    roles: ["coach"],
+  });
+  for (const p of ["p209-child-a", "p209-child-b"]) {
+    await db.doc(part(p)).set({
       ...meta,
       orgId: scope.orgId,
-      teamId: "p209-a",
-      userId: "p209-coach",
-      roles: ["coach"],
+      displayName: p,
+      kind: "adult",
+      linkedUserId: p.endsWith("-a") ? "p209-self" : null,
     });
-  for (const p of ["p209-child-a", "p209-child-b"]) {
-    await db
-      .doc(part(p))
-      .set({
-        ...meta,
-        orgId: scope.orgId,
-        displayName: p,
-        kind: "adult",
-        linkedUserId: p.endsWith("-a") ? "p209-self" : null,
-      });
     for (const teamId of ["p209-a", "p209-b"])
       await db
         .doc(`teams/${teamId}/roster/${p}`)
         .set({ ...meta, orgId: scope.orgId, participantId: p });
     for (const uid of ["p209-parent1", "p209-parent2", "p209-viewer"])
-      await db
-        .doc(grant(p, uid))
-        .set({
-          ...meta,
-          orgId: scope.orgId,
-          participantId: p,
-          userId: uid,
-          permissions: {
-            viewSchedule: true,
-            viewProfile: true,
-            editProfile: false,
-            respond: uid !== "p209-viewer",
-          },
-        });
+      await db.doc(grant(p, uid)).set({
+        ...meta,
+        orgId: scope.orgId,
+        participantId: p,
+        userId: uid,
+        permissions: {
+          viewSchedule: true,
+          viewProfile: true,
+          editProfile: false,
+          respond: uid !== "p209-viewer",
+        },
+      });
   }
 });
 after(async () => {
@@ -419,17 +411,15 @@ test("publication, tenant references, rollout flags and effective resource closu
   await db
     .doc(`events/${e.id}`)
     .update({ facilityId: "p209-facility", resourceId: "p209-field" });
-  await db
-    .doc("organizations/p209-org/closures/p209-closed")
-    .set({
-      ...meta,
-      orgId: scope.orgId,
-      facilityId: "p209-facility",
-      resourceIds: ["p209-field"],
-      startsAt: "2026-12-20T22:00:00.000Z",
-      endsAt: "2026-12-21T01:00:00.000Z",
-      status: "applied",
-    });
+  await db.doc("organizations/p209-org/closures/p209-closed").set({
+    ...meta,
+    orgId: scope.orgId,
+    facilityId: "p209-facility",
+    resourceIds: ["p209-field"],
+    startsAt: "2026-12-20T22:00:00.000Z",
+    endsAt: "2026-12-21T01:00:00.000Z",
+    status: "applied",
+  });
   await assert.rejects(
     call("p209-parent2", "respondToEvent", response(e, "p209-child-b")),
     (e) => e.details.domainCode === "RSVP_CLOSED",
@@ -543,18 +533,82 @@ test("admin explicitly grants response access without enabling profile edits, wi
   );
 });
 
-test('live management revocation preserves household responses but removes policy authority', async () => {
-  const e = await create(); const path = 'organizations/p209-org/members/p209-parent1';
-  await db.doc(path).set({ ...meta, orgId: scope.orgId, roles: ['orgAdmin'], programIds: [] });
+test("live management revocation preserves household responses but removes policy authority", async () => {
+  const e = await create();
+  const path = "organizations/p209-org/members/p209-parent1";
+  await db
+    .doc(path)
+    .set({ ...meta, orgId: scope.orgId, roles: ["orgAdmin"], programIds: [] });
   assert.equal((await read(e)).canManage, true);
-  await db.doc(path).update({ status: 'revoked' });
-  const loaded = await read(e); assert.equal(loaded.canManage, false); assert.equal(loaded.items.length, 2); assert.equal(loaded.summaries.length, 0);
-  await deny(call('p209-parent1', 'setEventRsvpDeadline', req({ eventId: e.id, expectedRevision: 1, deadline: null })));
+  await db.doc(path).update({ status: "revoked" });
+  const loaded = await read(e);
+  assert.equal(loaded.canManage, false);
+  assert.equal(loaded.items.length, 2);
+  assert.equal(loaded.summaries.length, 0);
+  await deny(
+    call(
+      "p209-parent1",
+      "setEventRsvpDeadline",
+      req({ eventId: e.id, expectedRevision: 1, deadline: null }),
+    ),
+  );
 });
-test('large staff summaries fail closed without listing another household response to a family', async () => {
-  const e = await create(); const batch = db.batch();
-  for (let i = 0; i < 201; i++) batch.set(db.doc(`teams/p209-a/roster/p209-bound-${i}`), { ...meta, orgId: scope.orgId, participantId: `p209-bound-${i}` });
+test("event availability ignores more than 100 unrelated staff teams and stale household discovery sources", async () => {
+  const e = await create();
+  const batch = db.batch();
+  batch.set(db.doc("users/p209-admin/organizationLinks/p209-org"), {
+    orgId: scope.orgId,
+    status: "active",
+  });
+  batch.set(db.doc("users/p209-parent1/organizationLinks/p209-org"), {
+    orgId: scope.orgId,
+    status: "active",
+  });
+  batch.set(db.doc("organizations/p209-org/members/p209-parent1"), {
+    ...meta,
+    orgId: scope.orgId,
+    roles: ["orgAdmin"],
+    programIds: [],
+  });
+  for (let i = 0; i < 101; i++)
+    batch.set(db.doc(`teams/p209-unrelated-${i}`), {
+      ...meta,
+      ...scope,
+      name: "Unrelated team",
+    });
+  batch.set(db.doc(grant("p209-missing", "p209-parent1")), {
+    ...meta,
+    orgId: scope.orgId,
+    participantId: "p209-missing",
+    userId: "p209-parent1",
+    permissions: { viewSchedule: true, respond: true },
+  });
   await batch.commit();
-  await assert.rejects(read(e, 'p209-coach'), { code: 'functions/resource-exhausted' });
+  const staff = await read(e, "p209-admin");
+  assert.equal(staff.summaries.length, 2);
+  assert.equal(staff.items.length, 0);
+  const parent = await read(e);
+  assert.equal(parent.items.length, 2);
+  assert.equal(parent.summaries.length, 2);
+  await db
+    .doc("organizations/p209-org/members/p209-parent1")
+    .update({ status: "revoked" });
+  const household = await read(e);
+  assert.equal(household.items.length, 2);
+  assert.equal(household.summaries.length, 0);
+});
+test("large staff summaries fail closed without listing another household response to a family", async () => {
+  const e = await create();
+  const batch = db.batch();
+  for (let i = 0; i < 201; i++)
+    batch.set(db.doc(`teams/p209-a/roster/p209-bound-${i}`), {
+      ...meta,
+      orgId: scope.orgId,
+      participantId: `p209-bound-${i}`,
+    });
+  await batch.commit();
+  await assert.rejects(read(e, "p209-coach"), {
+    code: "functions/resource-exhausted",
+  });
   assert.equal((await read(e)).items.length, 2);
 });

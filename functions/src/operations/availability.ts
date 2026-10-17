@@ -8,7 +8,6 @@ import { HttpsError } from "firebase-functions/v2/https";
 import { command, Data, id, invalid, keys, revision } from "../commandSupport";
 import { checkRevision, denied, eventScope, hierarchy } from "./access";
 import { householdAccess, metadata, readCommand } from "../participants/policy";
-import { readAgenda } from "../calendar/agenda";
 import { publishedEvent } from "../scheduling/visibility";
 import { effectiveEvent } from "../facilities/closures";
 import { cacheDocumentReads } from "./reads";
@@ -145,21 +144,50 @@ export const getEventAvailability = readCommand(
   async (tx, data, uid) => {
     tx = cacheDocumentReads(tx);
     const { event, teams } = await eventFor(tx, data.eventId);
-    const agenda = await readAgenda(tx, {}, uid, { events: false });
-    const candidates = new Set<string>();
-    for (const team of agenda.teams)
-      if (teams.some((t) => t.id === team.id && t.orgId === team.orgId)) {
-        for (const p of team.participants) candidates.add(p.participantId);
-      }
+    // Discover only this household's canonical sources in the event organization.
+    // Staff organization pointers must not enumerate unrelated teams here.
+    const db = getFirestore();
+    const own = await tx.get(
+      db
+        .collection(`organizations/${event.orgId}/participants`)
+        .where("linkedUserId", "==", uid)
+        .where("status", "==", "active")
+        .limit(101),
+    );
+    const grants = await tx.get(
+      db
+        .collectionGroup("guardians")
+        .where("orgId", "==", event.orgId)
+        .where("userId", "==", uid)
+        .where("status", "==", "active")
+        .limit(101),
+    );
+    if (own.size > 100 || grants.size > 100)
+      throw new HttpsError(
+        "resource-exhausted",
+        "This household needs a narrower participant scope. Contact your administrator.",
+      );
+    const candidates = new Set<string>(own.docs.map((doc) => doc.id));
+    for (const grant of grants.docs) {
+      const participantId = grant.data().participantId;
+      if (
+        typeof participantId === "string" &&
+        grant.ref.path ===
+          `organizations/${event.orgId}/participants/${participantId}/guardians/${uid}`
+      )
+        candidates.add(participantId);
+    }
     const items: Data[] = [];
     for (const participantId of candidates) {
-      const { access, enrolled, canRespond } = await eligible(
-        tx,
-        event,
-        teams,
-        participantId,
-        uid,
-      );
+      let allowed: Awaited<ReturnType<typeof eligible>>;
+      try {
+        allowed = await eligible(tx, event, teams, participantId, uid);
+      } catch (error) {
+        if (error instanceof HttpsError && error.code === "permission-denied")
+          continue;
+        throw error;
+      }
+      const { access, enrolled, canRespond } = allowed;
       const row = (
         await tx.get(
           getFirestore().doc(
