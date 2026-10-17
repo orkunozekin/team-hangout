@@ -9,7 +9,7 @@ import {
 import type { ParticipantCheckIn as CheckIn } from "../../shared/checkIn";
 import { getParticipantCheckIn, checkInParticipant } from "../firebase/checkIn";
 import { attendanceRequestId } from "../firebase/attendance";
-import { currentCheckInLocation } from "../lib/checkInLocation";
+import { currentCheckInLocation, isCheckInPermissionPending } from "../lib/checkInLocation";
 import { SecondaryButton } from "./ui";
 import { colors, type } from "../theme/theme";
 const uncertain = (error: unknown) =>
@@ -67,7 +67,11 @@ export default function ParticipantCheckIn({
     };
   }, [open, load]);
   useEffect(() => {
+    let permissionDialog = false;
     const sub = AppState.addEventListener("change", (state) => {
+      if (state === "inactive" && isCheckInPermissionPending()) { permissionDialog = true; return; }
+      if (state === "active" && permissionDialog) { permissionDialog = false; return; }
+      permissionDialog = false;
       // The OS permission dialog can make iOS inactive. Cancel only when actually backgrounded.
       if (state === "background") {
         generation.current++;

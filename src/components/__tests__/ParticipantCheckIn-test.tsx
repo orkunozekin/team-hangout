@@ -22,6 +22,7 @@ jest.mock("../../firebase/attendance", () => ({
 }));
 jest.mock("../../lib/checkInLocation", () => ({
   currentCheckInLocation: jest.fn(),
+  isCheckInPermissionPending: jest.fn(() => false),
 }));
 const read = getParticipantCheckIn as jest.Mock,
   save = checkInParticipant as jest.Mock,
@@ -183,4 +184,16 @@ test("stale schedule clears controls and requires reload", async () => {
   await fireEvent.press(screen.getByText("Simple check-in for Jamie"));
   await screen.findByText(/Access or schedule changed/);
   expect(screen.queryByText("Simple check-in for Jamie")).toBeNull();
+});
+
+test("permission denial remains visible when the OS prompt returns active after acquisition settles", async () => {
+  const marker = require("../../lib/checkInLocation").isCheckInPermissionPending as jest.Mock;
+  marker.mockReturnValue(true);
+  let reject!: (value: unknown) => void;
+  locate.mockImplementationOnce(() => new Promise((_resolve, r) => { reject = r; }));
+  await open(); await fireEvent.press(screen.getByText("Use location for Jamie"));
+  await act(async () => change("inactive"));
+  await act(async () => reject(new Error("Location permission denied. Use simple check-in.")));
+  marker.mockReturnValue(false); await act(async () => change("active"));
+  expect(screen.getByText("Location permission denied. Use simple check-in.")).toBeTruthy(); expect(read).toHaveBeenCalledTimes(1);
 });
