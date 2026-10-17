@@ -286,7 +286,12 @@ export function Participants({
               {!roster.length ? (
                 <p>No enrolled participants.</p>
               ) : (
-                <div className="table-wrap" role="region" aria-label="Records table" tabIndex={0}>
+                <div
+                  className="table-wrap"
+                  role="region"
+                  aria-label="Records table"
+                  tabIndex={0}
+                >
                   <table>
                     <thead>
                       <tr>
@@ -595,12 +600,15 @@ function GuardianEditor({
   data: ParticipantProfile;
 } & Callbacks) {
   const [uid, setUid] = useState("");
+  const [respond, setRespond] = useState(false);
   return (
     <>
       <h3>Approve an existing guardian account</h3>
       <p>
         Confirm this account’s relationship to {data.participant.displayName}{" "}
-        before approval. This grants view-only access and sends no invitation.
+        before approval. Schedule and profile viewing are granted. Choose
+        whether this guardian may submit participant responses. No invitation is
+        sent.
       </p>
       <Mutation
         label="Confirm guardian approval"
@@ -611,11 +619,25 @@ function GuardianEditor({
             expectedRevision: data.participant.revision,
             requestId: crypto.randomUUID(),
             userId: uid.trim(),
+            permissions: {
+              viewSchedule: true,
+              viewProfile: true,
+              editProfile: false,
+              respond,
+            },
           };
           return () => services.call("approveGuardian", input);
         }}
         {...callbacks}
       >
+        <label>
+          <input
+            type="checkbox"
+            checked={respond}
+            onChange={(e) => setRespond(e.target.checked)}
+          />{" "}
+          Allow participant RSVP responses
+        </label>
         <label>
           Confirmed guardian account UID
           <input

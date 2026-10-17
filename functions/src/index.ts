@@ -48,3 +48,5 @@ export { publishScheduleDraft, getSchedulePublication, advanceSchedulePublicatio
 
 export { previewFacilityClosure, applyFacilityClosure, getFacilityClosureOperation, advanceFacilityClosure } from './facilities/closures';
 export { previewEventMakeup, confirmEventMakeup } from './facilities/makeups';
+
+export { getEventAvailability, respondToEvent, setEventRsvpDeadline } from './operations/availability';

@@ -81,7 +81,7 @@ function grantPayload(data: Data, approving: boolean): Data {
   if (permissions) {
     keys(permissions, ['viewSchedule', 'viewProfile', 'editProfile', 'respond']);
     for (const key of ['viewSchedule', 'viewProfile', 'editProfile', 'respond']) if (typeof permissions[key] !== 'boolean') invalid('Invalid guardian permissions.');
-    if (permissions.respond || (permissions.editProfile && !permissions.viewProfile)) invalid('Invalid Phase 1 guardian permissions.');
+    if ((permissions.respond && !permissions.viewSchedule) || (permissions.editProfile && !permissions.viewProfile)) invalid('Invalid guardian permissions.');
   }
   return { ...identity(data), userId: id(data.userId, 'userId'), expectedRevision: revision(data.expectedRevision), permissions };
 }

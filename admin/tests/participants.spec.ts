@@ -210,3 +210,47 @@ test("program staff sees roster display fields and revoked scope discards editor
   ).toBeHidden();
   await capture(page, "step8-browser-permission-removed");
 });
+
+test("administrator explicitly grants participant RSVP without profile editing", async ({
+  page,
+}) => {
+  await seedHouseholdDemo();
+  await open(page);
+  await page
+    .getByRole("button", { name: "Manage Casey Rivera", exact: true })
+    .click();
+  await expect(
+    page.getByLabel("Allow participant RSVP responses"),
+  ).not.toBeChecked();
+  await page.getByLabel("Confirmed guardian account UID").fill("ui-outsider");
+  await page.getByLabel("Allow participant RSVP responses").check();
+  const saved = page.waitForResponse(
+    (r) =>
+      r.url().endsWith("/approveGuardian") && r.request().method() === "POST",
+  );
+  await page
+    .getByRole("button", { name: "Confirm guardian approval", exact: true })
+    .click();
+  expect((await saved).ok()).toBeTruthy();
+  const app = initializeApp(
+    { projectId: "demo-team-hangout" },
+    "rsvp-permission-check",
+  );
+  try {
+    const grant = (
+      await getFirestore(app)
+        .doc(
+          `organizations/${householdOrg}/participants/child-b/guardians/ui-outsider`,
+        )
+        .get()
+    ).data();
+    expect(grant.permissions).toEqual({
+      viewSchedule: true,
+      viewProfile: true,
+      editProfile: false,
+      respond: true,
+    });
+  } finally {
+    await deleteApp(app);
+  }
+});

@@ -1,0 +1,21 @@
+const mockRead = jest.fn();
+const mockCallable = jest.fn(() => mockRead);
+const mockRun = jest.fn();
+jest.mock('firebase/functions', () => ({ httpsCallable: (...args: unknown[]) => (mockCallable as Function)(...args) }));
+jest.mock('firebase/firestore', () => ({ collection: () => 'receipts', doc: () => ({ id: 'stable-request-id' }) }));
+jest.mock('../commands', () => ({ runCommand: (...args: unknown[]) => mockRun(...args) }));
+import { availabilityRequestId, getEventAvailability, respondToEvent, setEventRsvpDeadline } from '../availability';
+beforeEach(() => jest.clearAllMocks());
+test('response adapter preserves participant, schedule and stable retry identity and propagates revocation', async () => {
+  const payload = { eventId: 'shared', participantId: 'child', scheduleVersion: 2, expectedRevision: 3, status: 'maybe' };
+  const requestId = availabilityRequestId();
+  await respondToEvent(payload, requestId);
+  expect(mockRun).toHaveBeenCalledWith('respondToEvent', payload, requestId);
+  mockRead.mockRejectedValueOnce({ code: 'functions/permission-denied' });
+  await expect(getEventAvailability('shared')).rejects.toEqual({ code: 'functions/permission-denied' });
+  mockRead.mockResolvedValueOnce({ data: { items: [], summaries: [] } });
+  expect(await getEventAvailability('shared')).toEqual({ items: [], summaries: [] });
+  expect(mockRead).toHaveBeenLastCalledWith({ eventId: 'shared' });
+  await setEventRsvpDeadline('shared', 5, null);
+  expect(mockRun).toHaveBeenLastCalledWith('setEventRsvpDeadline', { eventId: 'shared', expectedRevision: 5, deadline: null });
+});

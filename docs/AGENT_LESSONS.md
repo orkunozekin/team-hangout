@@ -253,3 +253,17 @@
 - **Gap:** The reviewed makeup callable enforced policy but ordinary native lifecycle rescheduling could bypass it after a closure was materialized. Interval-bounded makeup queries still counted inactive events before filtering.
 - **Going forward:** Enforce the reviewed transition at the shared mutation boundary with a server-only adapter flag; exercise the existing client callable for staff and coach bypass attempts, ordinary later postponement, and deliberate mismatch reconciliation. Apply lifecycle/publication/deletion predicates before query limits and seed more than 1,000 inactive records in the exact proposed interval.
 - **Pointers:** `functions/src/operations/events.ts`, `functions/src/facilities/makeups.ts`, `tests/backend/closures.test.mjs`.
+
+### 2026-10-16: Scope event participant discovery before applying bounds
+
+- **Source:** PR #33, actual GitHub Codex review at `2a94be8`.
+- **Gap:** Reusing full household agenda discovery for one event enumerated unrelated staff teams and could exhaust a 100-team limit before returning that event's responses.
+- **Going forward:** Discover personal canonical sources within the target organization and check enrollment only against participating teams. Staff navigation pointers must not widen an event-specific reader. Test a small event with more than 100 unrelated staff teams and stale participant candidates.
+- **Pointers:** `functions/src/operations/availability.ts`, `tests/backend/availability.test.mjs`.
+
+### 2026-10-16: Bound combined candidates and multiplying read dimensions
+
+- **Source:** PR #33, second actual GitHub Codex review at `fabb018`.
+- **Gap:** Independent self/guardian discovery limits still allowed 200 distinct candidates, each fanning out to every event team.
+- **Going forward:** Bound the deduplicated union and candidate-by-team product before roster reads. Exercise both individually valid source limits and accepted candidate counts multiplied across 20 teams, and instrument the actual handler to prove rejection before fan-out.
+- **Pointers:** `functions/src/operations/availability.ts`, `tests/backend/availability.test.mjs`.

@@ -206,7 +206,9 @@ export function Invitations({
                 />
               </label>
               <p>
-                {relationship === "self" ? "Approved access: view your profile and schedule, and edit your contact details. No response rights." : "Approved access: view household profile and schedule. No editing or response rights."}
+                {relationship === "self"
+                  ? "Approved access: view your profile and schedule, and edit your contact details and respond to enrolled events."
+                  : "Approved access: view household profile and schedule. No editing or response rights."}
               </p>
             </Mutation>
           </section>
@@ -216,7 +218,12 @@ export function Invitations({
             {rows.length === 0 ? (
               <p>No invitations yet.</p>
             ) : (
-              <div className="table-scroll" role="region" aria-label="Records table" tabIndex={0}>
+              <div
+                className="table-scroll"
+                role="region"
+                aria-label="Records table"
+                tabIndex={0}
+              >
                 <table>
                   <thead>
                     <tr>
@@ -238,7 +245,9 @@ export function Invitations({
                         <td>{formatDateTime(row.expiresAt)}</td>
                         <td>
                           {["pending", "expired"].includes(row.status) && (
-                            <InvitationActions label={`Actions for ${row.recipientEmail}`}>
+                            <InvitationActions
+                              label={`Actions for ${row.recipientEmail}`}
+                            >
                               <Mutation
                                 buttonRole="menuitem"
                                 label="Resend with new link"
@@ -338,7 +347,11 @@ export function InvitationAcceptance({
     }
   };
   return (
-    <main id="main-content" tabIndex={-1} className="auth-card invitation-acceptance">
+    <main
+      id="main-content"
+      tabIndex={-1}
+      className="auth-card invitation-acceptance"
+    >
       <p className="eyebrow">Household invitation</p>
       <h1>Review your invitation</h1>
       <p>Signed in as {services.auth.currentUser?.email}</p>
@@ -355,6 +368,7 @@ export function InvitationAcceptance({
             {view.permissions?.viewProfile && "View profile. "}
             {view.permissions?.viewSchedule && "View schedule. "}
             {view.permissions?.editProfile && "Edit contact details. "}
+            {view.permissions?.respond && "Submit participant RSVP responses. "}
           </p>
           <Mutation
             label="Confirm and accept invitation"

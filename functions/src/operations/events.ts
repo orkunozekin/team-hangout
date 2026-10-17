@@ -206,7 +206,7 @@ export async function lifecycleMutation(tx: Transaction, data: Data, uid: string
     if (reviewedMakeup) changes.closureId = null;
     if (event.startsAt.toMillis() === Date.parse(data.patch.startsAt) && event.endsAt.toMillis() === Date.parse(data.patch.endsAt)
       && event.timeZone === data.patch.timeZone) invalid('Choose a different schedule.');
-    Object.assign(changes, storageFields({ ...data.patch }), { status: 'scheduled', scheduleVersion: (event.scheduleVersion ?? 1) + 1,
+    Object.assign(changes, storageFields({ ...data.patch }), { status: 'scheduled', rsvpDeadline: null, scheduleVersion: (event.scheduleVersion ?? 1) + 1,
       rescheduledFromRevision: event.revision, originalInterval: event.originalInterval ?? { startsAt: event.startsAt, endsAt: event.endsAt, timeZone: event.timeZone } });
   } else if (data.action !== 'edit') changes.status = { postpone: 'postponed', cancel: 'cancelled', complete: 'completed' }[data.action as string];
   if (data.action === 'complete') changes.completedAt = now;

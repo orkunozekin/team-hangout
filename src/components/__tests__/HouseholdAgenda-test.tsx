@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react-native";
 import HouseholdAgenda from "../HouseholdAgenda";
 import { listHouseholdAgenda } from "../../firebase/agenda";
+jest.mock("../../firebase/availability", () => ({ getEventAvailability: jest.fn() }));
 jest.mock("../../firebase/agenda", () => ({ listHouseholdAgenda: jest.fn() }));
 const api = listHouseholdAgenda as jest.Mock;
 const participants = [
