@@ -175,7 +175,7 @@ test("admin queues, rotates and revokes an invitation with clear delivery status
   acceptanceToken = await token("ui-outsider@example.test");
   await page.getByRole("combobox", {name:"Relationship",exact:true}).selectOption("self");
   await page.getByRole("combobox", {name:"Participant",exact:true}).selectOption("invite-adult-demo");
-  await expect(page.getByText("Approved access: view your profile and schedule, and edit your contact details. No response rights.")).toBeVisible();
+  await expect(page.getByText("Approved access: view your profile and schedule, and edit your contact details and respond to enrolled events.")).toBeVisible();
   await capture(page,"step9-browser-self-rights");
 });
 test("link survives login, requires confirmation, clears on logout and accepts only intended email", async ({
