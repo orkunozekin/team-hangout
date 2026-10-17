@@ -11,7 +11,8 @@ export type AttendanceRow = {
   previousStatus: AttendanceStatus | null;
   recordedBy: string | null;
   recordedAt: string | null;
-  source: "coach" | null;
+  source: "coach" | "guardian" | "self" | null;
+  method?: "simple" | "location" | null;
   correctionReason: string | null;
 };
 /** Phase 3 uses frozen eligibility at capturedRevision; missing/current-version attendance is unknown, never absent. */
@@ -38,7 +39,8 @@ export type AttendanceHistory = {
     previousStatus: AttendanceStatus;
     recordedBy: string;
     recordedAt: string;
-    source: "coach";
+    source: "coach" | "guardian" | "self";
+    method?: "simple" | "location" | null;
     reason: string | null;
     scheduleVersion: number;
   }[];

@@ -325,6 +325,11 @@ function AttendanceEntry({
         <Text style={styles.small}>
           Recorded by {item.recordedBy} ·{" "}
           {timestamp(item.recordedAt, data.timeZone)} · {item.source}
+          {item.method === "location"
+            ? " · Location assistance (spoofable, not presence proof)"
+            : item.method === "simple"
+              ? " · Simple attendance assertion"
+              : ""}
         </Text>
       ) : null}
       {item.correctionReason ? (
@@ -401,7 +406,12 @@ function AttendanceEntry({
               {h.reason ? ` · ${h.reason}` : ""}
               {"\n"}
               {h.recordedBy} · {timestamp(h.recordedAt, data.timeZone)} ·
-              Schedule {h.scheduleVersion}
+              Schedule {h.scheduleVersion} · {h.source}
+              {h.method === "location"
+                ? " · Location assistance (spoofable)"
+                : h.method === "simple"
+                  ? " · Simple assertion"
+                  : ""}
             </Text>
           ))}
           {history.nextCursor ? (

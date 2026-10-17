@@ -1,3 +1,4 @@
+import { isCheckInPermissionPending } from "../lib/checkInLocation";
 import CalendarSubscriptionsScreen from "./CalendarSubscriptionsScreen";
 import HouseholdAgenda from "../components/HouseholdAgenda";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -99,7 +100,11 @@ export default function HouseholdScreen({
     }, []),
   );
   useEffect(() => {
+    let permissionDialog = false;
     const sub = AppState.addEventListener("change", (state) => {
+      if (state === "inactive" && isCheckInPermissionPending()) { permissionDialog = true; return; }
+      if (state === "active" && permissionDialog) { permissionDialog = false; return; }
+      permissionDialog = false;
       householdGeneration.current++;
       setSelected(null);
       setItems(null);

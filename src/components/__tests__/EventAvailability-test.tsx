@@ -19,6 +19,10 @@ jest.mock("../../firebase/availability", () => ({
   setEventRsvpDeadline: jest.fn(),
   availabilityRequestId: jest.fn(() => "stable-id"),
 }));
+jest.mock("../../firebase/checkIn", () => ({ getParticipantCheckIn: jest.fn(), checkInParticipant: jest.fn(), setEventCheckInPolicy: jest.fn() }));
+jest.mock("../../firebase/attendance", () => ({ attendanceRequestId: jest.fn() }));
+jest.mock("expo-location", () => ({ requestForegroundPermissionsAsync: jest.fn(), getCurrentPositionAsync: jest.fn(), Accuracy: { High: 4 } }));
+jest.mock("../ParticipantCheckIn", () => () => null);
 const api = getEventAvailability as jest.Mock;
 const save = respondToEvent as jest.Mock;
 const item = {
@@ -35,6 +39,7 @@ const item = {
   actor: null,
 };
 const data = {
+  checkInPolicy: { beforeMinutes: 40, afterMinutes: 120, radiusMeters: 500, locationEnabled: true },
   eventId: "event",
   canManage: true,
   eventRevision: 4,
@@ -233,4 +238,19 @@ test("revoked management with remaining household access hides deadline controls
   await render(<EventAvailability eventId="event" canManage />);
   await screen.findByText("Jamie");
   expect(screen.queryByText("Close 1 hour before start")).toBeNull();
+});
+
+test("foreground permission dialog preserves the response/check-in subtree but true background still clears it", async () => {
+  const location = require("expo-location");
+  const { currentCheckInLocation } = require("../../lib/checkInLocation");
+  let finish: (value: unknown) => void = () => {};
+  jest.spyOn(location, "requestForegroundPermissionsAsync").mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  let change: (state: import("react-native").AppStateStatus) => void = () => {};
+  jest.spyOn(AppState, "addEventListener").mockImplementation((_type, cb) => { change = cb; return { remove: jest.fn() }; });
+  await render(<EventAvailability eventId="event" />); await screen.findByText("Jamie");
+  const pending = currentCheckInLocation().catch(() => undefined);
+  await act(async () => change("inactive")); expect(screen.getByText("Jamie")).toBeTruthy();
+  await act(async () => change("active")); expect(api).toHaveBeenCalledTimes(1);
+  await act(async () => finish({ status: "denied" })); await pending;
+  await act(async () => change("background")); expect(screen.queryByText("Jamie")).toBeNull();
 });

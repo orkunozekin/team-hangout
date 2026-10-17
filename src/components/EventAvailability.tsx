@@ -1,3 +1,4 @@
+import { isCheckInPermissionPending } from "../lib/checkInLocation";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -21,6 +22,8 @@ import {
 import { agendaTime } from "../lib/agendaTime";
 import { TextField, SecondaryButton } from "./ui";
 import { colors, type } from "../theme/theme";
+import ParticipantCheckIn from "./ParticipantCheckIn";
+import CheckInPolicyEditor from "./CheckInPolicyEditor";
 const label = {
   yes: "Yes",
   no: "No",
@@ -77,7 +80,11 @@ export default function EventAvailability({
     };
   }, [load, version]);
   useEffect(() => {
+    let permissionDialog = false;
     const sub = AppState.addEventListener("change", (state) => {
+      if (state === "inactive" && isCheckInPermissionPending()) { permissionDialog = true; return; }
+      if (state === "active" && permissionDialog) { permissionDialog = false; return; }
+      permissionDialog = false;
       generation.current++;
       setData(null);
       setError("");
@@ -172,6 +179,7 @@ export default function EventAvailability({
           ))}
           {canManage && data.canManage ? (
             <>
+              <CheckInPolicyEditor key={data.eventRevision} eventId={eventId} eventRevision={data.eventRevision} policy={data.checkInPolicy} onSaved={() => setVersion(n => n + 1)} />
               <Text style={styles.heading}>Response deadline</Text>
               <Text style={styles.small}>
                 Edits close at the deadline. Rescheduling resets the deadline to
@@ -296,6 +304,7 @@ function Response({
           ? "Responding for yourself"
           : "Acting as guardian"}
       </Text>
+      <ParticipantCheckIn eventId={eventId} participantId={item.participantId} displayName={item.displayName} />
       <Text style={styles.copy}>
         {label[item.status]}
         {item.actor ? ` · Last response: ${item.actor}` : ""}

@@ -10,6 +10,8 @@ import HouseholdAgenda from "../HouseholdAgenda";
 import { listHouseholdAgenda } from "../../firebase/agenda";
 jest.mock("../../firebase/availability", () => ({ getEventAvailability: jest.fn() }));
 jest.mock("../../firebase/agenda", () => ({ listHouseholdAgenda: jest.fn() }));
+jest.mock("../../firebase/checkIn", () => ({ getParticipantCheckIn: jest.fn(), checkInParticipant: jest.fn(), setEventCheckInPolicy: jest.fn() }));
+jest.mock("../../firebase/attendance", () => ({ attendanceRequestId: jest.fn() }));
 const api = listHouseholdAgenda as jest.Mock;
 const participants = [
   { orgId: "org", participantId: "a", displayName: "Jamie" },

@@ -195,3 +195,15 @@ test("successful calendar refresh reauthorizes participant discovery after an in
   expect(screen.queryByText("Jamie")).toBeNull();
   expect(screen.queryByLabelText("View Jamie, guardian access")).toBeNull();
 });
+
+test("the explicit location permission prompt preserves household state while a real background clears it", async () => {
+  const location = require("../../lib/checkInLocation");
+  const marker = jest.spyOn(location, "isCheckInPermissionPending").mockReturnValue(true);
+  let change: ((state: AppStateStatus) => void) | undefined;
+  jest.spyOn(AppState, "addEventListener").mockImplementation((_event, handler) => { change = handler; return { remove: jest.fn() }; });
+  await render(<HouseholdScreen user={user} onTeams={jest.fn()} />); await screen.findByText("Jamie");
+  const before = (httpsCallable as jest.Mock).mock.calls.length;
+  await act(async () => change?.("inactive")); expect(screen.getByText("Jamie")).toBeTruthy();
+  marker.mockReturnValue(false); await act(async () => change?.("active")); expect((httpsCallable as jest.Mock).mock.calls.length).toBe(before);
+  await act(async () => change?.("background")); expect(screen.queryByText("Jamie")).toBeNull(); marker.mockRestore();
+});

@@ -263,6 +263,7 @@ function attendance(row: Data | undefined, version: number) {
     recordedBy: row?.recordedBy ?? null,
     recordedAt: row?.updatedAt ?? null,
     source: row?.source ?? null,
+    method: row?.method ?? null,
     correctionReason: row?.correctionReason ?? null,
   };
 }
@@ -516,6 +517,7 @@ export const getAttendanceHistory = readCommand(
           recordedBy: r.recordedBy,
           recordedAt: r.updatedAt,
           source: r.source,
+          method: r.method ?? null,
           reason: r.correctionReason,
           scheduleVersion: r.scheduleVersion,
         };
