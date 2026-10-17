@@ -121,7 +121,7 @@ test('only org admin approves identities and grants; foreign references and forg
   await deny(guardian(foreign.id, 'house-parent1', 'approveGuardian', { expectedRevision: 1 }));
   await deny(call('house-owner', 'approveSelfLink', req({ orgId: a.orgId, participantId: foreign.id, userId: 'house-adult', expectedRevision: 1 })));
   await assert.rejects(call('house-owner', 'saveParticipant', req({ orgId: a.orgId, expectedRevision: 0, fields: { displayName: 'Bad', kind: 'youth', status: 'active', linkedUserId: 'house-outsider' } })), { code: 'functions/invalid-argument' });
-  await assert.rejects(guardian(p.id, 'house-parent1', 'approveGuardian', { permissions: { ...permissions, respond: true } }), { code: 'functions/invalid-argument' });
+  await assert.rejects(guardian(p.id, 'house-parent1', 'approveGuardian', { permissions: { ...permissions, viewSchedule: false, respond: true } }), { code: 'functions/invalid-argument' });
   await assert.rejects(guardian(p.id, 'house-parent1', 'approveGuardian', { permissions: { ...permissions, editProfile: true } }), { code: 'functions/invalid-argument' });
   await assert.rejects(call('house-owner', 'saveParticipantPrivateProfile', req({ orgId: a.orgId, participantId: p.id, expectedRevision: 0, fields: { birthDate: '2026-02-30' } })), { code: 'functions/invalid-argument' });
 });

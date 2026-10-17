@@ -63,11 +63,11 @@ function permissions(value: unknown) {
   for (const key of ["viewSchedule", "viewProfile", "editProfile", "respond"])
     if (typeof result[key] !== "boolean") invalid("Invalid permissions.");
   if (
-    result.respond ||
+    (result.respond && !result.viewSchedule) ||
     (result.editProfile && !result.viewProfile) ||
     (!result.viewProfile && !result.viewSchedule)
   )
-    invalid("Invalid Phase 1 permissions.");
+    invalid("Invalid guardian permissions.");
   return result;
 }
 function state(row: Data) {

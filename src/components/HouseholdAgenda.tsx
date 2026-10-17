@@ -1,3 +1,4 @@
+import EventAvailability from "./EventAvailability";
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -82,12 +83,14 @@ export default function HouseholdAgenda({
   const [items, setItems] = useState<AgendaEvent[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [responseEvent, setResponseEvent] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
   const generation = useRef(0);
   const request = useRef<AgendaRequest | null>(null);
   useEffect(() => {
     const token = ++generation.current;
     setPage(null);
+    setResponseEvent(null);
     setItems([]);
     setError("");
     setBusy(true);
@@ -152,6 +155,7 @@ export default function HouseholdAgenda({
   }, [refresh, version, day, zone, filters]);
   function fail(e: unknown) {
     setPage(null);
+    setResponseEvent(null);
     setItems([]);
     const code = (e as { code?: string }).code;
     const changed =
@@ -411,6 +415,8 @@ export default function HouseholdAgenda({
               .filter((v, i, all) => all.indexOf(v) === i)
               .join("\n")}
           </Text>
+          <Action label={responseEvent === event.id ? "Hide responses" : `Responses for ${event.title}`} onPress={() => setResponseEvent(value => value === event.id ? null : event.id)} />
+          {responseEvent === event.id ? <EventAvailability eventId={event.id} /> : null}
           <Text style={styles.copy}>
             {event.location?.name || "Location to be confirmed"}
             {event.location?.address ? `\n${event.location.address}` : ""}

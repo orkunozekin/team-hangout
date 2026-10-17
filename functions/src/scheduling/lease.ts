@@ -49,6 +49,7 @@ const names = new Set([
   "updateEvent",
   "softDeleteEvent",
   "mutateEventSchedule",
+  "setEventRsvpDeadline",
   "confirmEventMakeup",
   "saveFacility",
   "saveFacilityResource",
