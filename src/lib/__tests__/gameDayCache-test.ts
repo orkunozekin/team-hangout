@@ -199,6 +199,22 @@ test("retries interrupted account cleanup before exposing the next account", asy
   expect([...mockStorage.keys()].some((key) => key.includes("account/user-b/"))).toBe(false);
 });
 
+test("finishes an in-flight snapshot write before account cleanup removes it", async () => {
+  let releaseIndexRead: (value: string | null) => void = () => {};
+  (AsyncStorage.getItem as jest.Mock).mockImplementationOnce(
+    () => new Promise<string | null>((resolve) => { releaseIndexRead = resolve; }),
+  );
+  const saving = saveCachedAgenda("user-a", {
+    items: [agendaEvent], teams: [team], accessVersion: "access-4",
+    nextCursor: null, setupRequired: false,
+  }, now);
+  const clearing = clearGameDayCache("user-a");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  releaseIndexRead(null);
+  await Promise.all([saving, clearing]);
+  expect([...mockStorage.keys()].some((key) => key.includes("account/user-a/"))).toBe(false);
+});
+
 test("prunes revoked organizations and tolerates minimal safe rows", async () => {
   await saveCachedAgenda("user-a", {
     items: [agendaEvent],

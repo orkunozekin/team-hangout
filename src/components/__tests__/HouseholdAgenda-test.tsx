@@ -131,6 +131,15 @@ test("permission change while paging discards all cards and stale filters are re
     "No published events match this date window and these filters.",
   );
 });
+test("a stale denied agenda response still clears durable snapshots", async () => {
+  let rejectOld: (error: unknown) => void = () => {};
+  api.mockImplementationOnce(() => new Promise((_, reject) => { rejectOld = reject; }))
+    .mockRejectedValueOnce({ code: "functions/unavailable" });
+  const view = await render(<HouseholdAgenda refresh={0} userId="user-a" />);
+  await view.rerender(<HouseholdAgenda refresh={1} userId="user-a" />);
+  await act(async () => rejectOld({ code: "permission-denied" }));
+  await waitFor(() => expect(clearGameDayCache).toHaveBeenCalledWith("user-a"));
+});
 test("delayed earlier filter response cannot restore old cards; unavailable selections reset", async () => {
   await render(<HouseholdAgenda refresh={0} />);
   await screen.findByText("Sibling practice");

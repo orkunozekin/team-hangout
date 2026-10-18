@@ -181,7 +181,18 @@ export default function ScheduleScreen({
       setNextCursor(page.nextCursor); setLiveCanManage(page.canManage === true);
     } catch (error) {
       const denied = isGameDayCacheAccessLoss(error);
+      const invalidCursor = ['invalid-argument', 'functions/invalid-argument']
+        .includes((error as { code?: string }).code ?? '');
       if (denied && userId) await clearGameDayCache(userId).catch(() => undefined);
+      if (invalidCursor) {
+        if (userId) await clearGameDayCache(userId).catch(() => undefined);
+        if (token === generation.current) {
+          setCached(null); setEvents([]); setNextCursor(null); setLoading(true);
+          pendingPage.current = false;
+          await load();
+        }
+        return;
+      }
       if (token === generation.current) {
         setLiveCanManage(false);
         if (denied) {

@@ -161,9 +161,9 @@ export default function HouseholdAgenda({
         ) void saveCachedAgenda(userId, result).catch(() => undefined);
       })
       .catch(async (e) => {
-        if (generation.current !== token) return;
         const denied = isGameDayCacheAccessLoss(e);
         if (denied && userId) await clearGameDayCache(userId).catch(() => undefined);
+        if (generation.current !== token) return;
         const eligible = userId && day === dateInZone(new Date(), zone) &&
           JSON.stringify(filters) === JSON.stringify(emptyFilters);
         const copy = eligible ? await loadCachedAgenda(userId) : null;

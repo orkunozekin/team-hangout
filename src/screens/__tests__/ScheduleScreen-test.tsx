@@ -71,6 +71,20 @@ test('clears a live schedule when pagination discovers revocation', async () => 
   expect(clearGameDayCache).toHaveBeenCalledWith('user-a');
 });
 
+test('reloads page one when publication changes invalidate a schedule cursor', async () => {
+  (listTeamEventPage as jest.Mock)
+    .mockResolvedValueOnce({ items: [event('Before publication change')], nextCursor: 'old-cursor', canManage: false })
+    .mockRejectedValueOnce({ code: 'functions/invalid-argument' })
+    .mockResolvedValueOnce({ items: [event('After publication change')], nextCursor: null, canManage: false });
+  await render(<ScheduleScreen userId="user-a" teamId="a" teamSchemaVersion={2} membership={membership} navigation={navigation} />);
+  await screen.findByText('Before publication change');
+  await fireEvent.press(screen.getByText('Load more events'));
+  await screen.findByText('After publication change');
+  expect(screen.queryByText('Before publication change')).toBeNull();
+  expect(clearGameDayCache).toHaveBeenCalledWith('user-a');
+  expect(listTeamEventPage).toHaveBeenLastCalledWith('a', null, 'upcoming', 2);
+});
+
 test('renders one schedule page immediately and loads the next only on request', async () => {
   (listTeamEventPage as jest.Mock).mockResolvedValueOnce({ items: [event('First match')], nextCursor: 'first' })
     .mockResolvedValueOnce({ items: [event('Second match')], nextCursor: null });

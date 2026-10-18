@@ -9,6 +9,7 @@ const CLEANUP_KEY = `${ROOT}/pending-cleanup`;
 const TTL_MS = 24 * 60 * 60 * 1000;
 const PAST_MS = 7 * 24 * 60 * 60 * 1000;
 const FUTURE_MS = 30 * 24 * 60 * 60 * 1000;
+const accountOperations = new Map<string, Promise<void>>();
 
 type Envelope<T> = { schema: number; savedAt: string; value: T };
 export type CachedValue<T> = {
@@ -197,6 +198,16 @@ async function write<T>(key: string, value: T, now: Date) {
   await AsyncStorage.setItem(key, JSON.stringify(envelope));
 }
 
+function serializeAccountOperation<T>(uid: string, operation: () => Promise<T>) {
+  const previous = accountOperations.get(uid) ?? Promise.resolve();
+  const current = previous.catch(() => undefined).then(operation);
+  const settled = current.then(() => undefined, () => undefined);
+  accountOperations.set(uid, settled);
+  return current.finally(() => {
+    if (accountOperations.get(uid) === settled) accountOperations.delete(uid);
+  });
+}
+
 async function read<T>(key: string, now: Date): Promise<CachedValue<T> | null> {
   try {
     const raw = await AsyncStorage.getItem(key);
@@ -226,21 +237,23 @@ export function isGameDayCacheAccessLoss(error: unknown) {
   ].includes(code ?? "") || domainCode === "AGENDA_CHANGED";
 }
 
-export async function saveCachedAgenda(uid: string, page: AgendaPage, now = new Date()) {
-  const teams = page.teams.slice(0, 100).map(agendaTeam).filter(Boolean) as AgendaTeam[];
-  const items = page.items.slice(0, 100).map((item) => agendaEvent(item, now)).filter(Boolean) as AgendaEvent[];
-  const orgIds = [...new Set([...teams.map((team) => team.orgId), ...items.map((item) => item.orgId)])].sort();
-  const previous = await read<string[]>(agendaIndexKey(uid), now);
-  const removed = (previous?.value ?? []).filter((orgId) => !orgIds.includes(orgId));
-  if (removed.length) await AsyncStorage.multiRemove(removed.map((orgId) => agendaKey(uid, orgId)));
-  await Promise.all(orgIds.map((orgId) => write(agendaKey(uid, orgId), {
-    items: items.filter((item) => item.orgId === orgId),
-    teams: teams.filter((team) => team.orgId === orgId),
-    nextCursor: null,
-    setupRequired: page.setupRequired === true,
-    accessVersion: text(page.accessVersion, 500) ?? "cached",
-  } satisfies AgendaPage, now)));
-  await write(agendaIndexKey(uid), orgIds, now);
+export function saveCachedAgenda(uid: string, page: AgendaPage, now = new Date()) {
+  return serializeAccountOperation(uid, async () => {
+    const teams = page.teams.slice(0, 100).map(agendaTeam).filter(Boolean) as AgendaTeam[];
+    const items = page.items.slice(0, 100).map((item) => agendaEvent(item, now)).filter(Boolean) as AgendaEvent[];
+    const orgIds = [...new Set([...teams.map((team) => team.orgId), ...items.map((item) => item.orgId)])].sort();
+    const previous = await read<string[]>(agendaIndexKey(uid), now);
+    const removed = (previous?.value ?? []).filter((orgId) => !orgIds.includes(orgId));
+    if (removed.length) await AsyncStorage.multiRemove(removed.map((orgId) => agendaKey(uid, orgId)));
+    await Promise.all(orgIds.map((orgId) => write(agendaKey(uid, orgId), {
+      items: items.filter((item) => item.orgId === orgId),
+      teams: teams.filter((team) => team.orgId === orgId),
+      nextCursor: null,
+      setupRequired: page.setupRequired === true,
+      accessVersion: text(page.accessVersion, 500) ?? "cached",
+    } satisfies AgendaPage, now)));
+    await write(agendaIndexKey(uid), orgIds, now);
+  });
 }
 
 export async function loadCachedAgenda(uid: string, now = new Date()): Promise<CachedValue<AgendaPage> | null> {
@@ -271,15 +284,17 @@ export async function loadCachedAgenda(uid: string, now = new Date()): Promise<C
   };
 }
 
-export async function saveCachedTeamSchedule(
+export function saveCachedTeamSchedule(
   uid: string,
   teamId: string,
   view: "upcoming" | "past",
   page: TeamEventPage,
   now = new Date(),
 ) {
-  const items = page.items.slice(0, 100).map((item) => safeTeamEvent(item, now)).filter(Boolean) as TeamEvent[];
-  await write(scheduleKey(uid, teamId, view), { items, nextCursor: null, canManage: false } satisfies TeamEventPage, now);
+  return serializeAccountOperation(uid, async () => {
+    const items = page.items.slice(0, 100).map((item) => safeTeamEvent(item, now)).filter(Boolean) as TeamEvent[];
+    await write(scheduleKey(uid, teamId, view), { items, nextCursor: null, canManage: false } satisfies TeamEventPage, now);
+  });
 }
 
 export async function loadCachedTeamSchedule(
@@ -300,14 +315,16 @@ export async function loadCachedTeamSchedule(
   };
 }
 
-export async function saveCachedEvent(
+export function saveCachedEvent(
   uid: string,
   scopeId: string,
   event: TeamEvent,
   now = new Date(),
 ) {
-  const safe = safeTeamEvent(event, now);
-  if (safe) await write(eventKey(uid, scopeId, event.id), safe, now);
+  return serializeAccountOperation(uid, async () => {
+    const safe = safeTeamEvent(event, now);
+    if (safe) await write(eventKey(uid, scopeId, event.id), safe, now);
+  });
 }
 
 export async function loadCachedEvent(
@@ -322,12 +339,14 @@ export async function loadCachedEvent(
   return safe ? { ...cached, value: safe } : null;
 }
 
-export async function clearGameDayCache(uid: string) {
-  await AsyncStorage.setItem(CLEANUP_KEY, uid);
-  const prefix = accountRoot(uid);
-  const keys = (await AsyncStorage.getAllKeys()).filter((key) => key.startsWith(prefix));
-  if (keys.length) await AsyncStorage.multiRemove(keys);
-  await AsyncStorage.removeItem(CLEANUP_KEY);
+export function clearGameDayCache(uid: string) {
+  return serializeAccountOperation(uid, async () => {
+    await AsyncStorage.setItem(CLEANUP_KEY, uid);
+    const prefix = accountRoot(uid);
+    const keys = (await AsyncStorage.getAllKeys()).filter((key) => key.startsWith(prefix));
+    if (keys.length) await AsyncStorage.multiRemove(keys);
+    await AsyncStorage.removeItem(CLEANUP_KEY);
+  });
 }
 
 export async function reconcileGameDayCacheAccount(
