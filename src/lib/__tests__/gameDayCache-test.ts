@@ -305,4 +305,3 @@ test("rejects malformed envelopes and invalid cached event shapes", async () => 
   expect(await loadCachedEvent("user-a", "team-a", "event-a", now)).toBeNull();
   await saveCachedEvent("user-a", "team-a", { ...event, startsAt: "2027-01-01T00:00:00.000Z" }, now);
 });
-

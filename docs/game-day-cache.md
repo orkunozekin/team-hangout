@@ -29,4 +29,3 @@ P2.12 adds no offline mutation queue. Existing availability, check-in and attend
 Automated coverage includes forced-restart restoration, the 7/30-day bounds, schema/account/scope isolation, private-field stripping, stale age, malformed cache rejection, revoked-organization pruning, sign-out/deletion cleanup, cached read-only rendering, foreground refresh wiring and stable request-ID behavior for uncertain writes.
 
 No production data, deployment or live flag change is part of P2.12. Native simulator evidence proves the stale/read-only presentation only. Physical-device storage behavior and Android remain rollout checks.
-
