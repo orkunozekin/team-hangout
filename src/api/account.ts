@@ -7,8 +7,10 @@ import {
 } from '../firebase/config';
 
 import {
+  getCurrentUser,
   logout,
 } from './auth';
+import { clearGameDayCache } from '../lib/gameDayCache';
 
 type DeleteAccountResult = {
   ok: true;
@@ -20,6 +22,8 @@ type DeleteAccountResult = {
  * Requires the Function to be deployed (`firebase deploy --only functions`).
  */
 export async function deleteAccount(): Promise<DeleteAccountResult> {
+  const uid = getCurrentUser()?.uid;
+  if (uid) await clearGameDayCache(uid);
   const callable = httpsCallable<unknown, DeleteAccountResult>(
     functions,
     'deleteAccount',

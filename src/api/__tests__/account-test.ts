@@ -5,9 +5,15 @@ jest.mock('firebase/functions', () => ({
 }));
 
 const mockLogout = jest.fn();
+const mockGetCurrentUser = jest.fn();
+const mockClearGameDayCache = jest.fn();
 
 jest.mock('../auth', () => ({
   logout: (...args: unknown[]) => mockLogout(...args),
+  getCurrentUser: () => mockGetCurrentUser(),
+}));
+jest.mock('../../lib/gameDayCache', () => ({
+  clearGameDayCache: (...args: unknown[]) => mockClearGameDayCache(...args),
 }));
 
 import {
@@ -27,6 +33,8 @@ describe('api/account', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (httpsCallable as jest.Mock).mockReturnValue(mockCallable);
+    mockGetCurrentUser.mockReturnValue({ uid: 'deleting-user' });
+    mockClearGameDayCache.mockResolvedValue(undefined);
   });
 
   it('calls deleteAccount and logs out', async () => {
@@ -42,6 +50,7 @@ describe('api/account', () => {
       'deleteAccount',
     );
     expect(mockCallable).toHaveBeenCalled();
+    expect(mockClearGameDayCache).toHaveBeenCalledWith('deleting-user');
     expect(mockLogout).toHaveBeenCalled();
     expect(result).toEqual({ ok: true, membershipsRemoved: 2 });
   });

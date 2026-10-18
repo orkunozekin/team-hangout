@@ -90,6 +90,7 @@ import {
   colors,
   fonts,
 } from './src/theme/theme';
+import { reconcileGameDayCacheAccount } from './src/lib/gameDayCache';
 
 export type AuthStackParamList = {
   Login: undefined;
@@ -248,6 +249,7 @@ function MainTabs({
       <Tab.Screen name="Schedule">
         {({ navigation }) => (
           <ScheduleScreen
+            userId={user.uid}
             teamId={team.id}
             teamName={team.name}
             teamSchemaVersion={team.schemaVersion ?? 1}
@@ -326,6 +328,8 @@ function AppNavigator({
       >
         {({ navigation, route }) => (
           <EventDetailScreen
+            userId={user.uid}
+            cacheScope={team.id}
             membership={membership}
             appRole={appRole}
             navigation={navigation}
@@ -373,21 +377,31 @@ export default function App() {
   const [teamVersion, setTeamVersion] = useState(0);
 
   useEffect(() => {
+    let active = true;
+    let transition = Promise.resolve();
     const unsubscribe = subscribeToAuthChanges((nextUser) => {
-      if (previousUid.current && previousUid.current !== nextUser?.uid) setPendingInvitation(null);
-      previousUid.current = nextUser?.uid ?? null;
-      setUser(nextUser);
-      setAuthReady(true);
-      if (!nextUser) {
-        setTeam(null);
-        setMembership(null);
-        setAppRole('user');
-        setTeamReady(true);
-      } else {
-        setTeamReady(false);
-      }
+      const nextUid = nextUser?.uid ?? null;
+      setAuthReady(false);
+      transition = transition.catch(() => undefined).then(async () => {
+        await reconcileGameDayCacheAccount(previousUid.current, nextUid);
+        if (!active) return;
+        if (previousUid.current && previousUid.current !== nextUid) setPendingInvitation(null);
+        previousUid.current = nextUid;
+        setUser(nextUser);
+        setAuthReady(true);
+        if (!nextUser) {
+          setTeam(null);
+          setMembership(null);
+          setAppRole('user');
+          setTeamReady(true);
+        } else {
+          setTeamReady(false);
+        }
+      }).catch(() => {
+        if (active) setAuthReady(false);
+      });
     });
-    return unsubscribe;
+    return () => { active = false; unsubscribe(); };
   }, []);
 
   useEffect(() => {

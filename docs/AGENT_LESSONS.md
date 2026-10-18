@@ -9,6 +9,13 @@
 
 ## Lessons
 
+### 2026-10-17 — Keep cached identity and authorization loss atomic
+
+- **Source:** PR #36 · GitHub Codex review
+- **Gap:** A refresh removed the cached/read-only marker before live authorization succeeded, bare Firestore denials and pagination denials could restore or retain revoked snapshots, and an account transition did not await durable cleanup.
+- **Going forward:** Keep cached views visibly read-only until an authorized live response succeeds. Classify callable and direct-database denials consistently on every page, including stale responses and pagination, clear rendered and durable data together on revocation, serialize pending snapshot writes before cleanup, and journal cleanup before exposing another identity. Treat version-invalidated cursors as a page-one reconciliation boundary rather than a recoverable load-more error.
+- **Pointers:** `src/lib/gameDayCache.ts`, `src/screens/ScheduleScreen.tsx`, `src/screens/EventDetailScreen.tsx`, `src/components/HouseholdAgenda.tsx`, `App.tsx`.
+
 ### 2026-10-10: Trace publication visibility through every state
 
 - **Source:** PR #4, Greptile review.

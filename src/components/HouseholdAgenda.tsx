@@ -21,6 +21,14 @@ import {
 } from "../lib/agendaTime";
 import { FieldLabel, TextField } from "./ui";
 import { colors, type } from "../theme/theme";
+import OfflineNotice from "./OfflineNotice";
+import {
+  clearGameDayCache,
+  isGameDayCacheAccessLoss,
+  loadCachedAgenda,
+  saveCachedAgenda,
+  type CachedValue,
+} from "../lib/gameDayCache";
 
 function Action({
   label,
@@ -63,10 +71,12 @@ export default function HouseholdAgenda({
   refresh,
   onAccessDenied,
   onAccessRefreshed,
+  userId,
 }: {
   refresh: number;
   onAccessDenied?: () => void;
   onAccessRefreshed?: () => void;
+  userId?: string;
 }) {
   const deniedCallback = useRef(onAccessDenied);
   deniedCallback.current = onAccessDenied;
@@ -85,6 +95,7 @@ export default function HouseholdAgenda({
   const [error, setError] = useState("");
   const [responseEvent, setResponseEvent] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
+  const [cached, setCached] = useState<CachedValue<AgendaPage> | null>(null);
   const generation = useRef(0);
   const request = useRef<AgendaRequest | null>(null);
   useEffect(() => {
@@ -93,6 +104,7 @@ export default function HouseholdAgenda({
     setResponseEvent(null);
     setItems([]);
     setError("");
+    setCached(null);
     setBusy(true);
     const [participantOrg, participantId] = filters.participant.split("/");
     const [seasonOrg, seasonId] = filters.season.split("/");
@@ -142,9 +154,28 @@ export default function HouseholdAgenda({
         }
         setPage(result);
         setItems(result.items);
+        if (
+          userId &&
+          day === dateInZone(new Date(), zone) &&
+          JSON.stringify(filters) === JSON.stringify(emptyFilters)
+        ) void saveCachedAgenda(userId, result).catch(() => undefined);
       })
-      .catch((e) => {
-        if (generation.current === token) fail(e);
+      .catch(async (e) => {
+        const denied = isGameDayCacheAccessLoss(e);
+        if (denied && userId) await clearGameDayCache(userId).catch(() => undefined);
+        if (generation.current !== token) return;
+        const eligible = userId && day === dateInZone(new Date(), zone) &&
+          JSON.stringify(filters) === JSON.stringify(emptyFilters);
+        const copy = eligible ? await loadCachedAgenda(userId) : null;
+        if (generation.current !== token) return;
+        if (copy && !denied) {
+          setCached(copy);
+          setPage(copy.value);
+          setItems(copy.value.items);
+          setError("");
+          return;
+        }
+        fail(e);
       })
       .finally(() => {
         if (generation.current === token) setBusy(false);
@@ -152,25 +183,16 @@ export default function HouseholdAgenda({
     return () => {
       generation.current++;
     };
-  }, [refresh, version, day, zone, filters]);
+  }, [refresh, version, day, zone, filters, userId]);
   function fail(e: unknown) {
     setPage(null);
     setResponseEvent(null);
     setItems([]);
-    const code = (e as { code?: string }).code;
-    const changed =
-      (e as { details?: { domainCode?: string } }).details?.domainCode ===
-      "AGENDA_CHANGED";
-    if (
-      changed ||
-      code === "functions/permission-denied" ||
-      code === "functions/unauthenticated"
-    )
+    const denied = isGameDayCacheAccessLoss(e);
+    if (denied)
       deniedCallback.current?.();
     setError(
-      changed ||
-        code === "functions/permission-denied" ||
-        code === "functions/unauthenticated"
+      denied
         ? "Permission removed or agenda access changed. Reload to see your current household."
         : "Unable to load your agenda. Check your connection and try again.",
     );
@@ -187,6 +209,7 @@ export default function HouseholdAgenda({
       });
       if (token !== generation.current) return;
       if (result.accessVersion !== page.accessVersion) {
+        if (userId) await clearGameDayCache(userId).catch(() => undefined);
         fail({ details: { domainCode: "AGENDA_CHANGED" } });
         return;
       }
@@ -197,6 +220,9 @@ export default function HouseholdAgenda({
       ]);
       setPage(result);
     } catch (e) {
+      if (isGameDayCacheAccessLoss(e) && userId) {
+        await clearGameDayCache(userId).catch(() => undefined);
+      }
       if (token === generation.current) fail(e);
     } finally {
       if (token === generation.current) setBusy(false);
@@ -375,6 +401,7 @@ export default function HouseholdAgenda({
           {error}
         </Text>
       ) : null}
+      {cached ? <OfflineNotice savedAt={cached.savedAt} olderThanTtl={cached.olderThanTtl} /> : null}
       {busy ? (
         <ActivityIndicator accessibilityLabel="Loading household agenda" />
       ) : null}
@@ -415,8 +442,14 @@ export default function HouseholdAgenda({
               .filter((v, i, all) => all.indexOf(v) === i)
               .join("\n")}
           </Text>
-          <Action label={responseEvent === event.id ? "Hide responses" : `Responses for ${event.title}`} onPress={() => setResponseEvent(value => value === event.id ? null : event.id)} />
-          {responseEvent === event.id ? <EventAvailability eventId={event.id} /> : null}
+          {cached ? (
+            <Text style={styles.small}>Responses and check-in require a connection. No offline changes are queued.</Text>
+          ) : (
+            <>
+              <Action label={responseEvent === event.id ? "Hide responses" : `Responses for ${event.title}`} onPress={() => setResponseEvent(value => value === event.id ? null : event.id)} />
+              {responseEvent === event.id ? <EventAvailability eventId={event.id} /> : null}
+            </>
+          )}
           <Text style={styles.copy}>
             {event.location?.name || "Location to be confirmed"}
             {event.location?.address ? `\n${event.location.address}` : ""}

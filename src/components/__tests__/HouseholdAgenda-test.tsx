@@ -8,10 +8,18 @@ import {
 } from "@testing-library/react-native";
 import HouseholdAgenda from "../HouseholdAgenda";
 import { listHouseholdAgenda } from "../../firebase/agenda";
+import { clearGameDayCache, loadCachedAgenda, saveCachedAgenda } from "../../lib/gameDayCache";
 jest.mock("../../firebase/availability", () => ({ getEventAvailability: jest.fn() }));
 jest.mock("../../firebase/agenda", () => ({ listHouseholdAgenda: jest.fn() }));
 jest.mock("../../firebase/checkIn", () => ({ getParticipantCheckIn: jest.fn(), checkInParticipant: jest.fn(), setEventCheckInPolicy: jest.fn() }));
 jest.mock("../../firebase/attendance", () => ({ attendanceRequestId: jest.fn() }));
+jest.mock("../../lib/gameDayCache", () => ({
+  loadCachedAgenda: jest.fn(),
+  saveCachedAgenda: jest.fn(),
+  clearGameDayCache: jest.fn(),
+  isGameDayCacheAccessLoss: (error: { code?: string; details?: { domainCode?: string } }) =>
+    ["permission-denied", "functions/permission-denied", "unauthenticated", "functions/unauthenticated"].includes(error?.code ?? "") || error?.details?.domainCode === "AGENDA_CHANGED",
+}));
 const api = listHouseholdAgenda as jest.Mock;
 const participants = [
   { orgId: "org", participantId: "a", displayName: "Jamie" },
@@ -49,6 +57,24 @@ const page = {
 beforeEach(() => {
   jest.clearAllMocks();
   api.mockResolvedValue(page);
+  (loadCachedAgenda as jest.Mock).mockResolvedValue(null);
+  (saveCachedAgenda as jest.Mock).mockResolvedValue(undefined);
+  (clearGameDayCache as jest.Mock).mockResolvedValue(undefined);
+});
+
+test("shows a visibly stale read-only agenda after an offline restart", async () => {
+  api.mockRejectedValueOnce({ code: "functions/unavailable" });
+  (loadCachedAgenda as jest.Mock).mockResolvedValue({
+    value: page,
+    savedAt: "2026-10-16T18:00:00.000Z",
+    olderThanTtl: true,
+  });
+  await render(<HouseholdAgenda refresh={0} userId="user-a" />);
+  await screen.findByText("Sibling practice");
+  expect(screen.getByRole("alert").props.children.join("")).toMatch(/Offline copy/);
+  expect(screen.getByText(/more than 24 hours old/i)).toBeTruthy();
+  expect(screen.queryByText("Responses for Sibling practice")).toBeNull();
+  expect(screen.getByText(/Responses and check-in require a connection/)).toBeTruthy();
 });
 test("deduplicated sibling card, filters and timezone are sent to server", async () => {
   await render(<HouseholdAgenda refresh={0} />);
@@ -86,7 +112,7 @@ test("deduplicated sibling card, filters and timezone are sent to server", async
 test("permission change while paging discards all cards and stale filters are removed on reload", async () => {
   api.mockResolvedValueOnce({ ...page, nextCursor: "cursor" });
   const denied = jest.fn();
-  await render(<HouseholdAgenda refresh={0} onAccessDenied={denied} />);
+  await render(<HouseholdAgenda refresh={0} userId="user-a" onAccessDenied={denied} />);
   await screen.findByText("Sibling practice");
   api.mockRejectedValueOnce({
     code: "functions/failed-precondition",
@@ -98,11 +124,21 @@ test("permission change while paging discards all cards and stale filters are re
   );
   expect(screen.queryByText("Sibling practice")).toBeNull();
   expect(denied).toHaveBeenCalledTimes(1);
+  expect(clearGameDayCache).toHaveBeenCalledWith("user-a");
   api.mockResolvedValue({ ...page, teams: [], items: [] });
   await fireEvent.press(screen.getByText("Reload calendar"));
   await screen.findByText(
     "No published events match this date window and these filters.",
   );
+});
+test("a stale denied agenda response still clears durable snapshots", async () => {
+  let rejectOld: (error: unknown) => void = () => {};
+  api.mockImplementationOnce(() => new Promise((_, reject) => { rejectOld = reject; }))
+    .mockRejectedValueOnce({ code: "functions/unavailable" });
+  const view = await render(<HouseholdAgenda refresh={0} userId="user-a" />);
+  await view.rerender(<HouseholdAgenda refresh={1} userId="user-a" />);
+  await act(async () => rejectOld({ code: "permission-denied" }));
+  await waitFor(() => expect(clearGameDayCache).toHaveBeenCalledWith("user-a"));
 });
 test("delayed earlier filter response cannot restore old cards; unavailable selections reset", async () => {
   await render(<HouseholdAgenda refresh={0} />);

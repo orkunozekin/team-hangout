@@ -1,10 +1,12 @@
 import React, {
   useCallback,
+  useEffect,
   useState,
   useRef,
 } from 'react';
 
 import {
+  AppState,
   FlatList,
   Pressable,
   RefreshControl,
@@ -23,6 +25,7 @@ import {
 
 import {
   listTeamEventPage,
+  type TeamEventPage,
 } from '../firebase/events';
 
 import {
@@ -61,6 +64,14 @@ import {
   spacing,
   type,
 } from '../theme/theme';
+import OfflineNotice from '../components/OfflineNotice';
+import {
+  clearGameDayCache,
+  isGameDayCacheAccessLoss,
+  loadCachedTeamSchedule,
+  saveCachedTeamSchedule,
+  type CachedValue,
+} from '../lib/gameDayCache';
 
 type RootStackParamList = {
   MainTabs: undefined;
@@ -69,6 +80,7 @@ type RootStackParamList = {
 };
 
 type Props = {
+  userId?: string;
   teamId: string;
   teamName?: string;
   teamSchemaVersion?: number;
@@ -84,6 +96,7 @@ const FILTERS: { key: EventTypeFilter; label: string }[] = [
 ];
 
 export default function ScheduleScreen({
+  userId,
   teamId,
   teamName,
   teamSchemaVersion,
@@ -101,6 +114,7 @@ export default function ScheduleScreen({
   const [error, setError] = useState('');
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [cached, setCached] = useState<CachedValue<TeamEventPage> | null>(null);
   const pendingPage = useRef(false);
 
   const load = useCallback(async () => {
@@ -110,16 +124,30 @@ export default function ScheduleScreen({
     try {
       const page = await listTeamEventPage(teamId, null, view, teamSchemaVersion);
       if (token === generation.current) {
+        setCached(null);
         setEvents(page.items); setNextCursor(page.nextCursor); setLiveCanManage(page.canManage === true);
+        if (userId) void saveCachedTeamSchedule(userId, teamId, view, page).catch(() => undefined);
       }
     } catch (error) {
-      if (token === generation.current) setError(error instanceof Error ? error.message : 'Schedule unavailable.');
+      const denied = isGameDayCacheAccessLoss(error);
+      if (denied && userId) await clearGameDayCache(userId).catch(() => undefined);
+      const copy = userId && !denied ? await loadCachedTeamSchedule(userId, teamId, view) : null;
+      if (token === generation.current && copy) {
+        setCached(copy);
+        setEvents(copy.value.items);
+        setNextCursor(null);
+      } else if (token === generation.current) {
+        if (denied) {
+          setCached(null); setEvents([]); setNextCursor(null);
+          setError('Permission removed. Reload to see your current schedule.');
+        } else setError(error instanceof Error ? error.message : 'Schedule unavailable.');
+      }
     } finally {
       if (token === generation.current) {
         pendingPage.current = false; setLoading(false); setRefreshing(false);
       }
     }
-  }, [teamId, view, teamSchemaVersion]);
+  }, [teamId, view, teamSchemaVersion, userId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -128,6 +156,13 @@ export default function ScheduleScreen({
       return () => { generation.current++; pendingPage.current = false; };
     }, [load]),
   );
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') { setLoading(true); void load(); }
+    });
+    return () => sub?.remove();
+  }, [load]);
 
   async function onRefresh() {
     setRefreshing(true);
@@ -145,14 +180,33 @@ export default function ScheduleScreen({
       setEvents(previous => [...new Map([...previous, ...page.items].map(item => [item.id, item])).values()]);
       setNextCursor(page.nextCursor); setLiveCanManage(page.canManage === true);
     } catch (error) {
-      if (token === generation.current) { setLiveCanManage(false); setError(error instanceof Error ? error.message : 'More events are unavailable. Please try again.'); }
+      const denied = isGameDayCacheAccessLoss(error);
+      const invalidCursor = ['invalid-argument', 'functions/invalid-argument']
+        .includes((error as { code?: string }).code ?? '');
+      if (denied && userId) await clearGameDayCache(userId).catch(() => undefined);
+      if (invalidCursor) {
+        if (userId) await clearGameDayCache(userId).catch(() => undefined);
+        if (token === generation.current) {
+          setCached(null); setEvents([]); setNextCursor(null); setLoading(true);
+          pendingPage.current = false;
+          await load();
+        }
+        return;
+      }
+      if (token === generation.current) {
+        setLiveCanManage(false);
+        if (denied) {
+          setCached(null); setEvents([]); setNextCursor(null);
+          setError('Permission removed. Reload to see your current schedule.');
+        } else setError(error instanceof Error ? error.message : 'More events are unavailable. Please try again.');
+      }
     } finally {
       if (token === generation.current) { pendingPage.current = false; setLoadingMore(false); }
     }
   }
 
   const visible = applyScheduleView(events, filter, view === 'past' ? 'desc' : 'asc');
-  const canManage = teamSchemaVersion === 2 ? liveCanManage : canManageTeam({ membership, appRole });
+  const canManage = !cached && (teamSchemaVersion === 2 ? liveCanManage : canManageTeam({ membership, appRole }));
 
   return (
     <Screen style={{ paddingHorizontal: 0 }}>
@@ -200,6 +254,7 @@ export default function ScheduleScreen({
       </View>
 
       {nextCursor ? <Text style={styles.meta}>More events are available. Load more to include them in this view.</Text> : null}
+      {cached ? <View style={styles.cacheNotice}><OfflineNotice savedAt={cached.savedAt} olderThanTtl={cached.olderThanTtl} /></View> : null}
 
       <FlatList
         data={visible}
@@ -265,6 +320,7 @@ export default function ScheduleScreen({
 }
 
 const styles = StyleSheet.create({
+  cacheNotice: { paddingHorizontal: spacing.lg },
   header: {
     paddingHorizontal: spacing.lg,
   },
