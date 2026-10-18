@@ -6,6 +6,12 @@ Phase 1 is **not pilot-ready**. This runbook prepares a reviewable release decis
 
 Owner authorized isolated `team-hangout-staging` deployment and small synthetic fixtures on 2026-10-13, targeting $10 with a few dollars of overage acceptable. See the [deployment record](phase-1-staging-deployment.md) for artifact/release/index inventories, actual HTTPS/browser smoke results, bounded resource settings, retained failed attempts and cost-reporting limits. This authorization excludes production, real migration, live email and pilot enrollment. The 5,000-row/capacity workloads remain on hold for cost review. Infrastructure/smoke evidence is not acceptance of the remaining release gates.
 
+## Staging acceptance preparation
+
+The [staging deployment and acceptance package](phase-1-staging-acceptance.md) provides the capacity, real accessibility/calendar and separately reviewed webhook/migration protocols. Copy [one acceptance record](phase-1-acceptance-record.md) per gate/session. Its original 2026-10-13 PR #22 source inventory is historical preparation evidence; the approved staging installation above supersedes its initial pending-infrastructure status. Remaining external actions and release acceptance require their own recorded approval and results.
+
+Step 15 PR #22 merged as `11aa852a1fe70c272bdddf04d0f8856989684bd3`. This closes local implementation/review, not external release acceptance.
+
 ## Evidence and repeatable local rehearsal
 
 Use Node 22 and Java 21+ for CI parity. Local measurements used Node 26.3.0, Java 26, macOS 25.5.0 arm64, Apple M5 Pro with 18 cores and 24 GiB RAM. The Firebase project is the isolated `demo-team-hangout`; every service uses loopback. No region was measured. Backend default region `us-central1` is a configuration, not staging evidence.
