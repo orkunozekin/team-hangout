@@ -24,6 +24,7 @@ import { colors, type } from "../theme/theme";
 import OfflineNotice from "./OfflineNotice";
 import {
   clearGameDayCache,
+  isGameDayCacheAccessLoss,
   loadCachedAgenda,
   saveCachedAgenda,
   type CachedValue,
@@ -161,9 +162,7 @@ export default function HouseholdAgenda({
       })
       .catch(async (e) => {
         if (generation.current !== token) return;
-        const code = (e as { code?: string }).code;
-        const denied = ["functions/permission-denied", "functions/unauthenticated"].includes(code ?? "") ||
-          (e as { details?: { domainCode?: string } }).details?.domainCode === "AGENDA_CHANGED";
+        const denied = isGameDayCacheAccessLoss(e);
         if (denied && userId) await clearGameDayCache(userId).catch(() => undefined);
         const eligible = userId && day === dateInZone(new Date(), zone) &&
           JSON.stringify(filters) === JSON.stringify(emptyFilters);
@@ -189,20 +188,11 @@ export default function HouseholdAgenda({
     setPage(null);
     setResponseEvent(null);
     setItems([]);
-    const code = (e as { code?: string }).code;
-    const changed =
-      (e as { details?: { domainCode?: string } }).details?.domainCode ===
-      "AGENDA_CHANGED";
-    if (
-      changed ||
-      code === "functions/permission-denied" ||
-      code === "functions/unauthenticated"
-    )
+    const denied = isGameDayCacheAccessLoss(e);
+    if (denied)
       deniedCallback.current?.();
     setError(
-      changed ||
-        code === "functions/permission-denied" ||
-        code === "functions/unauthenticated"
+      denied
         ? "Permission removed or agenda access changed. Reload to see your current household."
         : "Unable to load your agenda. Check your connection and try again.",
     );
@@ -219,6 +209,7 @@ export default function HouseholdAgenda({
       });
       if (token !== generation.current) return;
       if (result.accessVersion !== page.accessVersion) {
+        if (userId) await clearGameDayCache(userId).catch(() => undefined);
         fail({ details: { domainCode: "AGENDA_CHANGED" } });
         return;
       }
@@ -229,6 +220,9 @@ export default function HouseholdAgenda({
       ]);
       setPage(result);
     } catch (e) {
+      if (isGameDayCacheAccessLoss(e) && userId) {
+        await clearGameDayCache(userId).catch(() => undefined);
+      }
       if (token === generation.current) fail(e);
     } finally {
       if (token === generation.current) setBusy(false);

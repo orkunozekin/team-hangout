@@ -8,7 +8,7 @@ import {
 } from "@testing-library/react-native";
 import HouseholdAgenda from "../HouseholdAgenda";
 import { listHouseholdAgenda } from "../../firebase/agenda";
-import { loadCachedAgenda, saveCachedAgenda } from "../../lib/gameDayCache";
+import { clearGameDayCache, loadCachedAgenda, saveCachedAgenda } from "../../lib/gameDayCache";
 jest.mock("../../firebase/availability", () => ({ getEventAvailability: jest.fn() }));
 jest.mock("../../firebase/agenda", () => ({ listHouseholdAgenda: jest.fn() }));
 jest.mock("../../firebase/checkIn", () => ({ getParticipantCheckIn: jest.fn(), checkInParticipant: jest.fn(), setEventCheckInPolicy: jest.fn() }));
@@ -17,6 +17,8 @@ jest.mock("../../lib/gameDayCache", () => ({
   loadCachedAgenda: jest.fn(),
   saveCachedAgenda: jest.fn(),
   clearGameDayCache: jest.fn(),
+  isGameDayCacheAccessLoss: (error: { code?: string; details?: { domainCode?: string } }) =>
+    ["permission-denied", "functions/permission-denied", "unauthenticated", "functions/unauthenticated"].includes(error?.code ?? "") || error?.details?.domainCode === "AGENDA_CHANGED",
 }));
 const api = listHouseholdAgenda as jest.Mock;
 const participants = [
@@ -57,6 +59,7 @@ beforeEach(() => {
   api.mockResolvedValue(page);
   (loadCachedAgenda as jest.Mock).mockResolvedValue(null);
   (saveCachedAgenda as jest.Mock).mockResolvedValue(undefined);
+  (clearGameDayCache as jest.Mock).mockResolvedValue(undefined);
 });
 
 test("shows a visibly stale read-only agenda after an offline restart", async () => {
@@ -109,7 +112,7 @@ test("deduplicated sibling card, filters and timezone are sent to server", async
 test("permission change while paging discards all cards and stale filters are removed on reload", async () => {
   api.mockResolvedValueOnce({ ...page, nextCursor: "cursor" });
   const denied = jest.fn();
-  await render(<HouseholdAgenda refresh={0} onAccessDenied={denied} />);
+  await render(<HouseholdAgenda refresh={0} userId="user-a" onAccessDenied={denied} />);
   await screen.findByText("Sibling practice");
   api.mockRejectedValueOnce({
     code: "functions/failed-precondition",
@@ -121,6 +124,7 @@ test("permission change while paging discards all cards and stale filters are re
   );
   expect(screen.queryByText("Sibling practice")).toBeNull();
   expect(denied).toHaveBeenCalledTimes(1);
+  expect(clearGameDayCache).toHaveBeenCalledWith("user-a");
   api.mockResolvedValue({ ...page, teams: [], items: [] });
   await fireEvent.press(screen.getByText("Reload calendar"));
   await screen.findByText(

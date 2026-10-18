@@ -14,11 +14,14 @@ jest.mock("@react-native-async-storage/async-storage", () => ({
   }),
 }));
 
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
 import {
   clearGameDayCache,
   loadCachedAgenda,
   loadCachedEvent,
   loadCachedTeamSchedule,
+  reconcileGameDayCacheAccount,
   saveCachedAgenda,
   saveCachedEvent,
   saveCachedTeamSchedule,
@@ -180,6 +183,20 @@ test("marks old copies stale and clears every schema key before account exit", a
   expect(await loadCachedEvent("user-a", "team-a", "event-a", now)).toBeNull();
   expect([...mockStorage.keys()].some((key) => key.includes("account/user-a/"))).toBe(false);
   expect(await loadCachedEvent("user-b", "team-a", "event-a", now)).not.toBeNull();
+});
+
+test("retries interrupted account cleanup before exposing the next account", async () => {
+  await saveCachedEvent("user-a", "team-a", event, now);
+  (AsyncStorage.multiRemove as jest.Mock).mockRejectedValueOnce(new Error("Storage busy"));
+  await expect(clearGameDayCache("user-a")).rejects.toThrow("Storage busy");
+  expect(mockStorage.get("@team-hangout/game-day/pending-cleanup")).toBe("user-a");
+  await reconcileGameDayCacheAccount(null, "user-b");
+  expect([...mockStorage.keys()].some((key) => key.includes("account/user-a/"))).toBe(false);
+  expect(mockStorage.has("@team-hangout/game-day/pending-cleanup")).toBe(false);
+
+  await saveCachedEvent("user-b", "team-a", event, now);
+  await reconcileGameDayCacheAccount("user-b", "user-c");
+  expect([...mockStorage.keys()].some((key) => key.includes("account/user-b/"))).toBe(false);
 });
 
 test("prunes revoked organizations and tolerates minimal safe rows", async () => {

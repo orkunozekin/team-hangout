@@ -1,10 +1,17 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react-native';
+import { AppState } from 'react-native';
 import ScheduleScreen from '../ScheduleScreen';
 import { listTeamEventPage } from '../../firebase/events';
-import { loadCachedTeamSchedule, saveCachedTeamSchedule } from '../../lib/gameDayCache';
+import { clearGameDayCache, loadCachedTeamSchedule, saveCachedTeamSchedule } from '../../lib/gameDayCache';
 jest.mock('../../firebase/events', () => ({ listTeamEventPage: jest.fn() }));
-jest.mock('../../lib/gameDayCache', () => ({ loadCachedTeamSchedule: jest.fn(), saveCachedTeamSchedule: jest.fn() }));
+jest.mock('../../lib/gameDayCache', () => ({
+  loadCachedTeamSchedule: jest.fn(),
+  saveCachedTeamSchedule: jest.fn(),
+  clearGameDayCache: jest.fn(),
+  isGameDayCacheAccessLoss: (error: { code?: string; details?: { domainCode?: string } }) =>
+    ['permission-denied', 'functions/permission-denied', 'unauthenticated', 'functions/unauthenticated'].includes(error?.code ?? '') || error?.details?.domainCode === 'AGENDA_CHANGED',
+}));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 jest.mock('@react-navigation/native', () => ({ useFocusEffect: (callback: () => void) => require('react').useEffect(callback, [callback]) }));
 const membership = { teamId: 'a', role: 'coach' } as any;
@@ -14,6 +21,7 @@ beforeEach(() => {
   jest.resetAllMocks();
   (loadCachedTeamSchedule as jest.Mock).mockResolvedValue(null);
   (saveCachedTeamSchedule as jest.Mock).mockResolvedValue(undefined);
+  (clearGameDayCache as jest.Mock).mockResolvedValue(undefined);
 });
 
 test('restores an offline schedule without restoring management authority', async () => {
@@ -27,6 +35,40 @@ test('restores an offline schedule without restoring management authority', asyn
   await screen.findByText('Cached match');
   expect(screen.getByRole('alert').props.children.join('')).toMatch(/Offline copy/);
   expect(screen.queryByText('Add event')).toBeNull();
+});
+
+test('keeps a cached schedule read-only until foreground authorization succeeds and clears it on revocation', async () => {
+  let appStateListener: (state: string) => void = () => {};
+  jest.spyOn(AppState, 'addEventListener').mockImplementation((_, listener: any) => {
+    appStateListener = listener;
+    return { remove: jest.fn() } as any;
+  });
+  (listTeamEventPage as jest.Mock)
+    .mockRejectedValueOnce({ code: 'functions/unavailable' })
+    .mockRejectedValueOnce({ code: 'permission-denied' });
+  (loadCachedTeamSchedule as jest.Mock).mockResolvedValue({
+    value: { items: [event('Cached match')], nextCursor: null, canManage: false },
+    savedAt: '2026-10-16T18:00:00.000Z', olderThanTtl: false,
+  });
+  await render(<ScheduleScreen userId="user-a" teamId="a" teamSchemaVersion={2} membership={membership} navigation={navigation} />);
+  await screen.findByText('Cached match');
+  await act(async () => appStateListener('active'));
+  await screen.findByText('Permission removed. Reload to see your current schedule.');
+  expect(screen.queryByText('Cached match')).toBeNull();
+  expect(clearGameDayCache).toHaveBeenCalledWith('user-a');
+  expect(loadCachedTeamSchedule).toHaveBeenCalledTimes(1);
+});
+
+test('clears a live schedule when pagination discovers revocation', async () => {
+  (listTeamEventPage as jest.Mock)
+    .mockResolvedValueOnce({ items: [event('Previously visible')], nextCursor: 'next', canManage: false })
+    .mockRejectedValueOnce({ code: 'functions/permission-denied' });
+  await render(<ScheduleScreen userId="user-a" teamId="a" teamSchemaVersion={2} membership={membership} navigation={navigation} />);
+  await screen.findByText('Previously visible');
+  await fireEvent.press(screen.getByText('Load more events'));
+  await screen.findByText('Permission removed. Reload to see your current schedule.');
+  expect(screen.queryByText('Previously visible')).toBeNull();
+  expect(clearGameDayCache).toHaveBeenCalledWith('user-a');
 });
 
 test('renders one schedule page immediately and loads the next only on request', async () => {

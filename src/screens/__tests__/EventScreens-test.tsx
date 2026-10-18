@@ -5,12 +5,16 @@ import CreateEditEventScreen from '../CreateEditEventScreen';
 import EventDetailScreen from '../EventDetailScreen';
 import { createCanonicalEvent, getEvent, listEventTeamChoices, mutateEventSchedule } from '../../firebase/events';
 import { getTeam } from '../../firebase/teams';
-import { loadCachedEvent, saveCachedEvent } from '../../lib/gameDayCache';
+import { clearGameDayCache, loadCachedEvent, saveCachedEvent } from '../../lib/gameDayCache';
 jest.mock('../../firebase/events', () => ({ getEvent: jest.fn(), createCanonicalEvent: jest.fn(), mutateEventSchedule: jest.fn(), listEventTeamChoices: jest.fn() }));
 jest.mock('../../firebase/availability', () => ({ getEventAvailability: jest.fn().mockRejectedValue(new Error('Unavailable')) }));
 jest.mock('../../firebase/attendance', () => ({ getEventAttendance: jest.fn().mockRejectedValue(new Error('Unavailable')) }));
 jest.mock('../../firebase/teams', () => ({ getTeam: jest.fn() }));
-jest.mock('../../lib/gameDayCache', () => ({ loadCachedEvent: jest.fn(), saveCachedEvent: jest.fn() }));
+jest.mock('../../lib/gameDayCache', () => ({
+  loadCachedEvent: jest.fn(), saveCachedEvent: jest.fn(), clearGameDayCache: jest.fn(),
+  isGameDayCacheAccessLoss: (error: { code?: string }) =>
+    ['permission-denied', 'functions/permission-denied', 'unauthenticated', 'functions/unauthenticated'].includes(error?.code ?? ''),
+}));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 jest.mock('@react-navigation/native', () => ({ useFocusEffect: (callback: () => void) => require('react').useEffect(callback, [callback]) }));
 const membership = { teamId: 'a', userId: 'staff', role: 'coach' } as any;
@@ -24,6 +28,7 @@ beforeEach(() => {
   (mutateEventSchedule as jest.Mock).mockResolvedValue({});
   (loadCachedEvent as jest.Mock).mockResolvedValue(null);
   (saveCachedEvent as jest.Mock).mockResolvedValue(undefined);
+  (clearGameDayCache as jest.Mock).mockResolvedValue(undefined);
 });
 
 test('offline event detail is visibly stale and read-only', async () => {
@@ -39,6 +44,13 @@ test('offline event detail is visibly stale and read-only', async () => {
   expect(screen.getByText(/Updates, responses, check-in, and attendance require a connection/)).toBeTruthy();
   expect(screen.queryByText('Edit event')).toBeNull();
   expect(screen.queryByText('Participant availability')).toBeNull();
+});
+test('bare Firestore permission denial clears event snapshots without offline fallback', async () => {
+  (getEvent as jest.Mock).mockRejectedValueOnce({ code: 'permission-denied' });
+  await render(<EventDetailScreen userId="user-a" cacheScope="a" membership={membership} navigation={navigation} route={{ params: { eventId: 'shared' } } as any} />);
+  await waitFor(() => expect(clearGameDayCache).toHaveBeenCalledWith('user-a'));
+  expect(loadCachedEvent).not.toHaveBeenCalled();
+  expect(screen.queryByText('Falcons vs Comets')).toBeNull();
 });
 test('shared-match creation offers authorized opponents and sends the displayed local interval', async () => {
   await render(<CreateEditEventScreen teamId="a" membership={membership} navigation={navigation} route={{ params: {} } as any} />);

@@ -67,6 +67,7 @@ import {
 import OfflineNotice from '../components/OfflineNotice';
 import {
   clearGameDayCache,
+  isGameDayCacheAccessLoss,
   loadCachedTeamSchedule,
   saveCachedTeamSchedule,
   type CachedValue,
@@ -119,23 +120,28 @@ export default function ScheduleScreen({
   const load = useCallback(async () => {
     const token = ++generation.current;
     pendingPage.current = true;
-    setLoadingMore(false); setError(''); setLiveCanManage(false); setCached(null);
+    setLoadingMore(false); setError(''); setLiveCanManage(false);
     try {
       const page = await listTeamEventPage(teamId, null, view, teamSchemaVersion);
       if (token === generation.current) {
+        setCached(null);
         setEvents(page.items); setNextCursor(page.nextCursor); setLiveCanManage(page.canManage === true);
         if (userId) void saveCachedTeamSchedule(userId, teamId, view, page).catch(() => undefined);
       }
     } catch (error) {
-      const code = (error as { code?: string }).code;
-      const denied = ['functions/permission-denied', 'functions/unauthenticated'].includes(code ?? '');
+      const denied = isGameDayCacheAccessLoss(error);
       if (denied && userId) await clearGameDayCache(userId).catch(() => undefined);
       const copy = userId && !denied ? await loadCachedTeamSchedule(userId, teamId, view) : null;
       if (token === generation.current && copy) {
         setCached(copy);
         setEvents(copy.value.items);
         setNextCursor(null);
-      } else if (token === generation.current) setError(error instanceof Error ? error.message : 'Schedule unavailable.');
+      } else if (token === generation.current) {
+        if (denied) {
+          setCached(null); setEvents([]); setNextCursor(null);
+          setError('Permission removed. Reload to see your current schedule.');
+        } else setError(error instanceof Error ? error.message : 'Schedule unavailable.');
+      }
     } finally {
       if (token === generation.current) {
         pendingPage.current = false; setLoading(false); setRefreshing(false);
@@ -174,7 +180,15 @@ export default function ScheduleScreen({
       setEvents(previous => [...new Map([...previous, ...page.items].map(item => [item.id, item])).values()]);
       setNextCursor(page.nextCursor); setLiveCanManage(page.canManage === true);
     } catch (error) {
-      if (token === generation.current) { setLiveCanManage(false); setError(error instanceof Error ? error.message : 'More events are unavailable. Please try again.'); }
+      const denied = isGameDayCacheAccessLoss(error);
+      if (denied && userId) await clearGameDayCache(userId).catch(() => undefined);
+      if (token === generation.current) {
+        setLiveCanManage(false);
+        if (denied) {
+          setCached(null); setEvents([]); setNextCursor(null);
+          setError('Permission removed. Reload to see your current schedule.');
+        } else setError(error instanceof Error ? error.message : 'More events are unavailable. Please try again.');
+      }
     } finally {
       if (token === generation.current) { pendingPage.current = false; setLoadingMore(false); }
     }

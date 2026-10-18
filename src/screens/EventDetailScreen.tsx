@@ -67,6 +67,7 @@ import {
 import OfflineNotice from '../components/OfflineNotice';
 import {
   clearGameDayCache,
+  isGameDayCacheAccessLoss,
   loadCachedEvent,
   saveCachedEvent,
   type CachedValue,
@@ -113,8 +114,7 @@ export default function EventDetailScreen({
         if (data && userId && cacheScope) void saveCachedEvent(userId, cacheScope, data).catch(() => undefined);
       }
     } catch (error) {
-      const code = (error as { code?: string }).code;
-      const denied = ['functions/permission-denied', 'functions/unauthenticated'].includes(code ?? '');
+      const denied = isGameDayCacheAccessLoss(error);
       if (denied && userId) await clearGameDayCache(userId).catch(() => undefined);
       const copy = userId && cacheScope && !denied
         ? await loadCachedEvent(userId, cacheScope, route.params.eventId)

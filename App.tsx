@@ -90,7 +90,7 @@ import {
   colors,
   fonts,
 } from './src/theme/theme';
-import { clearGameDayCache } from './src/lib/gameDayCache';
+import { reconcileGameDayCacheAccount } from './src/lib/gameDayCache';
 
 export type AuthStackParamList = {
   Login: undefined;
@@ -377,24 +377,31 @@ export default function App() {
   const [teamVersion, setTeamVersion] = useState(0);
 
   useEffect(() => {
+    let active = true;
+    let transition = Promise.resolve();
     const unsubscribe = subscribeToAuthChanges((nextUser) => {
-      if (previousUid.current && previousUid.current !== nextUser?.uid) {
-        void clearGameDayCache(previousUid.current).catch(() => undefined);
-        setPendingInvitation(null);
-      }
-      previousUid.current = nextUser?.uid ?? null;
-      setUser(nextUser);
-      setAuthReady(true);
-      if (!nextUser) {
-        setTeam(null);
-        setMembership(null);
-        setAppRole('user');
-        setTeamReady(true);
-      } else {
-        setTeamReady(false);
-      }
+      const nextUid = nextUser?.uid ?? null;
+      setAuthReady(false);
+      transition = transition.catch(() => undefined).then(async () => {
+        await reconcileGameDayCacheAccount(previousUid.current, nextUid);
+        if (!active) return;
+        if (previousUid.current && previousUid.current !== nextUid) setPendingInvitation(null);
+        previousUid.current = nextUid;
+        setUser(nextUser);
+        setAuthReady(true);
+        if (!nextUser) {
+          setTeam(null);
+          setMembership(null);
+          setAppRole('user');
+          setTeamReady(true);
+        } else {
+          setTeamReady(false);
+        }
+      }).catch(() => {
+        if (active) setAuthReady(false);
+      });
     });
-    return unsubscribe;
+    return () => { active = false; unsubscribe(); };
   }, []);
 
   useEffect(() => {

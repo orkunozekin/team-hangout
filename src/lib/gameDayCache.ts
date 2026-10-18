@@ -5,6 +5,7 @@ import type { TeamEventPage } from "../firebase/events";
 
 const SCHEMA = 1;
 const ROOT = "@team-hangout/game-day";
+const CLEANUP_KEY = `${ROOT}/pending-cleanup`;
 const TTL_MS = 24 * 60 * 60 * 1000;
 const PAST_MS = 7 * 24 * 60 * 60 * 1000;
 const FUTURE_MS = 30 * 24 * 60 * 60 * 1000;
@@ -197,9 +198,9 @@ async function write<T>(key: string, value: T, now: Date) {
 }
 
 async function read<T>(key: string, now: Date): Promise<CachedValue<T> | null> {
-  const raw = await AsyncStorage.getItem(key);
-  if (!raw) return null;
   try {
+    const raw = await AsyncStorage.getItem(key);
+    if (!raw) return null;
     const envelope = JSON.parse(raw) as Envelope<T>;
     if (envelope.schema !== SCHEMA || !iso(envelope.savedAt)) throw new Error("Invalid cache");
     return {
@@ -211,6 +212,18 @@ async function read<T>(key: string, now: Date): Promise<CachedValue<T> | null> {
     await AsyncStorage.removeItem(key);
     return null;
   }
+}
+
+export function isGameDayCacheAccessLoss(error: unknown) {
+  const code = (error as { code?: string } | null)?.code;
+  const domainCode = (error as { details?: { domainCode?: string } } | null)
+    ?.details?.domainCode;
+  return [
+    "permission-denied",
+    "functions/permission-denied",
+    "unauthenticated",
+    "functions/unauthenticated",
+  ].includes(code ?? "") || domainCode === "AGENDA_CHANGED";
 }
 
 export async function saveCachedAgenda(uid: string, page: AgendaPage, now = new Date()) {
@@ -310,8 +323,19 @@ export async function loadCachedEvent(
 }
 
 export async function clearGameDayCache(uid: string) {
+  await AsyncStorage.setItem(CLEANUP_KEY, uid);
   const prefix = accountRoot(uid);
   const keys = (await AsyncStorage.getAllKeys()).filter((key) => key.startsWith(prefix));
   if (keys.length) await AsyncStorage.multiRemove(keys);
+  await AsyncStorage.removeItem(CLEANUP_KEY);
+}
+
+export async function reconcileGameDayCacheAccount(
+  previousUid: string | null,
+  nextUid: string | null,
+) {
+  const pendingUid = await AsyncStorage.getItem(CLEANUP_KEY);
+  if (pendingUid) await clearGameDayCache(pendingUid);
+  if (previousUid && previousUid !== nextUid) await clearGameDayCache(previousUid);
 }
 
