@@ -5,10 +5,12 @@ import CreateEditEventScreen from '../CreateEditEventScreen';
 import EventDetailScreen from '../EventDetailScreen';
 import { createCanonicalEvent, getEvent, listEventTeamChoices, mutateEventSchedule } from '../../firebase/events';
 import { getTeam } from '../../firebase/teams';
+import { loadCachedEvent, saveCachedEvent } from '../../lib/gameDayCache';
 jest.mock('../../firebase/events', () => ({ getEvent: jest.fn(), createCanonicalEvent: jest.fn(), mutateEventSchedule: jest.fn(), listEventTeamChoices: jest.fn() }));
 jest.mock('../../firebase/availability', () => ({ getEventAvailability: jest.fn().mockRejectedValue(new Error('Unavailable')) }));
 jest.mock('../../firebase/attendance', () => ({ getEventAttendance: jest.fn().mockRejectedValue(new Error('Unavailable')) }));
 jest.mock('../../firebase/teams', () => ({ getTeam: jest.fn() }));
+jest.mock('../../lib/gameDayCache', () => ({ loadCachedEvent: jest.fn(), saveCachedEvent: jest.fn() }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 jest.mock('@react-navigation/native', () => ({ useFocusEffect: (callback: () => void) => require('react').useEffect(callback, [callback]) }));
 const membership = { teamId: 'a', userId: 'staff', role: 'coach' } as any;
@@ -20,6 +22,23 @@ beforeEach(() => {
   (listEventTeamChoices as jest.Mock).mockResolvedValue({ items: event.teams, nextCursor: null });
   (getEvent as jest.Mock).mockResolvedValue(event);
   (mutateEventSchedule as jest.Mock).mockResolvedValue({});
+  (loadCachedEvent as jest.Mock).mockResolvedValue(null);
+  (saveCachedEvent as jest.Mock).mockResolvedValue(undefined);
+});
+
+test('offline event detail is visibly stale and read-only', async () => {
+  (getEvent as jest.Mock).mockRejectedValueOnce({ code: 'functions/unavailable' });
+  (loadCachedEvent as jest.Mock).mockResolvedValue({
+    value: { ...event, canManage: false, notes: null },
+    savedAt: '2026-10-16T18:00:00.000Z',
+    olderThanTtl: true,
+  });
+  await render(<EventDetailScreen userId="user-a" cacheScope="a" membership={membership} navigation={navigation} route={{ params: { eventId: 'shared' } } as any} />);
+  await screen.findByText('Falcons vs Comets');
+  expect(screen.getByRole('alert').props.children.join('')).toMatch(/Offline copy/);
+  expect(screen.getByText(/Updates, responses, check-in, and attendance require a connection/)).toBeTruthy();
+  expect(screen.queryByText('Edit event')).toBeNull();
+  expect(screen.queryByText('Participant availability')).toBeNull();
 });
 test('shared-match creation offers authorized opponents and sends the displayed local interval', async () => {
   await render(<CreateEditEventScreen teamId="a" membership={membership} navigation={navigation} route={{ params: {} } as any} />);

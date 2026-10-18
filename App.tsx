@@ -90,6 +90,7 @@ import {
   colors,
   fonts,
 } from './src/theme/theme';
+import { clearGameDayCache } from './src/lib/gameDayCache';
 
 export type AuthStackParamList = {
   Login: undefined;
@@ -248,6 +249,7 @@ function MainTabs({
       <Tab.Screen name="Schedule">
         {({ navigation }) => (
           <ScheduleScreen
+            userId={user.uid}
             teamId={team.id}
             teamName={team.name}
             teamSchemaVersion={team.schemaVersion ?? 1}
@@ -326,6 +328,8 @@ function AppNavigator({
       >
         {({ navigation, route }) => (
           <EventDetailScreen
+            userId={user.uid}
+            cacheScope={team.id}
             membership={membership}
             appRole={appRole}
             navigation={navigation}
@@ -374,7 +378,10 @@ export default function App() {
 
   useEffect(() => {
     const unsubscribe = subscribeToAuthChanges((nextUser) => {
-      if (previousUid.current && previousUid.current !== nextUser?.uid) setPendingInvitation(null);
+      if (previousUid.current && previousUid.current !== nextUser?.uid) {
+        void clearGameDayCache(previousUid.current).catch(() => undefined);
+        setPendingInvitation(null);
+      }
       previousUid.current = nextUser?.uid ?? null;
       setUser(nextUser);
       setAuthReady(true);

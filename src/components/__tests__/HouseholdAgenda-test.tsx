@@ -8,10 +8,16 @@ import {
 } from "@testing-library/react-native";
 import HouseholdAgenda from "../HouseholdAgenda";
 import { listHouseholdAgenda } from "../../firebase/agenda";
+import { loadCachedAgenda, saveCachedAgenda } from "../../lib/gameDayCache";
 jest.mock("../../firebase/availability", () => ({ getEventAvailability: jest.fn() }));
 jest.mock("../../firebase/agenda", () => ({ listHouseholdAgenda: jest.fn() }));
 jest.mock("../../firebase/checkIn", () => ({ getParticipantCheckIn: jest.fn(), checkInParticipant: jest.fn(), setEventCheckInPolicy: jest.fn() }));
 jest.mock("../../firebase/attendance", () => ({ attendanceRequestId: jest.fn() }));
+jest.mock("../../lib/gameDayCache", () => ({
+  loadCachedAgenda: jest.fn(),
+  saveCachedAgenda: jest.fn(),
+  clearGameDayCache: jest.fn(),
+}));
 const api = listHouseholdAgenda as jest.Mock;
 const participants = [
   { orgId: "org", participantId: "a", displayName: "Jamie" },
@@ -49,6 +55,23 @@ const page = {
 beforeEach(() => {
   jest.clearAllMocks();
   api.mockResolvedValue(page);
+  (loadCachedAgenda as jest.Mock).mockResolvedValue(null);
+  (saveCachedAgenda as jest.Mock).mockResolvedValue(undefined);
+});
+
+test("shows a visibly stale read-only agenda after an offline restart", async () => {
+  api.mockRejectedValueOnce({ code: "functions/unavailable" });
+  (loadCachedAgenda as jest.Mock).mockResolvedValue({
+    value: page,
+    savedAt: "2026-10-16T18:00:00.000Z",
+    olderThanTtl: true,
+  });
+  await render(<HouseholdAgenda refresh={0} userId="user-a" />);
+  await screen.findByText("Sibling practice");
+  expect(screen.getByRole("alert").props.children.join("")).toMatch(/Offline copy/);
+  expect(screen.getByText(/more than 24 hours old/i)).toBeTruthy();
+  expect(screen.queryByText("Responses for Sibling practice")).toBeNull();
+  expect(screen.getByText(/Responses and check-in require a connection/)).toBeTruthy();
 });
 test("deduplicated sibling card, filters and timezone are sent to server", async () => {
   await render(<HouseholdAgenda refresh={0} />);

@@ -32,6 +32,7 @@ import {
 import {
   ensureUserDocument,
 } from '../firebase/users';
+import { clearGameDayCache } from '../lib/gameDayCache';
 
 let googleConfigured = false;
 
@@ -245,6 +246,8 @@ export async function resetPassword(
 }
 
 export async function logout(): Promise<void> {
+  const uid = auth.currentUser?.uid;
+  if (uid) await clearGameDayCache(uid);
   try {
     ensureGoogleConfigured();
     if (GoogleSignin.hasPreviousSignIn()) {

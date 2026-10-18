@@ -212,6 +212,7 @@ export default function HouseholdScreen({
             {focused && appActive ? (
               <HouseholdAgenda
                 key={user.uid}
+                userId={user.uid}
                 refresh={version}
                 onAccessRefreshed={() => {
                   householdGeneration.current++;

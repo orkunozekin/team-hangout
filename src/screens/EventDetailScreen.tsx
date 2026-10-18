@@ -3,12 +3,14 @@ import EventAttendance from '../components/EventAttendance';
 import EventAvailability from "../components/EventAvailability";
 import React, {
   useCallback,
+  useEffect,
   useState,
   useRef,
 } from 'react';
 
 import {
   Alert,
+  AppState,
   ScrollView,
   StyleSheet,
   Text,
@@ -62,6 +64,13 @@ import {
   spacing,
   type,
 } from '../theme/theme';
+import OfflineNotice from '../components/OfflineNotice';
+import {
+  clearGameDayCache,
+  loadCachedEvent,
+  saveCachedEvent,
+  type CachedValue,
+} from '../lib/gameDayCache';
 
 type RootStackParamList = {
   EventDetail: { eventId: string };
@@ -69,6 +78,8 @@ type RootStackParamList = {
 };
 
 type Props = {
+  userId?: string;
+  cacheScope?: string;
   membership: TeamMember;
   appRole?: AppRole;
   navigation: NativeStackNavigationProp<RootStackParamList, 'EventDetail'>;
@@ -76,6 +87,8 @@ type Props = {
 };
 
 export default function EventDetailScreen({
+  userId,
+  cacheScope,
   membership,
   appRole,
   navigation,
@@ -87,13 +100,34 @@ export default function EventDetailScreen({
   const [reason, setReason] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
-  const canManage = event?.schemaVersion === 2 ? event.canManage : canManageTeam({ membership, appRole });
+  const [cached, setCached] = useState<CachedValue<TeamEvent> | null>(null);
+  const canManage = !cached && (event?.schemaVersion === 2 ? event.canManage : canManageTeam({ membership, appRole }));
 
   const load = useCallback(async () => {
     const token = ++generation.current;
-    const data = await getEvent(route.params.eventId);
-    if (token === generation.current) setEvent(data);
-  }, [route.params.eventId]);
+    try {
+      const data = await getEvent(route.params.eventId);
+      if (token === generation.current) {
+        setCached(null);
+        setEvent(data);
+        if (data && userId && cacheScope) void saveCachedEvent(userId, cacheScope, data).catch(() => undefined);
+      }
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      const denied = ['functions/permission-denied', 'functions/unauthenticated'].includes(code ?? '');
+      if (denied && userId) await clearGameDayCache(userId).catch(() => undefined);
+      const copy = userId && cacheScope && !denied
+        ? await loadCachedEvent(userId, cacheScope, route.params.eventId)
+        : null;
+      if (token === generation.current && copy) {
+        setCached(copy);
+        setEvent(copy.value);
+        setError('');
+        return;
+      }
+      throw error;
+    }
+  }, [route.params.eventId, userId, cacheScope]);
 
   useFocusEffect(
     useCallback(() => {
@@ -111,6 +145,21 @@ export default function EventDetailScreen({
       };
     }, [load]),
   );
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') {
+        setLoading(true);
+        void load()
+          .catch(error => {
+            setError(error instanceof Error ? error.message : 'Event unavailable.');
+            setEvent(null);
+          })
+          .finally(() => setLoading(false));
+      }
+    });
+    return () => sub?.remove();
+  }, [load]);
 
   async function lifecycle(action: string) {
     if (!event) return;
@@ -164,6 +213,7 @@ export default function EventDetailScreen({
   return (
     <Screen edges={['bottom']}>
       <ScrollView>
+        {cached ? <OfflineNotice savedAt={cached.savedAt} olderThanTtl={cached.olderThanTtl} /> : null}
         <View
           style={[
             styles.badge,
@@ -205,8 +255,9 @@ export default function EventDetailScreen({
           <Text style={styles.notes}>{event.notes}</Text>
         ) : null}
 
-        {event.schemaVersion === 2 ? <EventAvailability key={`${event.id}:${event.revision}`} eventId={event.id} canManage={canManage} /> : null}
-        {event.schemaVersion === 2 ? <EventAttendance key={`attendance:${event.id}:${event.revision}`} eventId={event.id} teamId={membership.teamId} /> : null}
+        {cached ? <Text style={styles.row}>Updates, responses, check-in, and attendance require a connection. No offline changes are queued.</Text> : null}
+        {!cached && event.schemaVersion === 2 ? <EventAvailability key={`${event.id}:${event.revision}`} eventId={event.id} canManage={canManage} /> : null}
+        {!cached && event.schemaVersion === 2 ? <EventAttendance key={`attendance:${event.id}:${event.revision}`} eventId={event.id} teamId={membership.teamId} /> : null}
         {event.history?.length ? <>
           <Text style={styles.row}>Schedule history{event.historyHasMore ? ' (latest 20)' : ''}</Text>
           {event.history.map(row => <Text key={row.revision} style={styles.row}>

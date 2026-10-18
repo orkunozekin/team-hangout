@@ -86,10 +86,14 @@ jest.mock('react-native', () => ({
 }));
 
 const mockEnsureUserDocument = jest.fn();
+const mockClearGameDayCache = jest.fn();
 
 jest.mock('../../firebase/users', () => ({
   ensureUserDocument: (...args: unknown[]) =>
     mockEnsureUserDocument(...args),
+}));
+jest.mock('../../lib/gameDayCache', () => ({
+  clearGameDayCache: (...args: unknown[]) => mockClearGameDayCache(...args),
 }));
 
 const ORIGINAL_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
@@ -121,6 +125,7 @@ describe('api/auth', () => {
     mockHasPlayServices.mockResolvedValue(true);
     mockHasPreviousSignIn.mockReturnValue(false);
     mockAppleIsAvailable.mockResolvedValue(true);
+    mockClearGameDayCache.mockResolvedValue(undefined);
   });
 
   afterAll(() => {
@@ -469,6 +474,26 @@ describe('api/auth', () => {
     expect(mockGoogleSignOut).toHaveBeenCalled();
     expect(mockSignOut).toHaveBeenCalledWith(auth);
     expect(getCurrentUser()).toBeNull();
+  });
+
+  it('clears the signed-in account cache before Firebase sign-out', async () => {
+    (auth as { currentUser: unknown }).currentUser = { uid: 'cached-user' };
+    mockSignOut.mockResolvedValue(undefined);
+
+    await logout();
+
+    expect(mockClearGameDayCache).toHaveBeenCalledWith('cached-user');
+    expect(mockClearGameDayCache.mock.invocationCallOrder[0]).toBeLessThan(
+      mockSignOut.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('does not sign out when durable cache cleanup fails', async () => {
+    (auth as { currentUser: unknown }).currentUser = { uid: 'cached-user' };
+    mockClearGameDayCache.mockRejectedValueOnce(new Error('storage unavailable'));
+
+    await expect(logout()).rejects.toThrow('storage unavailable');
+    expect(mockSignOut).not.toHaveBeenCalled();
   });
 
   it('still signs out of Firebase if Google sign-out fails', async () => {

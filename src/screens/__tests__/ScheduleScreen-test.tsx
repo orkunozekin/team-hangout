@@ -2,13 +2,32 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react-native';
 import ScheduleScreen from '../ScheduleScreen';
 import { listTeamEventPage } from '../../firebase/events';
+import { loadCachedTeamSchedule, saveCachedTeamSchedule } from '../../lib/gameDayCache';
 jest.mock('../../firebase/events', () => ({ listTeamEventPage: jest.fn() }));
+jest.mock('../../lib/gameDayCache', () => ({ loadCachedTeamSchedule: jest.fn(), saveCachedTeamSchedule: jest.fn() }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 jest.mock('@react-navigation/native', () => ({ useFocusEffect: (callback: () => void) => require('react').useEffect(callback, [callback]) }));
 const membership = { teamId: 'a', role: 'coach' } as any;
 const navigation = { navigate: jest.fn() } as any;
-const event = (id: string) => ({ id, title: id, type: 'match', date: new Date('2026-10-20T12:00:00Z'), time: '18:00', location: null });
-beforeEach(() => jest.resetAllMocks());
+const event = (id: string) => ({ id, teamId: 'a', title: id, type: 'match', date: new Date('2026-10-20T12:00:00Z'), time: '18:00', location: null });
+beforeEach(() => {
+  jest.resetAllMocks();
+  (loadCachedTeamSchedule as jest.Mock).mockResolvedValue(null);
+  (saveCachedTeamSchedule as jest.Mock).mockResolvedValue(undefined);
+});
+
+test('restores an offline schedule without restoring management authority', async () => {
+  (listTeamEventPage as jest.Mock).mockRejectedValueOnce({ code: 'functions/unavailable' });
+  (loadCachedTeamSchedule as jest.Mock).mockResolvedValue({
+    value: { items: [event('Cached match')], nextCursor: null, canManage: false },
+    savedAt: '2026-10-16T18:00:00.000Z',
+    olderThanTtl: false,
+  });
+  await render(<ScheduleScreen userId="user-a" teamId="a" teamSchemaVersion={2} membership={membership} navigation={navigation} />);
+  await screen.findByText('Cached match');
+  expect(screen.getByRole('alert').props.children.join('')).toMatch(/Offline copy/);
+  expect(screen.queryByText('Add event')).toBeNull();
+});
 
 test('renders one schedule page immediately and loads the next only on request', async () => {
   (listTeamEventPage as jest.Mock).mockResolvedValueOnce({ items: [event('First match')], nextCursor: 'first' })
