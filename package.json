@@ -44,6 +44,8 @@
     "test:coverage": "jest --coverage",
     "typecheck": "tsc --noEmit",
     "test:backend": "npm --prefix functions run build && node scripts/test-backend.mjs",
+    "test:backend:ci-general": "npm --prefix functions run build && node scripts/test-backend.mjs --ci-general",
+    "test:backend:ci-schedule-publication": "npm --prefix functions run build && node scripts/test-backend.mjs --ci-schedule-publication",
     "test:operations": "npm --prefix functions run build && node scripts/test-backend.mjs --operations",
     "test:contracts": "node --import tsx --test tests/backend/contracts.test.mjs",
     "test:admin": "yarn --cwd functions build && yarn --cwd admin build --mode emulator && node scripts/test-admin.mjs",
