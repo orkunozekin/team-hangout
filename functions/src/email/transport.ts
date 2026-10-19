@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
+import { defineSecret } from "firebase-functions/params";
+export const essentialEmailApiKey = defineSecret("ESSENTIAL_EMAIL_API_KEY");
 export type Mail = { to: string; subject: string; text: string };
 export interface Transport {
   send(key: string, mail: Mail): Promise<string>;

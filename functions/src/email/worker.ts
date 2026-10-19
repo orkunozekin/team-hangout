@@ -21,12 +21,12 @@ import {
   developmentTransport,
   Mail,
   productionTransport,
+  essentialEmailApiKey,
   senderConfig,
   SenderConfig,
   Transport,
 } from "./transport";
-const encryptionKey = defineSecret("INVITATION_DELIVERY_KEY"),
-  apiKey = defineSecret("ESSENTIAL_EMAIL_API_KEY");
+const encryptionKey = defineSecret("INVITATION_DELIVERY_KEY");
 const MAX_ATTEMPTS = 5,
   LEASE_MS = 60000;
 function unseal(payload: Data): string {
@@ -273,7 +273,7 @@ export async function processOutbox(
     options.transport ??
     (demoRuntime()
       ? developmentTransport()
-      : productionTransport(config, apiKey.value()));
+      : productionTransport(config, essentialEmailApiKey.value()));
   const db = getFirestore(),
     ref = db.doc(`emailOutbox/${key}`),
     lease = randomUUID(),
@@ -404,7 +404,7 @@ export async function processOutbox(
 export const resumeEssentialEmail = onSchedule(
   {
     schedule: "every 1 minutes",
-    secrets: demoRuntime() ? [] : [encryptionKey, apiKey],
+    secrets: demoRuntime() ? [] : [encryptionKey, essentialEmailApiKey],
   },
   async () => {
     if (!senderConfig()) return;

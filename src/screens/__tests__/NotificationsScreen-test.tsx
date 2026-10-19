@@ -2,11 +2,13 @@ import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import NotificationsScreen from '../NotificationsScreen';
 import * as api from '../../firebase/notifications';
+import * as push from '../../lib/pushRegistration';
 jest.mock('firebase/firestore', () => ({ collection: jest.fn(), doc: jest.fn(() => ({ id: 'request-id' })) }));
 jest.mock('firebase/functions', () => ({ httpsCallable: jest.fn() }));
 jest.mock('../../firebase/config', () => ({ db: {}, functions: {} }));
 jest.mock('../../firebase/commands', () => ({ runCommand: jest.fn() }));
 jest.mock('../../firebase/notifications');
+jest.mock('../../lib/pushRegistration', () => ({ registerPushNotifications: jest.fn(), syncExistingPushPermission: jest.fn() }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 const rows = [
   { id: 'unread', title: 'Field closed', body: 'Open Team Hangout for current details.', critical: true, sourceRevision: 3, createdAt: '2026-10-18T14:00:00.000Z', readAt: null, acknowledgedAt: null, deliveryStatus: 'providerAccepted' },
@@ -38,4 +40,13 @@ test('loads the next bounded inbox page without duplicating rows', async () => {
   await waitFor(() => expect(api.listNotifications).toHaveBeenLastCalledWith('read'));
   expect(screen.getAllByText('Schedule published')).toHaveLength(1);
   expect(await screen.findByText('Delivery outcome unknown')).toBeTruthy();
+});
+test('shows denied permission without hiding the authoritative inbox', async () => {
+  (push.syncExistingPushPermission as jest.Mock).mockResolvedValue({ permissionState: 'denied', installationId: 'install-a' });
+  (push.registerPushNotifications as jest.Mock).mockResolvedValue({ permissionState: 'denied', installationId: 'install-a' });
+  await render(<NotificationsScreen userId="user-a" pushProjectId="project-a" />);
+  expect(await screen.findByText('Push permission denied')).toBeTruthy();
+  await act(async () => fireEvent.press(screen.getByText('Enable push updates')));
+  expect(await screen.findByText('Push permission is denied. In-app updates and email fallback remain available.')).toBeTruthy();
+  expect(screen.getByText('Field closed')).toBeTruthy();
 });

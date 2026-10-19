@@ -80,6 +80,7 @@ jest.mock('expo-apple-authentication', () => ({
     WHITE: 1,
   },
 }));
+jest.mock('../../lib/pushRegistration', () => ({ revokePushNotifications: jest.fn().mockResolvedValue(undefined) }));
 
 jest.mock('react-native', () => ({
   Platform: { OS: 'ios' },

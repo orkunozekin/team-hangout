@@ -1,6 +1,6 @@
 # Notification inbox and fake outbox worker
 
-P2.13 adds a server-owned notification inbox and a development-only fake delivery worker. It does not install `expo-notifications`, register devices, send push or email, poll receipts, or handle notification deep links. Those remain P2.14.
+P2.13 adds a server-owned notification inbox and a development-only fake delivery worker. P2.14 builds on this contract in [push, email fallback and notification links](notification-delivery.md); the fake path remains available only for isolated synthetic validation.
 
 Canonical mutations keep writing deterministic organization outbox intents. The worker expands each intent once into one safe in-app notification and one fake-channel delivery per currently authorized user. Audience discovery is bounded to 20 teams, 50 total active roster entries, 10 active guardians per participant, 100 staff or team grants, 50 access sources per recipient, and 200 unique recipients so the atomic expansion remains below Firestore's 500-write limit. Repeated or unordered expansion uses deterministic document IDs and one Firestore transaction, so it cannot create duplicate visible notifications.
 
