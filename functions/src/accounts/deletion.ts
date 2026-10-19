@@ -8,10 +8,10 @@ const PAGE_SIZE = 25;
 // Future token/feed/invitation writers must use these ownership fields and the tombstone gate.
 export const cleanupHooks = [
   ['importJobs', 'ownerUid'], ['calendarSubscriptions', 'ownerUid'], ['invitations', 'recipientUid'],
-  ['emailOutbox', 'recipientUid'], ['notificationEndpoints', 'userId'],
+  ['emailOutbox', 'recipientUid'], ['notificationEndpoints', 'userId'], ['notificationDeliveries', 'recipientUid'],
   ['commandRequests', 'uid'],
 ] as const;
-const projections = ['organizationLinks', 'participantLinks', 'teamAccess', 'agenda', 'notificationEndpoints', 'deviceTokens'];
+const projections = ['organizationLinks', 'participantLinks', 'teamAccess', 'agenda', 'notifications', 'notificationEndpoints', 'deviceTokens'];
 const stages = ['teamMembers', 'members', 'guardians', 'participants', ...cleanupHooks.map(([name]) => name), ...projections.map(name => `user:${name}`), 'auth'];
 const jobRef = (uid: string) => getFirestore().doc(`accountDeletionJobs/${uid}`);
 
