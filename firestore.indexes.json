@@ -46,6 +46,14 @@
       "collectionGroup": "teamMembers",
       "queryScope": "COLLECTION",
       "fields": [
+        { "fieldPath": "teamId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "teamMembers",
+      "queryScope": "COLLECTION",
+      "fields": [
         {
           "fieldPath": "userId",
           "order": "ASCENDING"

@@ -43,6 +43,12 @@ test('only deterministic audience validation errors permanently fail expansion',
 });
 
 test('duplicate unordered expansion creates one inbox row and one delivery per live recipient', async () => {
+  const history = db.batch();
+  for (let i = 0; i < 101; i++) {
+    history.set(db.doc(`organizations/notify-org/members/revoked-${i}`), { ...meta, orgId: 'notify-org', status: 'revoked', roles: ['orgAdmin'], programIds: [] });
+    history.set(db.doc(`teamMembers/notify-team_revoked-${i}`), { ...meta, orgId: 'notify-org', teamId: 'notify-team', userId: `revoked-${i}`, status: 'revoked', roles: ['coach'] });
+  }
+  await history.commit();
   await db.doc(intentPath('intent-1')).set({ ...meta, orgId: 'notify-org', sourceType: 'event', sourceId: 'event-1', sourceRevision: 2,
     templateKey: 'event:reschedule', critical: true, state: 'pending', audience: { teamIds: ['notify-team'] }, title: 'Schedule changed', body: 'Open Team Hangout for current details.' });
   const worker = require('./lib/notifications/worker.js');
@@ -52,6 +58,25 @@ test('duplicate unordered expansion creates one inbox row and one delivery per l
   assert.equal((await db.collection('notificationDeliveries').where('orgId', '==', 'notify-org').get()).size, recipients.length);
   assert.equal((await db.doc(intentPath('intent-1')).get()).data().state, 'expanded');
   assert.equal((await worker.expandNotificationIntent('notify-org', 'intent-1')).state, 'expanded');
+  const cleanup = db.batch();
+  for (let i = 0; i < 101; i++) {
+    cleanup.delete(db.doc(`organizations/notify-org/members/revoked-${i}`)); cleanup.delete(db.doc(`teamMembers/notify-team_revoked-${i}`));
+  }
+  await cleanup.commit();
+});
+
+test('page authorization batches and reuses shared authority documents', async () => {
+  const worker = require('./lib/notifications/worker.js');
+  await db.runTransaction(async tx => {
+    let getAllCalls = 0, referencedDocuments = 0;
+    const instrumented = Object.create(tx);
+    instrumented.getAll = async (...refs) => { getAllCalls += 1; referencedDocuments += refs.length; return tx.getAll(...refs); };
+    const rows = Array.from({ length: 50 }, () => ({ orgId: 'notify-org', accessSources: [
+      { kind: 'household', teamId: 'notify-team', participantId: 'notify-child' },
+    ] }));
+    assert.ok((await worker.authorizeNotificationRows(instrumented, 'notify-self', rows)).every(Boolean));
+    assert.equal(getAllCalls, 2); assert.equal(referencedDocuments, 7);
+  });
 });
 
 test('an access-check outage releases the unsent lease for retry without consuming an attempt', async () => {
@@ -174,4 +199,20 @@ test('a revoked row at the page boundary leaves a usable cursor for older notifi
   const second = await call('notify-self', 'listNotifications', { pageSize: 1, cursor: first.nextCursor });
   assert.equal(second.items[0].id, older.id);
   await Promise.all([revoked.delete(), older.delete()]);
+});
+
+test('inbox pages stop at a bounded union of access sources without skipping older rows', async () => {
+  const collection = db.collection('users/notify-outsider/notifications'), refs = [];
+  for (let page = 0; page < 3; page++) {
+    const ref = collection.doc(`bounded-${page}`); refs.push(ref);
+    await ref.set({ ...meta, id: ref.id, orgId: 'notify-org', recipientUid: 'notify-outsider', title: 'Hidden', body: 'Hidden', critical: false,
+      sourceType: 'event', sourceId: `bounded-${page}`, sourceRevision: 1, createdAt: Timestamp.fromMillis(8_000_000_000_000 - page),
+      readAt: null, acknowledgedAt: null, deliveryStatus: 'queued', accessSources: Array.from({ length: 50 }, (_, index) => (
+        { kind: 'household', teamId: `missing-${page}-${index}`, participantId: `missing-${page}-${index}` })) });
+  }
+  const first = await call('notify-outsider', 'listNotifications', { pageSize: 50 });
+  assert.deepEqual(first.items, []); assert.equal(first.nextCursor, refs[1].id);
+  const second = await call('notify-outsider', 'listNotifications', { pageSize: 50, cursor: first.nextCursor });
+  assert.deepEqual(second.items, []); assert.equal(second.nextCursor, null);
+  await Promise.all(refs.map(ref => ref.delete()));
 });

@@ -8,7 +8,7 @@ import { accountAvailable } from '../accountAccess';
 
 const LEASE_MS = 60_000;
 const MAX_ATTEMPTS = 5;
-type AccessSource = { kind: 'staff'; programId: string } | { kind: 'team'; teamId: string } |
+export type AccessSource = { kind: 'staff'; programId: string } | { kind: 'team'; teamId: string } |
   { kind: 'household'; teamId: string; participantId: string };
 export type ProviderOutcome = 'accepted' | 'retryable' | 'permanent';
 export type NotificationProvider = { send(delivery: Data): Promise<ProviderOutcome> };
@@ -54,7 +54,7 @@ async function resolveRecipients(tx: Transaction, intent: Data) {
   if (teams.some(team => { const row = team.data() as Data | undefined; return !row || row.orgId !== intent.orgId || row.status !== 'active'
     || typeof row.programId !== 'string' || !/^[A-Za-z0-9_-]+$/.test(row.programId); })) throw new Error('NOTIFICATION_AUDIENCE_STALE');
   const programs = new Set(teams.map(team => (team.data() as Data).programId as string));
-  const staff = await tx.get(db.collection(`organizations/${intent.orgId}/members`).limit(101));
+  const staff = await tx.get(db.collection(`organizations/${intent.orgId}/members`).where('status', '==', 'active').limit(101));
   if (staff.size > 100) throw new Error('NOTIFICATION_AUDIENCE_TOO_LARGE');
   for (const member of staff.docs) {
     const row = member.data();
@@ -64,7 +64,7 @@ async function resolveRecipients(tx: Transaction, intent: Data) {
   const teamAudiences: { teamId: string; members: FirebaseFirestore.QueryDocumentSnapshot[]; roster: FirebaseFirestore.QueryDocumentSnapshot[] }[] = [];
   let memberCount = 0, rosterCount = 0;
   for (const teamId of teamIds) {
-    const members = await tx.get(db.collection('teamMembers').where('teamId', '==', teamId).limit(101));
+    const members = await tx.get(db.collection('teamMembers').where('teamId', '==', teamId).where('status', '==', 'active').limit(101));
     const roster = await tx.get(db.collection(`teams/${teamId}/roster`).where('status', '==', 'active').limit(51));
     memberCount += members.size; rosterCount += roster.size;
     if (memberCount > 100 || rosterCount > 50) throw new Error('NOTIFICATION_AUDIENCE_TOO_LARGE');
@@ -96,39 +96,67 @@ async function resolveRecipients(tx: Transaction, intent: Data) {
   return recipients;
 }
 
-export async function hasNotificationAccess(tx: Transaction, orgId: string, uid: string, sources: AccessSource[]) {
+export function notificationAccessSourceKeys(orgId: string, sources: AccessSource[]) {
+  return [...new Set((sources ?? []).map(source => source.kind === 'staff' ? `${orgId}:staff:${source.programId}`
+    : source.kind === 'team' ? `${orgId}:team:${source.teamId}` : `${orgId}:household:${source.teamId}:${source.participantId}`))];
+}
+
+export async function authorizeNotificationRows(tx: Transaction, uid: string, rows: { orgId: string; accessSources: AccessSource[] }[]) {
   const db = getFirestore();
   try { await accountAvailable(tx, uid); } catch (error) {
-    if (error instanceof HttpsError && error.code === 'permission-denied') return false;
+    if (error instanceof HttpsError && error.code === 'permission-denied') return rows.map(() => false);
     throw error;
   }
-  const organization = (await tx.get(db.doc(`organizations/${orgId}`))).data();
-  if (organization?.schemaVersion !== 2 || organization.status !== 'active') return false;
-  for (const source of sources ?? []) {
-    if (source.kind === 'household' && organization.features?.households !== true) continue;
-    if (source.kind === 'staff') {
-      const [program, member] = await tx.getAll(db.doc(`organizations/${orgId}/programs/${source.programId}`), db.doc(`organizations/${orgId}/members/${uid}`));
-      const row = member.data();
-      if (program.data()?.orgId === orgId && program.data()?.status === 'active'
-        && row?.orgId === orgId && row.status === 'active' && Array.isArray(row.roles) && Array.isArray(row.programIds)
-        && (row.roles.includes('orgAdmin') || row.roles.includes('programStaff') && row.programIds.includes(source.programId))) return true;
-    } else if (source.kind === 'team') {
-      const [team, member] = await tx.getAll(db.doc(`teams/${source.teamId}`), db.doc(`teamMembers/${source.teamId}_${uid}`));
-      const row = member.data();
-      if (team.data()?.orgId === orgId && team.data()?.status === 'active' && row?.orgId === orgId && row.teamId === source.teamId
-        && row.status === 'active' && row.userId === uid && Array.isArray(row.roles) && row.roles.some((role: string) => ['coach', 'captain'].includes(role))) return true;
-    } else {
-      const [team, roster, participant, guardian] = await tx.getAll(db.doc(`teams/${source.teamId}`), db.doc(`teams/${source.teamId}/roster/${source.participantId}`),
-        db.doc(`organizations/${orgId}/participants/${source.participantId}`), db.doc(`organizations/${orgId}/participants/${source.participantId}/guardians/${uid}`));
-      if (team.data()?.orgId === orgId && team.data()?.status === 'active' && roster.data()?.orgId === orgId && roster.data()?.participantId === source.participantId
-        && (roster.data()?.teamId == null || roster.data()?.teamId === source.teamId) && roster.data()?.status === 'active'
-        && participant.data()?.status === 'active' && (participant.data()?.orgId == null || participant.data()?.orgId === orgId)
-        && (participant.data()?.linkedUserId === uid || guardian.data()?.status === 'active' && guardian.data()?.orgId === orgId
-          && guardian.data()?.participantId === source.participantId && guardian.data()?.userId === uid
-          && guardian.data()?.permissions?.viewSchedule === true)) return true;
+  const refs = new Map<string, FirebaseFirestore.DocumentReference>();
+  const addRef = (path: string) => refs.set(path, db.doc(path));
+  for (const { orgId, accessSources } of rows) {
+    addRef(`organizations/${orgId}`);
+    for (const source of accessSources ?? []) {
+      if (source.kind === 'staff') {
+        addRef(`organizations/${orgId}/programs/${source.programId}`); addRef(`organizations/${orgId}/members/${uid}`);
+      } else if (source.kind === 'team') {
+        addRef(`teams/${source.teamId}`); addRef(`teamMembers/${source.teamId}_${uid}`);
+      } else {
+        addRef(`teams/${source.teamId}`); addRef(`teams/${source.teamId}/roster/${source.participantId}`);
+        addRef(`organizations/${orgId}/participants/${source.participantId}`);
+        addRef(`organizations/${orgId}/participants/${source.participantId}/guardians/${uid}`);
+      }
     }
   }
-  return false;
+  const snapshots = refs.size ? await tx.getAll(...refs.values()) : [];
+  const data = new Map(snapshots.map(snapshot => [snapshot.ref.path, snapshot.data()]));
+  return rows.map(({ orgId, accessSources }) => {
+    const organization = data.get(`organizations/${orgId}`);
+    if (organization?.schemaVersion !== 2 || organization.status !== 'active') return false;
+    for (const source of accessSources ?? []) {
+      if (source.kind === 'household' && organization.features?.households !== true) continue;
+      if (source.kind === 'staff') {
+        const program = data.get(`organizations/${orgId}/programs/${source.programId}`), row = data.get(`organizations/${orgId}/members/${uid}`);
+        if (program?.orgId === orgId && program.status === 'active'
+          && row?.orgId === orgId && row.status === 'active' && Array.isArray(row.roles) && Array.isArray(row.programIds)
+          && (row.roles.includes('orgAdmin') || row.roles.includes('programStaff') && row.programIds.includes(source.programId))) return true;
+      } else if (source.kind === 'team') {
+        const team = data.get(`teams/${source.teamId}`), row = data.get(`teamMembers/${source.teamId}_${uid}`);
+        if (team?.orgId === orgId && team.status === 'active' && row?.orgId === orgId && row.teamId === source.teamId
+          && row.status === 'active' && row.userId === uid && Array.isArray(row.roles) && row.roles.some((role: string) => ['coach', 'captain'].includes(role))) return true;
+      } else {
+        const team = data.get(`teams/${source.teamId}`), roster = data.get(`teams/${source.teamId}/roster/${source.participantId}`);
+        const participant = data.get(`organizations/${orgId}/participants/${source.participantId}`);
+        const guardian = data.get(`organizations/${orgId}/participants/${source.participantId}/guardians/${uid}`);
+        if (team?.orgId === orgId && team.status === 'active' && roster?.orgId === orgId && roster.participantId === source.participantId
+          && (roster.teamId == null || roster.teamId === source.teamId) && roster.status === 'active'
+          && participant?.status === 'active' && (participant.orgId == null || participant.orgId === orgId)
+          && (participant.linkedUserId === uid || guardian?.status === 'active' && guardian.orgId === orgId
+            && guardian.participantId === source.participantId && guardian.userId === uid
+            && guardian.permissions?.viewSchedule === true)) return true;
+      }
+    }
+    return false;
+  });
+}
+
+export async function hasNotificationAccess(tx: Transaction, orgId: string, uid: string, sources: AccessSource[]) {
+  return (await authorizeNotificationRows(tx, uid, [{ orgId, accessSources: sources }]))[0];
 }
 
 export async function expandNotificationIntent(orgId: string, intentId: string) {

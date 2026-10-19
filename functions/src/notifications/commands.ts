@@ -2,7 +2,9 @@ import { FieldPath, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { command, Data, id, keys } from '../commandSupport';
 import { readCommand } from '../participants/policy';
-import { hasNotificationAccess } from './worker';
+import { authorizeNotificationRows, hasNotificationAccess, notificationAccessSourceKeys } from './worker';
+
+const MAX_PAGE_ACCESS_SOURCES = 100;
 
 function stale(): never { throw new HttpsError('failed-precondition', 'This notification changed. Reload and try again.', { domainCode: 'STALE_REVISION' }); }
 const normalizeMutation = (data: Data) => { keys(data, ['requestId', 'notificationId', 'sourceRevision']);
@@ -19,11 +21,20 @@ export const listNotifications = readCommand(data => { keys(data, ['pageSize', '
   let query = getFirestore().collection(`users/${uid}/notifications`).orderBy('createdAt', 'desc').orderBy(FieldPath.documentId(), 'desc').limit(data.pageSize + 1);
   if (data.cursor) { const cursor = await tx.get(getFirestore().doc(`users/${uid}/notifications/${data.cursor}`)); if (!cursor.exists) throw new HttpsError('invalid-argument', 'Invalid cursor.'); query = query.startAfter(cursor); }
   const rows = await tx.get(query), items: Data[] = [];
-  const revoked: FirebaseFirestore.DocumentReference[] = [];
-  const boundary = rows.size > data.pageSize ? rows.docs[data.pageSize - 1] : null;
+  const pageDocs: FirebaseFirestore.QueryDocumentSnapshot[] = [], sourceKeys = new Set<string>();
   for (const doc of rows.docs.slice(0, data.pageSize)) {
+    const keysForRow = notificationAccessSourceKeys(doc.data().orgId, doc.data().accessSources);
+    const added = keysForRow.filter(key => !sourceKeys.has(key));
+    if (pageDocs.length && sourceKeys.size + added.length > MAX_PAGE_ACCESS_SOURCES) break;
+    if (sourceKeys.size + added.length > MAX_PAGE_ACCESS_SOURCES) throw new HttpsError('resource-exhausted', 'This notification has too many access sources.');
+    added.forEach(key => sourceKeys.add(key)); pageDocs.push(doc);
+  }
+  const access = await authorizeNotificationRows(tx, uid, pageDocs.map(doc => ({ orgId: doc.data().orgId, accessSources: doc.data().accessSources })));
+  const revoked: FirebaseFirestore.DocumentReference[] = [];
+  const boundary = rows.size > pageDocs.length ? pageDocs[pageDocs.length - 1] : null;
+  for (const [index, doc] of pageDocs.entries()) {
     const row = doc.data();
-    if (!await hasNotificationAccess(tx, row.orgId, uid, row.accessSources)) { if (doc.id !== boundary?.id) revoked.push(doc.ref); continue; }
+    if (!access[index]) { if (doc.id !== boundary?.id) revoked.push(doc.ref); continue; }
     items.push({ id: doc.id, title: row.title, body: row.body, critical: row.critical, sourceType: row.sourceType, sourceId: row.sourceId,
       sourceRevision: row.sourceRevision, createdAt: row.createdAt, readAt: row.readAt, acknowledgedAt: row.acknowledgedAt, deliveryStatus: row.deliveryStatus });
   }
