@@ -27,3 +27,7 @@ export function notificationTargetFromData(data: unknown): PendingNotificationTa
   const url = (data as { url?: unknown }).url;
   return typeof url === 'string' ? notificationTargetFromUrl(url) : null;
 }
+
+export function notificationDestination(currentTeamId: string | null, targetTeamId: string | null): 'event' | 'household' {
+  return currentTeamId != null && targetTeamId === currentTeamId ? 'event' : 'household';
+}

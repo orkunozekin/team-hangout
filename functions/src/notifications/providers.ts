@@ -2,7 +2,7 @@ import { Data } from '../commandSupport';
 import { DeliveryFailure, developmentTransport, essentialEmailApiKey, productionTransport, senderConfig } from '../email/transport';
 import { getAuth } from 'firebase-admin/auth';
 
-export type ProviderResult = { outcome: 'accepted' | 'retryable' | 'permanent'; messageId?: string; retryAfterMs?: number };
+export type ProviderResult = { outcome: 'accepted' | 'retryable' | 'permanent'; messageId?: string; retryAfterMs?: number; errorCode?: string };
 export type DeliveryProvider = { send(delivery: Data): Promise<ProviderResult> };
 export type ReceiptResult = { outcome: 'ok' | 'retryable' | 'permanent'; errorCode?: string };
 export type ReceiptProvider = { get(receiptId: string): Promise<ReceiptResult> };
@@ -40,7 +40,8 @@ export function expoPushProvider(fetcher: typeof fetch = fetch): DeliveryProvide
     const ticket = Array.isArray(body.data) ? body.data[0] : body.data;
     if (ticket?.status === 'ok' && typeof ticket.id === 'string') return { outcome: 'accepted', messageId: ticket.id };
     const code = ticket?.details?.error;
-    return { outcome: code === 'DeviceNotRegistered' || code === 'InvalidCredentials' ? 'permanent' : 'retryable' };
+    return { outcome: ['DeviceNotRegistered', 'InvalidCredentials', 'MismatchSenderId', 'MessageTooBig'].includes(code)
+      ? 'permanent' : 'retryable', ...(typeof code === 'string' ? { errorCode: code } : {}) };
   } };
 }
 
@@ -56,20 +57,24 @@ export function expoReceiptProvider(fetcher: typeof fetch = fetch): ReceiptProvi
       if (!receipt) return { outcome: 'retryable', errorCode: 'RECEIPT_PENDING' };
       if (receipt.status === 'ok') return { outcome: 'ok' };
       const code = typeof receipt.details?.error === 'string' ? receipt.details.error : 'PUSH_REJECTED';
-      return { outcome: code === 'DeviceNotRegistered' || code === 'InvalidCredentials' ? 'permanent' : 'retryable', errorCode: code };
+      return { outcome: 'permanent', errorCode: code };
     } catch { return { outcome: 'retryable', errorCode: 'RECEIPT_INVALID' }; }
   } };
 }
 
-export function notificationEmailProvider(): DeliveryProvider | null {
+export function notificationEmailProvider(auth = getAuth()): DeliveryProvider | null {
   const config = senderConfig();
   if (!config || process.env.NOTIFICATION_EMAIL_ENABLED !== 'true') return null;
   const transport = process.env.FUNCTIONS_EMULATOR === 'true' ? developmentTransport()
     : productionTransport(config, essentialEmailApiKey.value());
   return { async send(delivery) {
+    let user;
+    try { user = await auth.getUser(delivery.recipientUid); }
+    catch (error) {
+      return { outcome: (error as { code?: string }).code === 'auth/user-not-found' ? 'permanent' : 'retryable' };
+    }
+    if (user.disabled || !user.emailVerified || user.email?.toLowerCase() !== delivery.recipientEmail) return { outcome: 'permanent' };
     try {
-      const user = await getAuth().getUser(delivery.recipientUid);
-      if (user.disabled || !user.emailVerified || user.email?.toLowerCase() !== delivery.recipientEmail) return { outcome: 'permanent' };
       const messageId = await transport.send(`notification-${delivery.id}`, { to: delivery.recipientEmail,
         subject: delivery.title, text: `${delivery.body}\n\nOpen this update after signing in: teamhangout://notification?id=${delivery.notificationId}&revision=${delivery.sourceRevision}\nReply to: ${config.replyTo}\nPrivacy: ${config.privacyPolicyUrl}` });
       return { outcome: 'accepted', messageId };

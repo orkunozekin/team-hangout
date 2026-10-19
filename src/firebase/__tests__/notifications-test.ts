@@ -24,7 +24,7 @@ test('notification adapter registers and revokes this installation and resolves 
   await revokePushDevice('install-a');
   expect(runCommand).toHaveBeenNthCalledWith(1, 'registerPushDevice', expect.objectContaining({ installationId: 'install-a' }), 'notification-request');
   expect(runCommand).toHaveBeenNthCalledWith(2, 'revokePushDevice', { installationId: 'install-a' }, 'notification-request');
-  const result = { available: true, target: { type: 'event', id: 'event-a' } };
+  const result = { available: true, target: { type: 'event', id: 'event-a', teamId: 'team-a' } };
   (httpsCallable as jest.Mock).mockReturnValue(async () => ({ data: result }));
   await expect(resolveNotificationTarget('notice-a', 2)).resolves.toEqual(result);
   expect(httpsCallable).toHaveBeenCalledWith({}, 'resolveNotificationTarget');

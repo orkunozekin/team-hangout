@@ -95,7 +95,7 @@ import {
   fonts,
 } from './src/theme/theme';
 import { reconcileGameDayCacheAccount } from './src/lib/gameDayCache';
-import { notificationTargetFromData, notificationTargetFromUrl, PendingNotificationTarget } from './src/lib/notificationNavigation';
+import { notificationDestination, notificationTargetFromData, notificationTargetFromUrl, PendingNotificationTarget } from './src/lib/notificationNavigation';
 import { resolveNotificationTarget } from './src/firebase/notifications';
 import { syncExistingPushPermission } from './src/lib/pushRegistration';
 
@@ -478,8 +478,11 @@ export default function App() {
         return;
       }
       setNotificationNotice(null);
-      if (team && membership) navigationRef.navigate('EventDetail', { eventId: resolved.target.id });
-      else { setNotificationNotice('Open the update from your household agenda after signing in.'); navigationRef.navigate('Inbox'); }
+      if (notificationDestination(team?.id ?? null, resolved.target.teamId) === 'event' && team && membership) navigationRef.navigate('EventDetail', { eventId: resolved.target.id });
+      else {
+        setNotificationNotice('Open the update from your household agenda. Your current team was not used as authority for this link.');
+        if (team && membership) navigationRef.navigate('MainTabs', { screen: 'Household' }); else navigationRef.navigate('Household');
+      }
       Notifications.clearLastNotificationResponse();
     } catch {
       setPendingNotification(target);

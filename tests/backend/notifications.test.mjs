@@ -207,7 +207,7 @@ test('push device lifecycle is self-only, validates tokens and records denied pe
 test('notification targets are resolved after live authorization and disappear after revocation', async () => {
   const inbox = (await call('notify-self', 'listNotifications')).items[0];
   const resolved = await call('notify-self', 'resolveNotificationTarget', { notificationId: inbox.id, sourceRevision: inbox.sourceRevision });
-  assert.deepEqual(resolved, { available: true, target: { type: 'event', id: 'event-1' } });
+  assert.deepEqual(resolved, { available: true, target: { type: 'event', id: 'event-1', teamId: 'notify-team' } });
   await db.doc('organizations/notify-org/participants/notify-child').update({ linkedUserId: null });
   const unavailable = await call('notify-self', 'resolveNotificationTarget', { notificationId: inbox.id, sourceRevision: inbox.sourceRevision });
   assert.deepEqual(unavailable, { available: false, target: null });
@@ -251,9 +251,15 @@ test('device-not-registered receipt revokes only that endpoint and queues determ
   const fallback = await db.collection('notificationDeliveries').where('intentId', '==', 'intent-provider').where('recipientUid', '==', 'notify-self').where('channel', '==', 'email').get();
   assert.equal(fallback.size, 1); assert.equal(fallback.docs[0].data().status, 'queued');
   await fallback.docs[0].ref.update({ status: 'providerAccepted' });
+  await db.doc('notificationEndpoints/notify-self_install-b').update({ permissionState: 'granted', expoPushToken: 'ExponentPushToken[rotated-token]', revokedAt: null });
   await push.ref.update({ status: 'providerAccepted', nextReceiptAt: Timestamp.fromMillis(0) });
   assert.equal(await worker.processPushReceipt(push.id, receipt), 'permanentFailure');
   assert.equal((await fallback.docs[0].ref.get()).data().status, 'providerAccepted');
+  assert.equal((await db.doc('notificationEndpoints/notify-self_install-b').get()).data().expoPushToken, 'ExponentPushToken[rotated-token]');
+  await push.ref.update({ status: 'queued', attemptCount: 0, nextAttemptAt: Timestamp.fromMillis(0) });
+  assert.equal(await worker.processNotificationDelivery('notify-org', push.id, { provider: { send: async () => (
+    { outcome: 'permanent', errorCode: 'DeviceNotRegistered' }) } }), 'permanentFailure');
+  assert.equal((await db.doc('notificationEndpoints/notify-self_install-b').get()).data().permissionState, 'revoked');
 });
 
 test('Expo adapters keep payload navigation allowlisted and classify tickets and receipts', async () => {
@@ -268,6 +274,11 @@ test('Expo adapters keep payload navigation allowlisted and classify tickets and
   assert.equal(request.body, 'Open Team Hangout for current details.');
   const receipts = providers.expoReceiptProvider(async () => response({ data: { 'ticket-3': { status: 'error', details: { error: 'DeviceNotRegistered' } } } }));
   assert.deepEqual(await receipts.get('ticket-3'), { outcome: 'permanent', errorCode: 'DeviceNotRegistered' });
+  const rejected = providers.expoPushProvider(async () => response({ data: { status: 'error', details: { error: 'DeviceNotRegistered' } } }));
+  assert.deepEqual(await rejected.send({ endpointToken: 'ExponentPushToken[x]', notificationId: 'notice-safe', sourceRevision: 7,
+    title: 'Team update', body: 'Open Team Hangout for current details.' }), { outcome: 'permanent', errorCode: 'DeviceNotRegistered' });
+  const terminalReceipt = providers.expoReceiptProvider(async () => response({ data: { 'ticket-3': { status: 'error', details: { error: 'MessageTooBig' } } } }));
+  assert.deepEqual(await terminalReceipt.get('ticket-3'), { outcome: 'permanent', errorCode: 'MessageTooBig' });
   if (previous == null) delete process.env.PUSH_DELIVERY_ENABLED; else process.env.PUSH_DELIVERY_ENABLED = previous;
 });
 
@@ -286,6 +297,8 @@ test('email fallback uses the isolated mailbox only for the verified current acc
   assert.match(mailbox.text, /teamhangout:\/\/notification\?id=notice-email&revision=3/);
   assert.doesNotMatch(mailbox.text, /Jamie|Falcons/);
   assert.equal((await provider.send({ ...delivery, id: 'wrong-email', recipientEmail: 'other@example.test' })).outcome, 'permanent');
+  const transientAuth = providers.notificationEmailProvider({ getUser: async () => { throw Object.assign(new Error('auth unavailable'), { code: 'auth/internal-error' }); } });
+  assert.equal((await transientAuth.send({ ...delivery, id: 'auth-unavailable' })).outcome, 'retryable');
   if (previous.emulator == null) delete process.env.FUNCTIONS_EMULATOR; else process.env.FUNCTIONS_EMULATOR = previous.emulator;
   if (previous.project == null) delete process.env.GCLOUD_PROJECT; else process.env.GCLOUD_PROJECT = previous.project;
   if (previous.enabled == null) delete process.env.NOTIFICATION_EMAIL_ENABLED; else process.env.NOTIFICATION_EMAIL_ENABLED = previous.enabled;

@@ -87,7 +87,8 @@ export const resolveNotificationTarget = readCommand(data => {
   try {
     const { row } = await load(tx, uid, payload.notificationId);
     if (row.sourceRevision !== payload.sourceRevision || row.sourceType !== 'event' || typeof row.sourceId !== 'string') return { available: false, target: null };
-    return { available: true, target: { type: 'event', id: id(row.sourceId, 'sourceId') } };
+    const teamId = (row.accessSources ?? []).map((source: Data) => source.teamId).find((value: unknown) => typeof value === 'string');
+    return { available: true, target: { type: 'event', id: id(row.sourceId, 'sourceId'), teamId: teamId ? id(teamId, 'teamId') : null } };
   } catch (error) {
     if (error instanceof HttpsError && error.code === 'permission-denied') return { available: false, target: null };
     throw error;

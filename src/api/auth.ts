@@ -246,11 +246,20 @@ export async function resetPassword(
   await sendPasswordResetEmail(auth, email.trim());
 }
 
-export async function logout(): Promise<void> {
+export async function logout(
+  options: { cacheAlreadyCleared?: boolean } = {},
+): Promise<void> {
   const uid = auth.currentUser?.uid;
   if (uid) {
-    await revokePushNotifications(uid);
-    await clearGameDayCache(uid);
+    try {
+      await revokePushNotifications(uid);
+    } catch {
+      // Revocation is best effort. A Functions outage or an account already
+      // marked for deletion must not leave the user signed in locally.
+    }
+    if (!options.cacheAlreadyCleared) {
+      await clearGameDayCache(uid);
+    }
   }
   try {
     ensureGoogleConfigured();

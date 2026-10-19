@@ -25,5 +25,5 @@ export async function revokePushDevice(installationId: string) {
 }
 export async function resolveNotificationTarget(notificationId: string, sourceRevision: number) {
   return (await httpsCallable<{ notificationId: string; sourceRevision: number },
-    { available: boolean; target: { type: 'event'; id: string } | null }>(functions, 'resolveNotificationTarget')({ notificationId, sourceRevision })).data;
+    { available: boolean; target: { type: 'event'; id: string; teamId: string | null } | null }>(functions, 'resolveNotificationTarget')({ notificationId, sourceRevision })).data;
 }

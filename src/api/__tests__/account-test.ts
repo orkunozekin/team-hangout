@@ -51,20 +51,17 @@ describe('api/account', () => {
     );
     expect(mockCallable).toHaveBeenCalled();
     expect(mockClearGameDayCache).toHaveBeenCalledWith('deleting-user');
-    expect(mockLogout).toHaveBeenCalled();
+    expect(mockLogout).toHaveBeenCalledWith({ cacheAlreadyCleared: true });
     expect(result).toEqual({ ok: true, membershipsRemoved: 2 });
   });
 
-  it('still returns result if local logout fails', async () => {
+  it('does not report deletion complete if local logout fails', async () => {
     mockCallable.mockResolvedValue({
       data: { ok: true, membershipsRemoved: 0 },
     });
     mockLogout.mockRejectedValue(new Error('already gone'));
 
-    await expect(deleteAccount()).resolves.toEqual({
-      ok: true,
-      membershipsRemoved: 0,
-    });
+    await expect(deleteAccount()).rejects.toThrow('already gone');
   });
 
   it('maps callable error codes', () => {

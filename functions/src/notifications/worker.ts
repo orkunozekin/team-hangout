@@ -264,6 +264,19 @@ async function enqueueEmailFallback(row: Data) {
   });
 }
 
+const pushTokenFingerprint = (token: string) => fingerprint({ expoPushToken: token });
+
+async function revokeEndpointIfTokenMatches(row: Data, tokenFingerprint: string | undefined) {
+  if (!row.endpointId || !tokenFingerprint) return;
+  const db = getFirestore(), endpointRef = db.doc(`notificationEndpoints/${row.endpointId}`);
+  await db.runTransaction(async tx => {
+    const endpoint = (await tx.get(endpointRef)).data();
+    if (!endpoint || endpoint.userId !== row.recipientUid || typeof endpoint.expoPushToken !== 'string'
+      || pushTokenFingerprint(endpoint.expoPushToken) !== tokenFingerprint) return;
+    tx.update(endpointRef, { permissionState: 'revoked', expoPushToken: null, revokedAt: Timestamp.now(), updatedAt: Timestamp.now() });
+  });
+}
+
 async function releaseUnsent(deliveryId: string, lease: string, now: number) {
   const ref = getFirestore().doc(`notificationDeliveries/${deliveryId}`);
   await getFirestore().runTransaction(async tx => {
@@ -347,9 +360,15 @@ export async function processNotificationDelivery(orgId: string, deliveryId: str
     if (!provider) { await finish(deliveryId, lease, 'paused', { failureCode: 'PROVIDER_NOT_CONFIGURED', nextAttemptAt: null }); return 'disabled'; }
     const raw = await provider.send({ ...row, ...(gate.endpointToken ? { endpointToken: gate.endpointToken } : {}) });
     const result = typeof raw === 'string' ? { outcome: raw } : raw;
+    const endpointTokenFingerprint = gate.endpointToken ? pushTokenFingerprint(gate.endpointToken) : undefined;
     if (result.outcome === 'accepted') { await finish(deliveryId, lease, 'providerAccepted', { providerMessageId: result.messageId ?? `fake:${deliveryId}`,
+      ...(endpointTokenFingerprint ? { endpointTokenFingerprint } : {}),
       nextReceiptAt: row.channel === 'push' ? Timestamp.fromMillis(now + 15 * 60_000) : null, failureCode: null }); return 'providerAccepted'; }
-    if (result.outcome === 'permanent') { await finish(deliveryId, lease, 'permanentFailure', { failureCode: 'PROVIDER_REJECTED' }); await enqueueEmailFallback(row); return 'permanentFailure'; }
+    if (result.outcome === 'permanent') {
+      await finish(deliveryId, lease, 'permanentFailure', { failureCode: result.errorCode ?? 'PROVIDER_REJECTED' });
+      if (result.errorCode === 'DeviceNotRegistered') await revokeEndpointIfTokenMatches(row, endpointTokenFingerprint);
+      await enqueueEmailFallback(row); return 'permanentFailure';
+    }
     if ((row.attemptCount ?? 0) >= MAX_ATTEMPTS) {
       await finish(deliveryId, lease, 'permanentFailure', { failureCode: 'RETRY_LIMIT_REACHED' });
       await enqueueEmailFallback(row);
@@ -394,8 +413,7 @@ export async function processPushReceipt(deliveryId: string, provider: ReceiptPr
       return true;
     });
     if (!applied) return 'skipped';
-    if (result.errorCode === 'DeviceNotRegistered' && row.endpointId) await db.doc(`notificationEndpoints/${row.endpointId}`).set({
-      permissionState: 'revoked', expoPushToken: null, revokedAt: Timestamp.now(), updatedAt: Timestamp.now() }, { merge: true });
+    if (result.errorCode === 'DeviceNotRegistered') await revokeEndpointIfTokenMatches(row, row.endpointTokenFingerprint);
     await enqueueEmailFallback(row); return 'permanentFailure';
   }
   const attempts = (row.receiptAttempts ?? 0) + 1;

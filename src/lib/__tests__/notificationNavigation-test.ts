@@ -2,6 +2,7 @@ import {
   notificationTargetFromData,
   notificationTargetFromUrl,
   notificationTargetUrl,
+  notificationDestination,
 } from '../notificationNavigation';
 
 describe('notification navigation', () => {
@@ -23,5 +24,12 @@ describe('notification navigation', () => {
     expect(notificationTargetFromUrl('teamhangout://notification?id=notice_123&revision=0')).toBeNull();
     expect(notificationTargetFromData({ url: 42 })).toBeNull();
     expect(notificationTargetFromData({ targetType: 'url', targetId: 'https://example.test' })).toBeNull();
+  });
+
+  it('opens event detail only when the live target matches the active team', () => {
+    expect(notificationDestination('team-a', 'team-a')).toBe('event');
+    expect(notificationDestination('team-a', 'team-b')).toBe('household');
+    expect(notificationDestination('team-a', null)).toBe('household');
+    expect(notificationDestination(null, 'team-a')).toBe('household');
   });
 });
