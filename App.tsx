@@ -58,6 +58,7 @@ import ProfileScreen from './src/screens/ProfileScreen';
 import EventDetailScreen from './src/screens/EventDetailScreen';
 import CreateEditEventScreen from './src/screens/CreateEditEventScreen';
 import AdminScreen from './src/screens/AdminScreen';
+import NotificationsScreen from './src/screens/NotificationsScreen';
 
 import {
   subscribeToAuthChanges,
@@ -100,6 +101,7 @@ export type AuthStackParamList = {
 
 export type OnboardingStackParamList = {
   Household: undefined;
+  Inbox: undefined;
   CreateTeam: undefined;
   JoinTeam: { code?: string } | undefined;
   AdminHome: undefined;
@@ -115,6 +117,7 @@ export type MainTabParamList = {
   Household: undefined;
   Schedule: undefined;
   Team: undefined;
+  Inbox: undefined;
   Admin: undefined;
   Profile: undefined;
 };
@@ -164,8 +167,9 @@ function OnboardingNavigator({
       screenOptions={{ headerShown: false }}
     >
       <OnboardingStack.Screen name="Household">
-        {({ navigation }) => <HouseholdScreen user={user} onTeams={() => navigation.navigate('CreateTeam')} />}
+        {({ navigation }) => <HouseholdScreen user={user} onTeams={() => navigation.navigate('CreateTeam')} onInbox={() => navigation.navigate('Inbox')} />}
       </OnboardingStack.Screen>
+      <OnboardingStack.Screen name="Inbox" component={NotificationsScreen} options={{ headerShown: true, title: 'Inbox' }} />
       <OnboardingStack.Screen name="CreateTeam" options={{ headerShown: true, title: 'Teams', headerBackTitle: 'Household' }}>
         {({ navigation }) => (
           <CreateTeamScreen
@@ -236,6 +240,8 @@ function MainTabs({
               ? 'calendar'
               : route.name === 'Team'
                 ? 'people'
+                : route.name === 'Inbox'
+                  ? 'notifications'
                 : route.name === 'Admin'
                   ? 'shield-checkmark'
                   : 'person';
@@ -268,6 +274,7 @@ function MainTabs({
           />
         )}
       </Tab.Screen>
+      <Tab.Screen name="Inbox" component={NotificationsScreen} />
       {isSuperAdmin ? (
         <Tab.Screen name="Admin">
           {() => (

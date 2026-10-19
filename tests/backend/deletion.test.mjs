@@ -96,7 +96,7 @@ test('last admin and only guardian can delete; children, other guardians, roster
   await db.doc(`${root}/shared/guardians/erase-retained`).set(survivor);
   await db.doc(`${root}/self/private/profile`).set({ contactEmail: 'owned@example.test', contactPhone: '555-0100', operationalNotes: 'Organization history', birthDate: '1990-01-01' });
   await db.doc('teams/erase-roster/roster/shared').set({ participantId: 'shared', status: 'active' });
-  for (const projection of ['participantLinks', 'organizationLinks', 'teamAccess', 'agenda', 'deviceTokens', 'notificationEndpoints']) await db.doc(`users/${uid}/${projection}/pointer`).set({ private: 'Remove' });
+  for (const projection of ['participantLinks', 'organizationLinks', 'teamAccess', 'agenda', 'notifications', 'deviceTokens', 'notificationEndpoints']) await db.doc(`users/${uid}/${projection}/pointer`).set({ private: 'Remove' });
   const { cleanupHooks } = require('./lib/accounts/deletion.js');
   for (const [collection, field] of cleanupHooks) {
     await db.doc(`${collection}/erase-owned`).set({ [field]: uid, token: 'synthetic-token' });
@@ -122,7 +122,7 @@ test('last admin and only guardian can delete; children, other guardians, roster
     } else assert.equal(owned.exists, false);
     assert.equal((await db.doc(`${collection}/erase-other`).get()).exists, true);
   }
-  for (const projection of ['participantLinks', 'organizationLinks', 'teamAccess', 'agenda', 'deviceTokens', 'notificationEndpoints']) assert.equal((await db.collection(`users/${uid}/${projection}`).get()).size, 0);
+  for (const projection of ['participantLinks', 'organizationLinks', 'teamAccess', 'agenda', 'notifications', 'deviceTokens', 'notificationEndpoints']) assert.equal((await db.collection(`users/${uid}/${projection}`).get()).size, 0);
   const retainedCall = clients.find(app => app.name === 'erase-retained');
   const functions = getFunctions(retainedCall);
   const read = await httpsCallable(functions, 'getParticipantProfile')({ orgId: 'erase-only-org', participantId: 'shared' });

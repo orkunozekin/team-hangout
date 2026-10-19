@@ -54,3 +54,5 @@ export { getEventAvailability, respondToEvent, setEventRsvpDeadline } from './op
 export { getEventAttendance, recordEventAttendance, getAttendanceHistory } from './operations/attendance';
 
 export { getParticipantCheckIn, checkInParticipant, setEventCheckInPolicy } from "./operations/checkIn";
+export { listNotifications, markNotificationRead, acknowledgeCriticalUpdate } from './notifications/commands';
+export { resumeNotificationInbox } from './notifications/worker';
