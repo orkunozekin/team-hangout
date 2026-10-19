@@ -154,6 +154,11 @@ export async function expandNotificationIntent(orgId: string, intentId: string) 
   });
 }
 
+export function permanentExpansionFailure(error: unknown) {
+  return error instanceof Error && ['NOTIFICATION_AUDIENCE_TOO_LARGE', 'NOTIFICATION_AUDIENCE_UNSUPPORTED', 'NOTIFICATION_AUDIENCE_STALE'].includes(error.message)
+    ? error.message : null;
+}
+
 async function finish(deliveryId: string, lease: string, status: string, patch: Data = {}) {
   const db = getFirestore(), ref = db.doc(`notificationDeliveries/${deliveryId}`);
   await db.runTransaction(async tx => {
@@ -222,9 +227,9 @@ export const resumeNotificationInbox = onSchedule('every 1 minutes', async () =>
     if (intent.data().state !== 'pending' || parts.length !== 4 || parts[0] !== 'organizations' || parts[2] !== 'outbox') continue;
     try { await expandNotificationIntent(parts[1], intent.id); }
     catch (error) {
-      const code = error instanceof Error && ['NOTIFICATION_AUDIENCE_TOO_LARGE', 'NOTIFICATION_AUDIENCE_UNSUPPORTED', 'NOTIFICATION_AUDIENCE_STALE'].includes(error.message)
-        ? error.message : 'NOTIFICATION_EXPANSION_FAILED';
-      await intent.ref.update({ state: 'failed', failureCode: code, updatedAt: Timestamp.now() });
+      const code = permanentExpansionFailure(error);
+      if (code) await intent.ref.update({ state: 'failed', failureCode: code, updatedAt: Timestamp.now() });
+      else console.error('Notification intent expansion failed transiently.', { orgId: parts[1], intentId: intent.id });
     }
   }
   await scan.set({ cursor: intents.size === 25 ? intents.docs[24].ref.path : null, updatedAt: Timestamp.now() });

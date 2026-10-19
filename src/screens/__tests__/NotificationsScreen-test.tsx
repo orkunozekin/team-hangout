@@ -28,3 +28,14 @@ test('distinguishes unread, acknowledged and failed delivery without equating th
   await waitFor(() => expect(api.acknowledgeCriticalUpdate).toHaveBeenCalledWith('unread', 3));
   expect(await screen.findByText('Acknowledged')).toBeTruthy();
 });
+test('loads the next bounded inbox page without duplicating rows', async () => {
+  (api.listNotifications as jest.Mock)
+    .mockResolvedValueOnce({ items: rows.slice(0, 2), nextCursor: 'read', unreadCount: 1 })
+    .mockResolvedValueOnce({ items: [rows[1], rows[2]], nextCursor: null, unreadCount: 0 });
+  await render(<NotificationsScreen />);
+  await screen.findByText('Load more updates');
+  await act(async () => fireEvent.press(screen.getByText('Load more updates')));
+  await waitFor(() => expect(api.listNotifications).toHaveBeenLastCalledWith('read'));
+  expect(screen.getAllByText('Schedule published')).toHaveLength(1);
+  expect(await screen.findByText('Delivery outcome unknown')).toBeTruthy();
+});

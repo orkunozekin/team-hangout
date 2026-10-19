@@ -6,14 +6,16 @@ import { colors, radius, spacing, type } from '../theme/theme';
 
 export default function NotificationsScreen() {
   const [rows, setRows] = useState<NotificationRow[]>([]), [loading, setLoading] = useState(true), [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string | null>(null), [saving, setSaving] = useState(false);
-  async function refresh() { setError(null); try { const page = await listNotifications(); setRows(page.items); } catch { setRows([]); setError('Notifications could not be loaded. Pull to retry.'); } finally { setLoading(false); } }
+  const [selected, setSelected] = useState<string | null>(null), [saving, setSaving] = useState(false), [refreshing, setRefreshing] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null), [loadingMore, setLoadingMore] = useState(false);
+  async function refresh() { setRefreshing(true); setError(null); try { const page = await listNotifications(); setRows(page.items); setNextCursor(page.nextCursor); } catch { setRows([]); setNextCursor(null); setError('Notifications could not be loaded. Pull to retry.'); } finally { setLoading(false); setRefreshing(false); } }
+  async function loadMore() { if (!nextCursor || loadingMore) return; setLoadingMore(true); setError(null); try { const page = await listNotifications(nextCursor); setRows(current => [...current, ...page.items.filter(row => !current.some(existing => existing.id === row.id))]); setNextCursor(page.nextCursor); } catch { setError('More notifications could not be loaded. Try again.'); } finally { setLoadingMore(false); } }
   useEffect(() => { void refresh(); }, []);
   async function open(row: NotificationRow) { setSelected(row.id); if (row.readAt) return; try { await markNotificationRead(row.id, row.sourceRevision); setRows(current => current.map(item => item.id === row.id ? { ...item, readAt: new Date().toISOString() } : item)); } catch { setError('This update is no longer available. Reload your inbox.'); } }
   async function acknowledge(row: NotificationRow) { setSaving(true); try { await acknowledgeCriticalUpdate(row.id, row.sourceRevision); setRows(current => current.map(item => item.id === row.id ? { ...item, readAt: item.readAt ?? new Date().toISOString(), acknowledgedAt: new Date().toISOString() } : item)); } catch { setError('This critical update changed. Reload before acknowledging it.'); } finally { setSaving(false); } }
   const unread = rows.filter(row => !row.readAt).length;
   return <Screen><Title>Inbox</Title><Subtitle>{unread} unread</Subtitle>
-    {loading ? <ActivityIndicator color={colors.primary} /> : <ScrollView refreshControl={<RefreshControl refreshing={false} onRefresh={refresh} />} contentContainerStyle={styles.list}>
+    {loading ? <ActivityIndicator color={colors.primary} /> : <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />} contentContainerStyle={styles.list}>
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       {!rows.length && !error ? <EmptyState message="No updates yet." /> : rows.map(row => {
         const active = selected === row.id; const failed = row.deliveryStatus === 'permanentFailure';
@@ -24,7 +26,7 @@ export default function NotificationsScreen() {
           <Text style={styles.body}>{row.body}</Text><Text style={[styles.delivery, (failed || row.deliveryStatus === 'unknownOutcome') && styles.failed]}>{deliveryLabel}</Text>
           {active && row.critical && !row.acknowledgedAt ? <PrimaryButton label="Acknowledge critical update" loading={saving} onPress={() => void acknowledge(row)} /> : null}
         </Pressable>;
-      })}
+      })}{nextCursor ? <PrimaryButton label="Load more updates" loading={loadingMore} onPress={() => void loadMore()} /> : null}
     </ScrollView>}
   </Screen>;
 }

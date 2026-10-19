@@ -36,6 +36,12 @@ before(async () => {
 });
 after(async () => { await Promise.all(Object.values(apps).map(deleteApp)); await deleteAdmin(admin); });
 
+test('only deterministic audience validation errors permanently fail expansion', () => {
+  const worker = require('./lib/notifications/worker.js');
+  assert.equal(worker.permanentExpansionFailure(new Error('NOTIFICATION_AUDIENCE_TOO_LARGE')), 'NOTIFICATION_AUDIENCE_TOO_LARGE');
+  assert.equal(worker.permanentExpansionFailure(new Error('UNAVAILABLE')), null);
+});
+
 test('duplicate unordered expansion creates one inbox row and one delivery per live recipient', async () => {
   await db.doc(intentPath('intent-1')).set({ ...meta, orgId: 'notify-org', sourceType: 'event', sourceId: 'event-1', sourceRevision: 2,
     templateKey: 'event:reschedule', critical: true, state: 'pending', audience: { teamIds: ['notify-team'] }, title: 'Schedule changed', body: 'Open Team Hangout for current details.' });

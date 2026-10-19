@@ -4,8 +4,8 @@ import { runCommand } from './commands';
 import { db, functions } from './config';
 export type NotificationRow = { id: string; title: string; body: string; critical: boolean; sourceType: string; sourceId: string; sourceRevision: number;
   createdAt: string; readAt: string | null; acknowledgedAt: string | null; deliveryStatus: string };
-export async function listNotifications(): Promise<{ items: NotificationRow[]; unreadCount: number; nextCursor: string | null }> {
-  return (await httpsCallable<Record<string, never>, { items: NotificationRow[]; unreadCount: number; nextCursor: string | null }>(functions, 'listNotifications')({})).data;
+export async function listNotifications(cursor?: string): Promise<{ items: NotificationRow[]; unreadCount: number; nextCursor: string | null }> {
+  return (await httpsCallable<{ pageSize: number; cursor?: string }, { items: NotificationRow[]; unreadCount: number; nextCursor: string | null }>(functions, 'listNotifications')({ pageSize: 50, ...(cursor ? { cursor } : {}) })).data;
 }
 const requestId = () => doc(collection(db, 'requestIds')).id;
 export async function markNotificationRead(notificationId: string, sourceRevision: number) {
