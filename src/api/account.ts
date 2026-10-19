@@ -29,11 +29,7 @@ export async function deleteAccount(): Promise<DeleteAccountResult> {
     'deleteAccount',
   );
   const result = await callable();
-  try {
-    await logout();
-  } catch {
-    // Auth user may already be gone; ignore local sign-out failures.
-  }
+  await logout({ cacheAlreadyCleared: true });
   return result.data;
 }
 

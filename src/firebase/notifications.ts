@@ -14,3 +14,16 @@ export async function markNotificationRead(notificationId: string, sourceRevisio
 export async function acknowledgeCriticalUpdate(notificationId: string, sourceRevision: number) {
   return runCommand('acknowledgeCriticalUpdate', { notificationId, sourceRevision }, requestId());
 }
+export type PushPermissionState = 'granted' | 'denied' | 'undetermined';
+export type PushRegistration = { installationId: string; platform: 'ios' | 'android'; projectId: string;
+  permissionState: PushPermissionState; expoPushToken: string | null };
+export async function registerPushDevice(registration: PushRegistration) {
+  return runCommand('registerPushDevice', registration, requestId());
+}
+export async function revokePushDevice(installationId: string) {
+  return runCommand('revokePushDevice', { installationId }, requestId());
+}
+export async function resolveNotificationTarget(notificationId: string, sourceRevision: number) {
+  return (await httpsCallable<{ notificationId: string; sourceRevision: number },
+    { available: boolean; target: { type: 'event'; id: string; teamId: string | null } | null }>(functions, 'resolveNotificationTarget')({ notificationId, sourceRevision })).data;
+}

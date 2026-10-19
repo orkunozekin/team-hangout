@@ -14,7 +14,10 @@ import {
 
 import {
   NavigationContainer,
+  createNavigationContainerRef,
 } from '@react-navigation/native';
+import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 
 import {
   createBottomTabNavigator,
@@ -92,6 +95,12 @@ import {
   fonts,
 } from './src/theme/theme';
 import { reconcileGameDayCacheAccount } from './src/lib/gameDayCache';
+import { notificationDestination, notificationTargetFromData, notificationTargetFromUrl, PendingNotificationTarget } from './src/lib/notificationNavigation';
+import { resolveNotificationTarget } from './src/firebase/notifications';
+import { syncExistingPushPermission } from './src/lib/pushRegistration';
+
+const navigationRef = createNavigationContainerRef<any>();
+const pushProjectId = Constants.easConfig?.projectId ?? Constants.expoConfig?.extra?.eas?.projectId ?? process.env.EXPO_PUBLIC_EAS_PROJECT_ID ?? '';
 
 export type AuthStackParamList = {
   Login: undefined;
@@ -146,12 +155,14 @@ function OnboardingNavigator({
   pendingInviteCode,
   appRole,
   onJoined,
+  notice,
 }: {
   user: User;
   displayName: string;
   pendingInviteCode: string | null;
   appRole: AppRole;
   onJoined: () => void;
+  notice?: string | null;
 }) {
   const isSuperAdmin = isSuperAdminRole(appRole);
 
@@ -169,7 +180,9 @@ function OnboardingNavigator({
       <OnboardingStack.Screen name="Household">
         {({ navigation }) => <HouseholdScreen user={user} onTeams={() => navigation.navigate('CreateTeam')} onInbox={() => navigation.navigate('Inbox')} />}
       </OnboardingStack.Screen>
-      <OnboardingStack.Screen name="Inbox" component={NotificationsScreen} options={{ headerShown: true, title: 'Inbox' }} />
+      <OnboardingStack.Screen name="Inbox" options={{ headerShown: true, title: 'Inbox' }}>
+        {() => <NotificationsScreen userId={user.uid} pushProjectId={pushProjectId} notice={notice} />}
+      </OnboardingStack.Screen>
       <OnboardingStack.Screen name="CreateTeam" options={{ headerShown: true, title: 'Teams', headerBackTitle: 'Household' }}>
         {({ navigation }) => (
           <CreateTeamScreen
@@ -213,12 +226,14 @@ function MainTabs({
   membership,
   appRole,
   onTeamSelected,
+  notice,
 }: {
   user: User;
   team: Team;
   membership: TeamMember;
   appRole: AppRole;
   onTeamSelected: () => void;
+  notice?: string | null;
 }) {
   const isSuperAdmin = isSuperAdminRole(appRole);
 
@@ -274,7 +289,7 @@ function MainTabs({
           />
         )}
       </Tab.Screen>
-      <Tab.Screen name="Inbox" component={NotificationsScreen} />
+      <Tab.Screen name="Inbox">{() => <NotificationsScreen userId={user.uid} pushProjectId={pushProjectId} notice={notice} />}</Tab.Screen>
       {isSuperAdmin ? (
         <Tab.Screen name="Admin">
           {() => (
@@ -306,12 +321,14 @@ function AppNavigator({
   membership,
   appRole,
   onTeamSelected,
+  notice,
 }: {
   user: User;
   team: Team;
   membership: TeamMember;
   appRole: AppRole;
   onTeamSelected: () => void;
+  notice?: string | null;
 }) {
   return (
     <RootStack.Navigator>
@@ -326,6 +343,7 @@ function AppNavigator({
             membership={membership}
             appRole={appRole}
             onTeamSelected={onTeamSelected}
+            notice={notice}
           />
         )}
       </RootStack.Screen>
@@ -380,6 +398,8 @@ export default function App() {
     null,
   );
   const [pendingInvitation, setPendingInvitation] = useState<string | null>(null);
+  const [pendingNotification, setPendingNotification] = useState<PendingNotificationTarget | null>(null);
+  const [notificationNotice, setNotificationNotice] = useState<string | null>(null);
   const previousUid = useRef<string | null>(null);
   const [teamVersion, setTeamVersion] = useState(0);
 
@@ -416,6 +436,8 @@ export default function App() {
       if (!url) return;
       const token = invitationTokenFromUrl(url);
       if (token) { setPendingInvitation(token); return; }
+      const notification = notificationTargetFromUrl(url);
+      if (notification) { setPendingNotification(notification); return; }
       const code = captureInviteCodeFromUrl(url);
       if (code) {
         setPendingInviteCode(code);
@@ -426,6 +448,49 @@ export default function App() {
     const sub = Linking.addEventListener('url', ({ url }) => applyUrl(url));
     return () => sub.remove();
   }, []);
+
+  useEffect(() => {
+    const applyResponse = (response: Notifications.NotificationResponse | null | undefined) => {
+      const target = notificationTargetFromData(response?.notification.request.content.data);
+      if (target) setPendingNotification(target);
+    };
+    applyResponse(Notifications.getLastNotificationResponse());
+    const response = Notifications.addNotificationResponseReceivedListener(value => { applyResponse(value); Notifications.clearLastNotificationResponse(); });
+    const received = Notifications.addNotificationReceivedListener(() => setNotificationNotice('A new update arrived. Open the inbox for current details.'));
+    return () => { response.remove(); received.remove(); };
+  }, []);
+
+  useEffect(() => {
+    if (!user || !pushProjectId) return;
+    void syncExistingPushPermission(user.uid, pushProjectId).catch(() => undefined);
+    const token = Notifications.addPushTokenListener(() => { void syncExistingPushPermission(user.uid, pushProjectId).catch(() => undefined); });
+    return () => token.remove();
+  }, [user]);
+
+  const consumePendingNotification = useCallback(async () => {
+    if (!user || !teamReady || !pendingNotification || !navigationRef.isReady()) return;
+    const target = pendingNotification; setPendingNotification(null);
+    try {
+      const resolved = await resolveNotificationTarget(target.notificationId, target.sourceRevision);
+      if (!resolved.available || !resolved.target) {
+        setNotificationNotice('This update is no longer available for your account.');
+        if (team && membership) navigationRef.navigate('MainTabs', { screen: 'Inbox' }); else navigationRef.navigate('Inbox');
+        return;
+      }
+      setNotificationNotice(null);
+      if (notificationDestination(team?.id ?? null, resolved.target.teamId) === 'event' && team && membership) navigationRef.navigate('EventDetail', { eventId: resolved.target.id });
+      else {
+        setNotificationNotice('Open the update from your household agenda. Your current team was not used as authority for this link.');
+        if (team && membership) navigationRef.navigate('MainTabs', { screen: 'Household' }); else navigationRef.navigate('Household');
+      }
+      Notifications.clearLastNotificationResponse();
+    } catch {
+      setPendingNotification(target);
+      setNotificationNotice('The linked update could not be opened. Check your connection and try again.');
+    }
+  }, [membership, pendingNotification, team, teamReady, user]);
+
+  useEffect(() => { void consumePendingNotification(); }, [consumePendingNotification]);
 
   const refreshTeam = useCallback(async () => {
     if (!user) {
@@ -483,7 +548,7 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <NavigationContainer key={user?.uid || 'signed-out'}>
+      <NavigationContainer ref={navigationRef} key={user?.uid || 'signed-out'} onReady={() => { void consumePendingNotification(); }}>
         {user && pendingInvitation ? (
           <InvitationScreen key={`${user.uid}:${pendingInvitation}`} user={user} token={pendingInvitation} onClose={() => { setPendingInvitation(null); setTeamVersion(v => v + 1); }} />
         ) : !user ? (
@@ -495,6 +560,7 @@ export default function App() {
             pendingInviteCode={pendingInviteCode}
             appRole={appRole}
             onJoined={() => setTeamVersion((v) => v + 1)}
+            notice={notificationNotice}
           />
         ) : (
           <AppNavigator
@@ -503,6 +569,7 @@ export default function App() {
             membership={membership}
             appRole={appRole}
             onTeamSelected={() => setTeamVersion((v) => v + 1)}
+            notice={notificationNotice}
           />
         )}
       </NavigationContainer>

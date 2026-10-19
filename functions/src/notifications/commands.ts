@@ -1,6 +1,6 @@
 import { FieldPath, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
-import { command, Data, id, keys } from '../commandSupport';
+import { command, Data, id, invalid, keys } from '../commandSupport';
 import { readCommand } from '../participants/policy';
 import { authorizeNotificationRows, hasNotificationAccess, notificationAccessSourceKeys } from './worker';
 
@@ -40,6 +40,64 @@ export const listNotifications = readCommand(data => { keys(data, ['pageSize', '
   }
   revoked.forEach(ref => tx.delete(ref));
   return { items, unreadCount: items.filter(row => row.readAt == null).length, nextCursor: boundary?.id ?? null };
+});
+
+export const registerPushDevice = command('registerPushDevice', data => {
+  keys(data, ['requestId', 'installationId', 'platform', 'projectId', 'permissionState', 'expoPushToken']);
+  const platform = data.platform;
+  if (!['ios', 'android'].includes(platform)) invalid('Invalid platform.');
+  const permissionState = data.permissionState;
+  if (!['granted', 'denied', 'undetermined'].includes(permissionState)) invalid('Invalid permissionState.');
+  const token = data.expoPushToken;
+  if (permissionState === 'granted') {
+    if (typeof token !== 'string' || !/^(ExponentPushToken|ExpoPushToken)\[[A-Za-z0-9_-]+\]$/.test(token)) invalid('Invalid expoPushToken.');
+  } else if (token != null) invalid('A denied or undetermined endpoint cannot include a token.');
+  return { installationId: id(data.installationId, 'installationId'), platform, projectId: id(data.projectId, 'projectId'), permissionState, expoPushToken: token ?? null };
+}, async (tx, payload, uid, _actor, replay) => {
+  if (replay) return replay;
+  const db = getFirestore(), ref = db.doc(`notificationEndpoints/${uid}_${payload.installationId}`), before = (await tx.get(ref)).data();
+  const duplicates = payload.expoPushToken ? await tx.get(db.collection('notificationEndpoints').where('expoPushToken', '==', payload.expoPushToken).limit(6)) : null;
+  if (duplicates && duplicates.size > 5) throw new HttpsError('resource-exhausted', 'This device token requires support review.');
+  const active = payload.permissionState === 'granted'
+    ? await tx.get(db.collection('notificationEndpoints').where('userId', '==', uid).where('permissionState', '==', 'granted').limit(6)) : null;
+  const duplicateIds = new Set(duplicates?.docs.map(doc => doc.id) ?? []);
+  const activeOtherCount = active?.docs.filter(doc => doc.id !== ref.id && !duplicateIds.has(doc.id)).length ?? 0;
+  if (activeOtherCount >= 5) throw new HttpsError('resource-exhausted', 'Revoke an existing push device before registering another.');
+  const now = Timestamp.now();
+  for (const duplicate of duplicates?.docs ?? []) if (duplicate.id !== ref.id) tx.update(duplicate.ref, {
+    permissionState: 'revoked', expoPushToken: null, revokedAt: now, updatedAt: now,
+  });
+  tx.set(ref, { schemaVersion: 2, userId: uid, installationId: payload.installationId, platform: payload.platform,
+    projectId: payload.projectId, permissionState: payload.permissionState, expoPushToken: payload.expoPushToken,
+    tokenUpdatedAt: payload.expoPushToken !== before?.expoPushToken ? now : before?.tokenUpdatedAt ?? now,
+    revokedAt: payload.permissionState === 'granted' ? null : before?.revokedAt ?? null,
+    createdAt: before?.createdAt ?? now, updatedAt: now });
+  return { installationId: payload.installationId, permissionState: payload.permissionState };
+});
+
+export const revokePushDevice = command('revokePushDevice', data => {
+  keys(data, ['requestId', 'installationId']); return { installationId: id(data.installationId, 'installationId') };
+}, async (tx, payload, uid, _actor, replay) => {
+  if (replay) return replay;
+  const ref = getFirestore().doc(`notificationEndpoints/${uid}_${payload.installationId}`), row = (await tx.get(ref)).data();
+  if (row?.userId === uid && row.installationId === payload.installationId) tx.update(ref, { permissionState: 'revoked', expoPushToken: null, revokedAt: Timestamp.now(), updatedAt: Timestamp.now() });
+  return { installationId: payload.installationId, revoked: true };
+});
+
+export const resolveNotificationTarget = readCommand(data => {
+  keys(data, ['notificationId', 'sourceRevision']);
+  if (!Number.isSafeInteger(data.sourceRevision) || data.sourceRevision < 1) invalid('Invalid sourceRevision.');
+  return { notificationId: id(data.notificationId, 'notificationId'), sourceRevision: data.sourceRevision };
+}, async (tx, payload, uid) => {
+  try {
+    const { row } = await load(tx, uid, payload.notificationId);
+    if (row.sourceRevision !== payload.sourceRevision || row.sourceType !== 'event' || typeof row.sourceId !== 'string') return { available: false, target: null };
+    const teamId = (row.accessSources ?? []).map((source: Data) => source.teamId).find((value: unknown) => typeof value === 'string');
+    return { available: true, target: { type: 'event', id: id(row.sourceId, 'sourceId'), teamId: teamId ? id(teamId, 'teamId') : null } };
+  } catch (error) {
+    if (error instanceof HttpsError && error.code === 'permission-denied') return { available: false, target: null };
+    throw error;
+  }
 });
 export const markNotificationRead = command('markNotificationRead', normalizeMutation, async (tx, data, uid, _actor, replay) => {
   const { ref, row } = await load(tx, uid, data.notificationId); if (row.sourceRevision !== data.sourceRevision) stale(); if (replay) return replay;

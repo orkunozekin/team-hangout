@@ -80,6 +80,8 @@ jest.mock('expo-apple-authentication', () => ({
     WHITE: 1,
   },
 }));
+const mockRevokePushNotifications = jest.fn();
+jest.mock('../../lib/pushRegistration', () => ({ revokePushNotifications: (...args: unknown[]) => mockRevokePushNotifications(...args) }));
 
 jest.mock('react-native', () => ({
   Platform: { OS: 'ios' },
@@ -126,6 +128,7 @@ describe('api/auth', () => {
     mockHasPreviousSignIn.mockReturnValue(false);
     mockAppleIsAvailable.mockResolvedValue(true);
     mockClearGameDayCache.mockResolvedValue(undefined);
+    mockRevokePushNotifications.mockResolvedValue(undefined);
   });
 
   afterAll(() => {
@@ -494,6 +497,17 @@ describe('api/auth', () => {
 
     await expect(logout()).rejects.toThrow('storage unavailable');
     expect(mockSignOut).not.toHaveBeenCalled();
+  });
+
+  it('still clears cache and signs out when endpoint revocation is unavailable', async () => {
+    (auth as { currentUser: unknown }).currentUser = { uid: 'cached-user' };
+    mockRevokePushNotifications.mockRejectedValueOnce(new Error('functions unavailable'));
+    mockSignOut.mockResolvedValue(undefined);
+
+    await logout();
+
+    expect(mockClearGameDayCache).toHaveBeenCalledWith('cached-user');
+    expect(mockSignOut).toHaveBeenCalledWith(auth);
   });
 
   it('still signs out of Firebase if Google sign-out fails', async () => {

@@ -21,7 +21,7 @@ before(async () => {
     connectAuthEmulator(getAuth(app), 'http://127.0.0.1:9099', { disableWarnings: true });
     connectFunctionsEmulator(getFunctions(app), '127.0.0.1', 5001);
     await adminAuth(admin).createUser({ uid, email: `${uid}@example.test`, password: 'SyntheticPassword123!' });
-    await db.doc(`users/${uid}`).set({ uid, appRole: 'user' });
+    await db.doc(`users/${uid}`).set({ uid, email: `${uid}@example.test`, appRole: 'user' });
     await signInWithEmailAndPassword(getAuth(app), `${uid}@example.test`, 'SyntheticPassword123!');
   }
   await db.doc('organizations/notify-org').set({ ...meta, name: 'Synthetic league', features: { organizationV2: true, households: true, notificationInboxFake: true } });
@@ -184,6 +184,141 @@ test('read and acknowledgement remain distinct and acknowledgements bind the sou
   const ack = await call('notify-self', 'acknowledgeCriticalUpdate', { notificationId: inbox.id, sourceRevision: 2, requestId: 'ack-current' });
   assert.ok(ack.readAt); assert.ok(ack.acknowledgedAt);
   await assert.rejects(call('notify-outsider', 'markNotificationRead', { notificationId: inbox.id, sourceRevision: 2, requestId: 'steal' }), { code: 'functions/permission-denied' });
+});
+
+test('push device lifecycle is self-only, validates tokens and records denied permission without a token', async () => {
+  const denied = await call('notify-self', 'registerPushDevice', { requestId: 'push-denied', installationId: 'install-a', platform: 'ios',
+    projectId: 'project-a', permissionState: 'denied', expoPushToken: null });
+  assert.equal(denied.permissionState, 'denied');
+  assert.equal((await db.doc('notificationEndpoints/notify-self_install-a').get()).data().expoPushToken, null);
+  await assert.rejects(call('notify-self', 'registerPushDevice', { requestId: 'push-bad', installationId: 'install-a', platform: 'ios',
+    projectId: 'project-a', permissionState: 'granted', expoPushToken: 'not-a-token' }), { code: 'functions/invalid-argument' });
+  const granted = await call('notify-self', 'registerPushDevice', { requestId: 'push-granted', installationId: 'install-a', platform: 'ios',
+    projectId: 'project-a', permissionState: 'granted', expoPushToken: 'ExponentPushToken[test-token]' });
+  assert.equal(granted.permissionState, 'granted');
+  assert.equal((await db.doc('notificationEndpoints/notify-self_install-a').get()).data().expoPushToken, 'ExponentPushToken[test-token]');
+  await call('notify-coach', 'registerPushDevice', { requestId: 'push-account-switch', installationId: 'install-coach', platform: 'ios',
+    projectId: 'project-a', permissionState: 'granted', expoPushToken: 'ExponentPushToken[test-token]' });
+  assert.equal((await db.doc('notificationEndpoints/notify-self_install-a').get()).data().permissionState, 'revoked');
+  await call('notify-self', 'revokePushDevice', { requestId: 'push-revoke', installationId: 'install-a' });
+  assert.ok((await db.doc('notificationEndpoints/notify-self_install-a').get()).data().revokedAt);
+  for (let index = 0; index < 5; index++) await call('notify-self', 'registerPushDevice', { requestId: `push-cap-${index}`,
+    installationId: `cap-${index}`, platform: 'ios', projectId: 'project-a', permissionState: 'granted',
+    expoPushToken: `ExponentPushToken[cap-token-${index}]` });
+  await assert.rejects(call('notify-self', 'registerPushDevice', { requestId: 'push-cap-six', installationId: 'cap-5',
+    platform: 'ios', projectId: 'project-a', permissionState: 'granted', expoPushToken: 'ExponentPushToken[cap-token-5]' }),
+    { code: 'functions/resource-exhausted' });
+  assert.equal((await db.collection('notificationEndpoints').where('userId', '==', 'notify-self')
+    .where('permissionState', '==', 'granted').get()).size, 5);
+  await Promise.all(Array.from({ length: 5 }, (_, index) => db.doc(`notificationEndpoints/notify-self_cap-${index}`).delete()));
+});
+
+test('notification targets are resolved after live authorization and disappear after revocation', async () => {
+  const inbox = (await call('notify-self', 'listNotifications')).items[0];
+  const resolved = await call('notify-self', 'resolveNotificationTarget', { notificationId: inbox.id, sourceRevision: inbox.sourceRevision });
+  assert.deepEqual(resolved, { available: true, target: { type: 'event', id: 'event-1', teamId: 'notify-team' } });
+  await db.doc('organizations/notify-org/participants/notify-child').update({ linkedUserId: null });
+  const unavailable = await call('notify-self', 'resolveNotificationTarget', { notificationId: inbox.id, sourceRevision: inbox.sourceRevision });
+  assert.deepEqual(unavailable, { available: false, target: null });
+  await db.doc('organizations/notify-org/participants/notify-child').update({ linkedUserId: 'notify-self' });
+});
+
+test('provider flags create bounded push delivery with email fallback and poll receipts separately from human reads', async () => {
+  await db.doc('organizations/notify-org').update({ 'features.notificationPush': true, 'features.notificationEmailFallback': true });
+  await db.doc('notificationEndpoints/notify-self_install-b').set({ ...meta, userId: 'notify-self', installationId: 'install-b', platform: 'ios',
+    projectId: 'project-a', permissionState: 'granted', expoPushToken: 'ExponentPushToken[second-token]', revokedAt: null });
+  await db.doc(intentPath('intent-provider')).set({ ...meta, orgId: 'notify-org', sourceType: 'event', sourceId: 'event-provider', sourceRevision: 5,
+    templateKey: 'event:edit', critical: false, state: 'pending', audience: { teamIds: ['notify-team'] } });
+  const worker = require('./lib/notifications/worker.js');
+  await worker.expandNotificationIntent('notify-org', 'intent-provider');
+  const push = (await db.collection('notificationDeliveries').where('intentId', '==', 'intent-provider').where('channel', '==', 'push').get()).docs;
+  assert.equal(push.length, 2); const selfPush = push.find(doc => doc.data().recipientUid === 'notify-self'); assert.ok(selfPush);
+  const emails = (await db.collection('notificationDeliveries').where('intentId', '==', 'intent-provider').where('channel', '==', 'email').get()).docs;
+  assert.deepEqual(emails.map(doc => doc.data().recipientUid).sort(), ['notify-admin']);
+  const deliveryNow = Date.now() + 1000;
+  assert.equal(await worker.processNotificationDelivery('notify-org', selfPush.id, { now: deliveryNow,
+    provider: { send: async () => ({ outcome: 'accepted', messageId: 'ticket-1' }) } }), 'providerAccepted');
+  await selfPush.ref.update({ nextReceiptAt: Timestamp.fromMillis(0) });
+  assert.equal(await worker.processPushReceipt(selfPush.id, { get: async () => ({ outcome: 'ok' }) }, deliveryNow + 16 * 60_000), 'providerReceiptOk');
+  const projection = (await db.doc(`users/notify-self/notifications/${selfPush.data().notificationId}`).get()).data();
+  assert.equal(projection.readAt, null); assert.equal(projection.acknowledgedAt, null);
+});
+
+test('device-not-registered receipt revokes only that endpoint and queues deterministic email fallback', async () => {
+  const worker = require('./lib/notifications/worker.js');
+  const push = (await db.collection('notificationDeliveries').where('intentId', '==', 'intent-provider').where('channel', '==', 'push').get()).docs
+    .find(doc => doc.data().recipientUid === 'notify-self'); assert.ok(push);
+  await Promise.all([
+    push.ref.update({ status: 'providerAccepted', providerMessageId: 'ticket-2', nextReceiptAt: Timestamp.fromMillis(0) }),
+    db.doc(`users/notify-self/notifications/${push.data().notificationId}`).update({
+      deliveryStatus: 'providerAccepted', 'deliveryStatuses.push': 'providerAccepted',
+    }),
+  ]);
+  let receiptCalls = 0;
+  const receipt = { get: async () => { receiptCalls += 1; await new Promise(resolve => setTimeout(resolve, 25));
+    return { outcome: 'permanent', errorCode: 'DeviceNotRegistered' }; } };
+  assert.deepEqual((await Promise.all([worker.processPushReceipt(push.id, receipt), worker.processPushReceipt(push.id, receipt)])).sort(),
+    ['permanentFailure', 'skipped']);
+  assert.equal(receiptCalls, 1);
+  const endpoint = (await db.doc('notificationEndpoints/notify-self_install-b').get()).data();
+  assert.equal(endpoint.permissionState, 'revoked'); assert.equal(endpoint.expoPushToken, null);
+  const fallback = await db.collection('notificationDeliveries').where('intentId', '==', 'intent-provider').where('recipientUid', '==', 'notify-self').where('channel', '==', 'email').get();
+  assert.equal(fallback.size, 1); assert.equal(fallback.docs[0].data().status, 'queued');
+  const projection = (await db.doc(`users/notify-self/notifications/${push.data().notificationId}`).get()).data();
+  assert.equal(projection.deliveryStatus, 'permanentFailure');
+  assert.ok(projection.deliveryIds.includes(fallback.docs[0].id));
+  await fallback.docs[0].ref.update({ status: 'providerAccepted' });
+  await db.doc('notificationEndpoints/notify-self_install-b').update({ permissionState: 'granted', expoPushToken: 'ExponentPushToken[rotated-token]', revokedAt: null });
+  await push.ref.update({ status: 'providerAccepted', nextReceiptAt: Timestamp.fromMillis(0) });
+  assert.equal(await worker.processPushReceipt(push.id, receipt), 'permanentFailure');
+  assert.equal((await fallback.docs[0].ref.get()).data().status, 'providerAccepted');
+  assert.equal((await db.doc('notificationEndpoints/notify-self_install-b').get()).data().expoPushToken, 'ExponentPushToken[rotated-token]');
+  await push.ref.update({ status: 'queued', attemptCount: 0, nextAttemptAt: Timestamp.fromMillis(0) });
+  assert.equal(await worker.processNotificationDelivery('notify-org', push.id, { provider: { send: async () => (
+    { outcome: 'permanent', errorCode: 'DeviceNotRegistered' }) } }), 'permanentFailure');
+  assert.equal((await db.doc('notificationEndpoints/notify-self_install-b').get()).data().permissionState, 'revoked');
+});
+
+test('Expo adapters keep payload navigation allowlisted and classify tickets and receipts', async () => {
+  const providers = require('./lib/notifications/providers.js');
+  const previous = process.env.PUSH_DELIVERY_ENABLED; process.env.PUSH_DELIVERY_ENABLED = 'true';
+  let request;
+  const response = body => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+  const push = providers.expoPushProvider(async (_url, options) => { request = JSON.parse(options.body); return response({ data: { status: 'ok', id: 'ticket-3' } }); });
+  assert.deepEqual(await push.send({ endpointToken: 'ExponentPushToken[x]', notificationId: 'notice-safe', sourceRevision: 7,
+    title: 'Team update', body: 'Open Team Hangout for current details.' }), { outcome: 'accepted', messageId: 'ticket-3' });
+  assert.equal(request.data.url, 'teamhangout://notification?id=notice-safe&revision=7');
+  assert.equal(request.body, 'Open Team Hangout for current details.');
+  const receipts = providers.expoReceiptProvider(async () => response({ data: { 'ticket-3': { status: 'error', details: { error: 'DeviceNotRegistered' } } } }));
+  assert.deepEqual(await receipts.get('ticket-3'), { outcome: 'permanent', errorCode: 'DeviceNotRegistered' });
+  const rejected = providers.expoPushProvider(async () => response({ data: { status: 'error', details: { error: 'DeviceNotRegistered' } } }));
+  assert.deepEqual(await rejected.send({ endpointToken: 'ExponentPushToken[x]', notificationId: 'notice-safe', sourceRevision: 7,
+    title: 'Team update', body: 'Open Team Hangout for current details.' }), { outcome: 'permanent', errorCode: 'DeviceNotRegistered' });
+  const terminalReceipt = providers.expoReceiptProvider(async () => response({ data: { 'ticket-3': { status: 'error', details: { error: 'MessageTooBig' } } } }));
+  assert.deepEqual(await terminalReceipt.get('ticket-3'), { outcome: 'permanent', errorCode: 'MessageTooBig' });
+  if (previous == null) delete process.env.PUSH_DELIVERY_ENABLED; else process.env.PUSH_DELIVERY_ENABLED = previous;
+});
+
+test('email fallback uses the isolated mailbox only for the verified current account address', async () => {
+  const providers = require('./lib/notifications/providers.js');
+  const previous = { emulator: process.env.FUNCTIONS_EMULATOR, project: process.env.GCLOUD_PROJECT, enabled: process.env.NOTIFICATION_EMAIL_ENABLED };
+  process.env.FUNCTIONS_EMULATOR = 'true'; process.env.GCLOUD_PROJECT = 'demo-team-hangout'; process.env.NOTIFICATION_EMAIL_ENABLED = 'true';
+  await adminAuth(admin).updateUser('notify-admin', { emailVerified: true });
+  const provider = providers.notificationEmailProvider(); assert.ok(provider);
+  const delivery = { id: 'email-provider-test', recipientUid: 'notify-admin', recipientEmail: 'notify-admin@example.test',
+    notificationId: 'notice-email', sourceRevision: 3, title: 'Team update', body: 'Open Team Hangout for current details.' };
+  const result = await provider.send(delivery);
+  assert.equal(result.outcome, 'accepted');
+  const mailbox = (await db.doc('developmentMailbox/notification-email-provider-test').get()).data();
+  assert.equal(mailbox.to, 'notify-admin@example.test');
+  assert.match(mailbox.text, /teamhangout:\/\/notification\?id=notice-email&revision=3/);
+  assert.doesNotMatch(mailbox.text, /Jamie|Falcons/);
+  assert.equal((await provider.send({ ...delivery, id: 'wrong-email', recipientEmail: 'other@example.test' })).outcome, 'permanent');
+  const transientAuth = providers.notificationEmailProvider({ getUser: async () => { throw Object.assign(new Error('auth unavailable'), { code: 'auth/internal-error' }); } });
+  assert.equal((await transientAuth.send({ ...delivery, id: 'auth-unavailable' })).outcome, 'retryable');
+  if (previous.emulator == null) delete process.env.FUNCTIONS_EMULATOR; else process.env.FUNCTIONS_EMULATOR = previous.emulator;
+  if (previous.project == null) delete process.env.GCLOUD_PROJECT; else process.env.GCLOUD_PROJECT = previous.project;
+  if (previous.enabled == null) delete process.env.NOTIFICATION_EMAIL_ENABLED; else process.env.NOTIFICATION_EMAIL_ENABLED = previous.enabled;
 });
 
 test('a revoked row at the page boundary leaves a usable cursor for older notifications', async () => {

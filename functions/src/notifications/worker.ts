@@ -1,23 +1,25 @@
 import { randomUUID } from 'node:crypto';
-import { FieldPath, getFirestore, Timestamp, Transaction } from 'firebase-admin/firestore';
+import { FieldPath, FieldValue, getFirestore, Timestamp, Transaction } from 'firebase-admin/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { Data } from '../commandSupport';
 import { fingerprint } from '../operations/requests';
 import { accountAvailable } from '../accountAccess';
+import { essentialEmailApiKey } from '../email/transport';
+import { expoPushProvider, expoReceiptProvider, notificationEmailProvider, ProviderResult, ReceiptProvider } from './providers';
 
 const LEASE_MS = 60_000;
 const MAX_ATTEMPTS = 5;
 export type AccessSource = { kind: 'staff'; programId: string } | { kind: 'team'; teamId: string } |
   { kind: 'household'; teamId: string; participantId: string };
 export type ProviderOutcome = 'accepted' | 'retryable' | 'permanent';
-export type NotificationProvider = { send(delivery: Data): Promise<ProviderOutcome> };
+export type NotificationProvider = { send(delivery: Data): Promise<ProviderOutcome | ProviderResult> };
 type DeliveryOptions = { provider?: NotificationProvider; now?: number;
   authorize?: (tx: Transaction, orgId: string, uid: string, sources: AccessSource[]) => Promise<boolean> };
 class AmbiguousProviderError extends Error {}
 
 export function fakeNotificationProvider(outcome: ProviderOutcome | 'ambiguous'): NotificationProvider {
-  return { async send() { if (outcome === 'ambiguous') throw new AmbiguousProviderError('Provider result unavailable.'); return outcome; } };
+  return { async send() { if (outcome === 'ambiguous') throw new AmbiguousProviderError('Provider result unavailable.'); return { outcome }; } };
 }
 
 function safeCopy(intent: Data) {
@@ -165,20 +167,53 @@ export async function expandNotificationIntent(orgId: string, intentId: string) 
     const snapshot = await tx.get(ref), intent = snapshot.data();
     if (!intent || intent.orgId !== orgId || intent.schemaVersion !== 2) return { state: 'missing' };
     const organization = (await tx.get(db.doc(`organizations/${orgId}`))).data();
-    if (organization?.schemaVersion !== 2 || organization.status !== 'active' || organization.features?.notificationInboxFake !== true) return { state: 'disabled' };
+    const features = organization?.features ?? {};
+    if (organization?.schemaVersion !== 2 || organization.status !== 'active'
+      || ![features.notificationInboxFake, features.notificationPush, features.notificationEmailFallback].some(value => value === true)) return { state: 'disabled' };
     if (intent.state === 'expanded') return { state: 'expanded' };
     if (intent.state !== 'pending') return { state: intent.state };
     const recipients = await resolveRecipients(tx, intent); const now = Timestamp.now(), copy = safeCopy(intent);
-    for (const [uid, accessSources] of recipients) {
+    const recipientIds = [...recipients.keys()];
+    if ((features.notificationPush === true || features.notificationEmailFallback === true) && recipients.size > 100) {
+      throw new Error('NOTIFICATION_DELIVERY_FANOUT_TOO_LARGE');
+    }
+    const profiles = features.notificationEmailFallback === true && recipientIds.length
+      ? await tx.getAll(...recipientIds.map(uid => db.doc(`users/${uid}`))) : [];
+    const endpointDocs: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+    if (features.notificationPush === true) for (let offset = 0; offset < recipientIds.length; offset += 30) {
+      const page = await tx.get(db.collection('notificationEndpoints').where('userId', 'in', recipientIds.slice(offset, offset + 30)).where('permissionState', '==', 'granted').limit(201));
+      endpointDocs.push(...page.docs);
+      if (endpointDocs.length > 200) throw new Error('NOTIFICATION_DELIVERY_FANOUT_TOO_LARGE');
+    }
+    const endpoints = new Map<string, Data[]>();
+    for (const endpoint of endpointDocs) {
+      const row = endpoint.data(), rows = endpoints.get(row.userId) ?? [];
+      if (rows.length >= 5) throw new Error('NOTIFICATION_DELIVERY_FANOUT_TOO_LARGE');
+      if (row.revokedAt == null && typeof row.expoPushToken === 'string') rows.push({ id: endpoint.id, ...row });
+      endpoints.set(row.userId, rows);
+    }
+    let plannedDeliveryCount = 0;
+    for (const [index, [uid, accessSources]] of [...recipients.entries()].entries()) {
       const notificationId = fingerprint({ orgId, intentId, uid });
-      const deliveryId = fingerprint({ orgId, intentId, uid, channel: 'fake' });
+      const availableEndpoints = endpoints.get(uid) ?? [], email = profiles[index]?.data()?.email;
+      const planned: Data[] = [];
+      if (features.notificationInboxFake === true) planned.push({ channel: 'fake', deliveryId: fingerprint({ orgId, intentId, uid, channel: 'fake' }) });
+      for (const endpoint of availableEndpoints) planned.push({ channel: 'push', endpointId: endpoint.id,
+        projectId: endpoint.projectId, deliveryId: fingerprint({ orgId, intentId, uid, channel: 'push', installationId: endpoint.installationId }) });
+      if (!availableEndpoints.length && features.notificationEmailFallback === true && typeof email === 'string') {
+        planned.push({ channel: 'email', recipientEmail: email.toLowerCase(), deliveryId: fingerprint({ orgId, intentId, uid, channel: 'email' }) });
+      }
+      plannedDeliveryCount += planned.length;
+      if (recipients.size + plannedDeliveryCount + 1 > 450) throw new Error('NOTIFICATION_DELIVERY_FANOUT_TOO_LARGE');
       tx.set(db.doc(`users/${uid}/notifications/${notificationId}`), { schemaVersion: 2, id: notificationId, orgId, intentId, recipientUid: uid,
         sourceType: intent.sourceType, sourceId: intent.sourceId, sourceRevision: intent.sourceRevision, templateKey: intent.templateKey,
-        critical: intent.critical === true, ...copy, accessSources, deliveryId, deliveryStatus: 'queued', readAt: null, acknowledgedAt: null,
+        critical: intent.critical === true, ...copy, accessSources, deliveryIds: planned.map(row => row.deliveryId), deliveryStatus: planned.length ? 'queued' : 'inAppOnly', readAt: null, acknowledgedAt: null,
         createdAt: intent.createdAt ?? now, updatedAt: now });
-      tx.set(db.doc(`notificationDeliveries/${deliveryId}`), { schemaVersion: 2, id: deliveryId, orgId, intentId, notificationId, recipientUid: uid,
-        channel: 'fake', status: 'queued', attemptCount: 0, nextAttemptAt: now, accessSources, sourceRevision: intent.sourceRevision,
-        lease: null, leaseUntil: null, providerMessageId: null, failureCode: null, createdAt: now, updatedAt: now });
+      for (const delivery of planned) tx.set(db.doc(`notificationDeliveries/${delivery.deliveryId}`), { schemaVersion: 2, id: delivery.deliveryId,
+        orgId, intentId, notificationId, recipientUid: uid, ...copy, ...delivery, status: 'queued', attemptCount: 0, nextAttemptAt: now,
+        accessSources, sourceRevision: intent.sourceRevision, emailFallbackEligible: features.notificationEmailFallback === true && typeof email === 'string',
+        ...(typeof email === 'string' ? { recipientEmail: email.toLowerCase() } : {}), lease: null, leaseUntil: null,
+        providerMessageId: null, failureCode: null, createdAt: now, updatedAt: now });
     }
     tx.update(ref, { state: 'expanded', recipientCount: recipients.size, expandedAt: now, updatedAt: now });
     return { state: 'expanded', recipientCount: recipients.size };
@@ -186,7 +221,7 @@ export async function expandNotificationIntent(orgId: string, intentId: string) 
 }
 
 export function permanentExpansionFailure(error: unknown) {
-  return error instanceof Error && ['NOTIFICATION_AUDIENCE_TOO_LARGE', 'NOTIFICATION_AUDIENCE_UNSUPPORTED', 'NOTIFICATION_AUDIENCE_STALE'].includes(error.message)
+  return error instanceof Error && ['NOTIFICATION_AUDIENCE_TOO_LARGE', 'NOTIFICATION_AUDIENCE_UNSUPPORTED', 'NOTIFICATION_AUDIENCE_STALE', 'NOTIFICATION_DELIVERY_FANOUT_TOO_LARGE'].includes(error.message)
     ? error.message : null;
 }
 
@@ -196,13 +231,66 @@ async function finish(deliveryId: string, lease: string, status: string, patch: 
     const row = (await tx.get(ref)).data(); if (!row || row.status !== 'sending' || row.lease !== lease) return;
     const notification = await tx.get(db.doc(`users/${row.recipientUid}/notifications/${row.notificationId}`));
     tx.update(ref, { status, ...patch, lease: null, leaseUntil: null, updatedAt: Timestamp.now() });
-    if (notification.exists) tx.update(notification.ref, { deliveryStatus: status, updatedAt: Timestamp.now() });
+    if (notification.exists) {
+      const current = notification.data()?.deliveryStatus;
+      const success = ['providerAccepted', 'providerReceiptOk'].includes(current);
+      tx.update(notification.ref, { [`deliveryStatuses.${row.channel ?? 'fake'}`]: status,
+        deliveryStatus: success && !['providerAccepted', 'providerReceiptOk'].includes(status) ? current : status, updatedAt: Timestamp.now() });
+    }
   });
 }
 
 function retryAt(deliveryId: string, attemptCount: number, now: number) {
   const parsed = parseInt(deliveryId.slice(0, 4), 16), jitter = Number.isFinite(parsed) ? parsed % 10_001 : 0;
   return Timestamp.fromMillis(now + Math.min(3_600_000, 30_000 * 2 ** attemptCount) + jitter);
+}
+
+function enabledFor(row: Data, features: Data) {
+  return (row.channel == null || row.channel === 'fake') ? features.notificationInboxFake === true
+    : row.channel === 'push' ? features.notificationPush === true
+      : row.channel === 'email' ? features.notificationEmailFallback === true : false;
+}
+
+const pushTokenFingerprint = (token: string) => fingerprint({ expoPushToken: token });
+
+async function finishPermanentWithCleanup(deliveryId: string, expectedStatus: 'sending' | 'providerAccepted',
+  leaseField: 'lease' | 'receiptLease', lease: string, failureCode: string, tokenFingerprint?: string) {
+  const db = getFirestore(), ref = db.doc(`notificationDeliveries/${deliveryId}`);
+  return db.runTransaction(async tx => {
+    const snapshot = await tx.get(ref), row = snapshot.data();
+    if (!row || row.status !== expectedStatus || row[leaseField] !== lease) return false;
+    const notificationRef = db.doc(`users/${row.recipientUid}/notifications/${row.notificationId}`);
+    const fallbackEligible = row.channel === 'push' && row.emailFallbackEligible === true && typeof row.recipientEmail === 'string';
+    const fallbackId = fallbackEligible ? fingerprint({ orgId: row.orgId, intentId: row.intentId, uid: row.recipientUid, channel: 'email' }) : null;
+    const fallbackRef = fallbackId ? db.doc(`notificationDeliveries/${fallbackId}`) : null;
+    const endpointRef = row.endpointId && tokenFingerprint ? db.doc(`notificationEndpoints/${row.endpointId}`) : null;
+    const notification = await tx.get(notificationRef);
+    const fallback = fallbackRef ? await tx.get(fallbackRef) : null;
+    const endpoint = endpointRef ? await tx.get(endpointRef) : null;
+    const now = Timestamp.now();
+    tx.update(ref, { status: 'permanentFailure', failureCode, nextAttemptAt: null, nextReceiptAt: null,
+      lease: null, leaseUntil: null, receiptLease: null, receiptLeaseUntil: null,
+      ...(expectedStatus === 'providerAccepted' ? { receiptCheckedAt: now } : {}), updatedAt: now });
+    if (fallbackRef && fallbackId && !fallback?.exists) tx.create(fallbackRef, { ...row, id: fallbackId, deliveryId: fallbackId,
+      channel: 'email', status: 'queued', attemptCount: 0, nextAttemptAt: now, nextReceiptAt: null,
+      endpointId: null, endpointToken: null, endpointTokenFingerprint: null, providerMessageId: null, failureCode: null,
+      lease: null, leaseUntil: null, receiptLease: null, receiptLeaseUntil: null, createdAt: now, updatedAt: now });
+    if (notification.exists) {
+      const current = notification.data()?.deliveryStatus;
+      const deliveryStatuses = notification.data()?.deliveryStatuses ?? {};
+      const otherChannelSucceeded = Object.entries(deliveryStatuses).some(([channel, status]) => channel !== row.channel
+        && ['providerAccepted', 'providerReceiptOk'].includes(status as string));
+      tx.update(notificationRef, { [`deliveryStatuses.${row.channel ?? 'fake'}`]: 'permanentFailure',
+        deliveryStatus: otherChannelSucceeded && typeof current === 'string' ? current : 'permanentFailure',
+        ...(fallbackId ? { deliveryIds: FieldValue.arrayUnion(fallbackId) } : {}), updatedAt: now });
+    }
+    const endpointData = endpoint?.data();
+    if (endpointRef && endpointData && endpointData.userId === row.recipientUid && typeof endpointData.expoPushToken === 'string'
+      && pushTokenFingerprint(endpointData.expoPushToken) === tokenFingerprint) {
+      tx.update(endpointRef, { permissionState: 'revoked', expoPushToken: null, revokedAt: now, updatedAt: now });
+    }
+    return true;
+  });
 }
 
 async function releaseUnsent(deliveryId: string, lease: string, now: number) {
@@ -224,15 +312,23 @@ export async function processNotificationDelivery(orgId: string, deliveryId: str
     if (row.status === 'sending' && row.leaseUntil?.toMillis() <= now) {
       const notification = await tx.get(db.doc(`users/${row.recipientUid}/notifications/${row.notificationId}`));
       tx.update(ref, { status: 'unknownOutcome', failureCode: 'LEASE_EXPIRED', lease: null, leaseUntil: null, updatedAt: Timestamp.now() });
-      if (notification.exists) tx.update(notification.ref, { deliveryStatus: 'unknownOutcome', updatedAt: Timestamp.now() });
+      if (notification.exists) {
+        const current = notification.data()?.deliveryStatus;
+        tx.update(notification.ref, { [`deliveryStatuses.${row.channel ?? 'fake'}`]: 'unknownOutcome',
+          deliveryStatus: ['providerAccepted', 'providerReceiptOk'].includes(current) ? current : 'unknownOutcome', updatedAt: Timestamp.now() });
+      }
       return 'unknownOutcome';
     }
     if (!['queued', 'retryableFailure'].includes(row.status) || row.nextAttemptAt?.toMillis() > now || (row.attemptCount ?? 0) >= MAX_ATTEMPTS) return 'skipped';
     const organization = (await tx.get(db.doc(`organizations/${orgId}`))).data();
-    if (organization?.schemaVersion !== 2 || organization.status !== 'active' || organization.features?.notificationInboxFake !== true) {
+    if (organization?.schemaVersion !== 2 || organization.status !== 'active' || !enabledFor(row, organization.features ?? {})) {
       const notification = await tx.get(db.doc(`users/${row.recipientUid}/notifications/${row.notificationId}`));
       tx.update(ref, { status: 'paused', failureCode: 'FEATURE_DISABLED', nextAttemptAt: null, lease: null, leaseUntil: null, updatedAt: Timestamp.now() });
-      if (notification.exists) tx.update(notification.ref, { deliveryStatus: 'paused', updatedAt: Timestamp.now() });
+      if (notification.exists) {
+        const current = notification.data()?.deliveryStatus;
+        tx.update(notification.ref, { [`deliveryStatuses.${row.channel ?? 'fake'}`]: 'paused',
+          deliveryStatus: ['providerAccepted', 'providerReceiptOk'].includes(current) ? current : 'paused', updatedAt: Timestamp.now() });
+      }
       return 'disabled';
     }
     tx.update(ref, { status: 'sending', lease, leaseUntil: Timestamp.fromMillis(now + LEASE_MS), attemptCount: (row.attemptCount ?? 0) + 1, updatedAt: Timestamp.now() });
@@ -241,11 +337,22 @@ export async function processNotificationDelivery(orgId: string, deliveryId: str
   if (claim !== 'claimed') return claim;
   const row = (await ref.get()).data();
   if (!row) return 'skipped';
-  let gate: { enabled: boolean; authorized: boolean };
+  let gate: { enabled: boolean; authorized: boolean; channelAvailable: boolean; endpointToken?: string };
   try {
     gate = await db.runTransaction(async tx => {
-      const enabled = (await tx.get(db.doc(`organizations/${orgId}`))).data()?.features?.notificationInboxFake === true;
-      return { enabled, authorized: enabled ? await (options.authorize ?? hasNotificationAccess)(tx, orgId, row.recipientUid, row.accessSources) : false };
+      const enabled = enabledFor(row, (await tx.get(db.doc(`organizations/${orgId}`))).data()?.features ?? {});
+      let channelAvailable = true;
+      let endpointToken: string | undefined;
+      if (enabled && row.channel === 'push') {
+        const endpoint = row.endpointId ? (await tx.get(db.doc(`notificationEndpoints/${row.endpointId}`))).data() : null;
+        channelAvailable = !!endpoint && endpoint.userId === row.recipientUid && endpoint.permissionState === 'granted'
+          && typeof endpoint.expoPushToken === 'string' && endpoint.revokedAt == null;
+        if (channelAvailable) endpointToken = endpoint!.expoPushToken;
+      } else if (enabled && row.channel === 'email') {
+        channelAvailable = (await tx.get(db.doc(`users/${row.recipientUid}/communication/essential`))).data()?.suppressed !== true;
+      }
+      return { enabled, channelAvailable, endpointToken,
+        authorized: enabled ? await (options.authorize ?? hasNotificationAccess)(tx, orgId, row.recipientUid, row.accessSources) : false };
     });
   } catch {
     await releaseUnsent(deliveryId, lease, now);
@@ -259,24 +366,81 @@ export async function processNotificationDelivery(orgId: string, deliveryId: str
       tx.delete(db.doc(`users/${row.recipientUid}/notifications/${row.notificationId}`)); });
     return 'revoked';
   }
+  if (!gate.channelAvailable) {
+    const applied = await finishPermanentWithCleanup(deliveryId, 'sending', 'lease', lease, 'CHANNEL_UNAVAILABLE');
+    return applied ? 'permanentFailure' : 'skipped';
+  }
+  let result: ProviderResult;
   try {
-    const outcome = await (options.provider ?? fakeNotificationProvider('accepted')).send(row);
-    if (outcome === 'accepted') { await finish(deliveryId, lease, 'providerAccepted', { providerMessageId: `fake:${deliveryId}`, failureCode: null }); return 'providerAccepted'; }
-    if (outcome === 'permanent') { await finish(deliveryId, lease, 'permanentFailure', { failureCode: 'PROVIDER_REJECTED' }); return 'permanentFailure'; }
-    if ((row.attemptCount ?? 0) >= MAX_ATTEMPTS) {
-      await finish(deliveryId, lease, 'permanentFailure', { failureCode: 'RETRY_LIMIT_REACHED' });
-      return 'permanentFailure';
-    }
-    await finish(deliveryId, lease, 'retryableFailure', { failureCode: 'PROVIDER_RETRY', nextAttemptAt: retryAt(deliveryId, row.attemptCount ?? 1, now) });
-    return 'retryableFailure';
+    const provider = options.provider ?? (row.channel === 'push' ? process.env.PUSH_DELIVERY_ENABLED === 'true' ? expoPushProvider() : null
+      : row.channel === 'email' ? notificationEmailProvider() : fakeNotificationProvider('accepted'));
+    if (!provider) { await finish(deliveryId, lease, 'paused', { failureCode: 'PROVIDER_NOT_CONFIGURED', nextAttemptAt: null }); return 'disabled'; }
+    const raw = await provider.send({ ...row, ...(gate.endpointToken ? { endpointToken: gate.endpointToken } : {}) });
+    result = typeof raw === 'string' ? { outcome: raw } : raw;
   } catch {
     await finish(deliveryId, lease, 'unknownOutcome', { failureCode: 'AMBIGUOUS_PROVIDER_RESULT' });
     return 'unknownOutcome';
   }
+  const endpointTokenFingerprint = gate.endpointToken ? pushTokenFingerprint(gate.endpointToken) : undefined;
+  if (result.outcome === 'accepted') { await finish(deliveryId, lease, 'providerAccepted', { providerMessageId: result.messageId ?? `fake:${deliveryId}`,
+    ...(endpointTokenFingerprint ? { endpointTokenFingerprint } : {}),
+    nextReceiptAt: row.channel === 'push' ? Timestamp.fromMillis(now + 15 * 60_000) : null, failureCode: null }); return 'providerAccepted'; }
+  if (result.outcome === 'permanent') {
+    const applied = await finishPermanentWithCleanup(deliveryId, 'sending', 'lease', lease, result.errorCode ?? 'PROVIDER_REJECTED',
+      result.errorCode === 'DeviceNotRegistered' ? endpointTokenFingerprint : undefined);
+    return applied ? 'permanentFailure' : 'skipped';
+  }
+  if ((row.attemptCount ?? 0) >= MAX_ATTEMPTS) {
+    const applied = await finishPermanentWithCleanup(deliveryId, 'sending', 'lease', lease, 'RETRY_LIMIT_REACHED');
+    return applied ? 'permanentFailure' : 'skipped';
+  }
+  await finish(deliveryId, lease, 'retryableFailure', { failureCode: 'PROVIDER_RETRY', nextAttemptAt: result.retryAfterMs
+    ? Timestamp.fromMillis(now + result.retryAfterMs) : retryAt(deliveryId, row.attemptCount ?? 1, now) });
+  return 'retryableFailure';
+}
+
+export async function processPushReceipt(deliveryId: string, provider: ReceiptProvider = expoReceiptProvider(), now = Date.now()) {
+  const db = getFirestore(), ref = db.doc(`notificationDeliveries/${deliveryId}`), receiptLease = randomUUID();
+  const row = await db.runTransaction(async tx => {
+    const current = (await tx.get(ref)).data();
+    if (!current || current.channel !== 'push' || current.status !== 'providerAccepted' || typeof current.providerMessageId !== 'string'
+      || (current.nextReceiptAt?.toMillis() ?? 0) > now || (current.receiptLeaseUntil?.toMillis() ?? 0) > now) return null;
+    tx.update(ref, { receiptLease, receiptLeaseUntil: Timestamp.fromMillis(now + LEASE_MS), updatedAt: Timestamp.now() });
+    return current;
+  });
+  if (!row) return 'skipped';
+  let result;
+  try { result = await provider.get(row.providerMessageId); }
+  catch { result = { outcome: 'retryable' as const, errorCode: 'RECEIPT_UNAVAILABLE' }; }
+  if (result.outcome === 'ok') { const applied = await db.runTransaction(async tx => {
+    const current = (await tx.get(ref)).data(); if (current?.status !== 'providerAccepted' || current.receiptLease !== receiptLease) return false;
+    const notification = await tx.get(db.doc(`users/${current.recipientUid}/notifications/${current.notificationId}`));
+    tx.update(ref, { status: 'providerReceiptOk', receiptCheckedAt: Timestamp.now(), nextReceiptAt: null, failureCode: null,
+      receiptLease: null, receiptLeaseUntil: null, updatedAt: Timestamp.now() });
+    if (notification.exists) tx.update(notification.ref, { 'deliveryStatuses.push': 'providerReceiptOk', deliveryStatus: 'providerReceiptOk', updatedAt: Timestamp.now() });
+    return true;
+  }); return applied ? 'providerReceiptOk' : 'skipped'; }
+  if (result.outcome === 'permanent') {
+    const applied = await finishPermanentWithCleanup(deliveryId, 'providerAccepted', 'receiptLease', receiptLease,
+      result.errorCode ?? 'PUSH_RECEIPT_REJECTED', result.errorCode === 'DeviceNotRegistered' ? row.endpointTokenFingerprint : undefined);
+    return applied ? 'permanentFailure' : 'skipped';
+  }
+  const attempts = (row.receiptAttempts ?? 0) + 1;
+  const applied = await db.runTransaction(async tx => {
+    const current = (await tx.get(ref)).data();
+    if (current?.status !== 'providerAccepted' || current.receiptLease !== receiptLease) return false;
+    tx.update(ref, attempts >= 5 ? { status: 'unknownOutcome', receiptAttempts: attempts, nextReceiptAt: null,
+      failureCode: 'RECEIPT_RETRY_LIMIT', receiptLease: null, receiptLeaseUntil: null, updatedAt: Timestamp.now() }
+      : { receiptAttempts: attempts, nextReceiptAt: Timestamp.fromMillis(now + Math.min(3_600_000, 60_000 * 2 ** attempts)),
+        failureCode: result.errorCode ?? 'RECEIPT_RETRY', receiptLease: null, receiptLeaseUntil: null, updatedAt: Timestamp.now() });
+    return true;
+  });
+  return !applied ? 'skipped' : attempts >= 5 ? 'unknownOutcome' : 'retryableFailure';
 }
 
 /** Fake-adapter worker stays inert until an organization explicitly enables the development-only server flag. */
-export const resumeNotificationInbox = onSchedule('every 1 minutes', async () => {
+export const resumeNotificationInbox = onSchedule({ schedule: 'every 1 minutes',
+  secrets: process.env.GCLOUD_PROJECT === 'team-hangout-staging' ? [] : [essentialEmailApiKey] }, async () => {
   const db = getFirestore();
   const scan = db.doc('notificationWorkerScans/intents'), cursor = (await scan.get()).data()?.cursor;
   let query = db.collectionGroup('outbox').where('state', '==', 'pending').orderBy(FieldPath.documentId()).limit(25);
@@ -295,8 +459,13 @@ export const resumeNotificationInbox = onSchedule('every 1 minutes', async () =>
   await scan.set({ cursor: intents.size === 25 ? intents.docs[24].ref.path : null, updatedAt: Timestamp.now() });
   for (const status of ['queued', 'retryableFailure']) {
     const deliveries = await db.collection('notificationDeliveries').where('status', '==', status).where('nextAttemptAt', '<=', Timestamp.now()).orderBy('nextAttemptAt').limit(25).get();
-    for (const delivery of deliveries.docs) try { await processNotificationDelivery(delivery.data().orgId, delivery.id, { provider: fakeNotificationProvider('accepted') }); } catch {}
+    for (const delivery of deliveries.docs) try { await processNotificationDelivery(delivery.data().orgId, delivery.id); } catch {}
   }
   const expired = await db.collection('notificationDeliveries').where('status', '==', 'sending').where('leaseUntil', '<=', Timestamp.now()).orderBy('leaseUntil').limit(25).get();
-  for (const delivery of expired.docs) try { await processNotificationDelivery(delivery.data().orgId, delivery.id, { provider: fakeNotificationProvider('accepted') }); } catch {}
+  for (const delivery of expired.docs) try { await processNotificationDelivery(delivery.data().orgId, delivery.id); } catch {}
+  if (process.env.PUSH_DELIVERY_ENABLED === 'true') {
+    const receipts = await db.collection('notificationDeliveries').where('status', '==', 'providerAccepted').where('nextReceiptAt', '<=', Timestamp.now())
+      .orderBy('nextReceiptAt').limit(25).get();
+    for (const delivery of receipts.docs) try { await processPushReceipt(delivery.id); } catch {}
+  }
 });
