@@ -251,29 +251,45 @@ function enabledFor(row: Data, features: Data) {
       : row.channel === 'email' ? features.notificationEmailFallback === true : false;
 }
 
-async function enqueueEmailFallback(row: Data) {
-  if (row.channel !== 'push' || row.emailFallbackEligible !== true || typeof row.recipientEmail !== 'string') return;
-  const db = getFirestore(), deliveryId = fingerprint({ orgId: row.orgId, intentId: row.intentId, uid: row.recipientUid, channel: 'email' });
-  const ref = db.doc(`notificationDeliveries/${deliveryId}`), notification = db.doc(`users/${row.recipientUid}/notifications/${row.notificationId}`);
-  await db.runTransaction(async tx => {
-    const existing = await tx.get(ref), projection = await tx.get(notification);
-    if (!existing.exists) tx.create(ref, { ...row, id: deliveryId, deliveryId, channel: 'email', status: 'queued', attemptCount: 0,
-      nextAttemptAt: Timestamp.now(), endpointId: null, endpointToken: null, providerMessageId: null, failureCode: null,
-      lease: null, leaseUntil: null, createdAt: Timestamp.now(), updatedAt: Timestamp.now() });
-    if (projection.exists) tx.update(notification, { deliveryIds: FieldValue.arrayUnion(deliveryId), updatedAt: Timestamp.now() });
-  });
-}
-
 const pushTokenFingerprint = (token: string) => fingerprint({ expoPushToken: token });
 
-async function revokeEndpointIfTokenMatches(row: Data, tokenFingerprint: string | undefined) {
-  if (!row.endpointId || !tokenFingerprint) return;
-  const db = getFirestore(), endpointRef = db.doc(`notificationEndpoints/${row.endpointId}`);
-  await db.runTransaction(async tx => {
-    const endpoint = (await tx.get(endpointRef)).data();
-    if (!endpoint || endpoint.userId !== row.recipientUid || typeof endpoint.expoPushToken !== 'string'
-      || pushTokenFingerprint(endpoint.expoPushToken) !== tokenFingerprint) return;
-    tx.update(endpointRef, { permissionState: 'revoked', expoPushToken: null, revokedAt: Timestamp.now(), updatedAt: Timestamp.now() });
+async function finishPermanentWithCleanup(deliveryId: string, expectedStatus: 'sending' | 'providerAccepted',
+  leaseField: 'lease' | 'receiptLease', lease: string, failureCode: string, tokenFingerprint?: string) {
+  const db = getFirestore(), ref = db.doc(`notificationDeliveries/${deliveryId}`);
+  return db.runTransaction(async tx => {
+    const snapshot = await tx.get(ref), row = snapshot.data();
+    if (!row || row.status !== expectedStatus || row[leaseField] !== lease) return false;
+    const notificationRef = db.doc(`users/${row.recipientUid}/notifications/${row.notificationId}`);
+    const fallbackEligible = row.channel === 'push' && row.emailFallbackEligible === true && typeof row.recipientEmail === 'string';
+    const fallbackId = fallbackEligible ? fingerprint({ orgId: row.orgId, intentId: row.intentId, uid: row.recipientUid, channel: 'email' }) : null;
+    const fallbackRef = fallbackId ? db.doc(`notificationDeliveries/${fallbackId}`) : null;
+    const endpointRef = row.endpointId && tokenFingerprint ? db.doc(`notificationEndpoints/${row.endpointId}`) : null;
+    const notification = await tx.get(notificationRef);
+    const fallback = fallbackRef ? await tx.get(fallbackRef) : null;
+    const endpoint = endpointRef ? await tx.get(endpointRef) : null;
+    const now = Timestamp.now();
+    tx.update(ref, { status: 'permanentFailure', failureCode, nextAttemptAt: null, nextReceiptAt: null,
+      lease: null, leaseUntil: null, receiptLease: null, receiptLeaseUntil: null,
+      ...(expectedStatus === 'providerAccepted' ? { receiptCheckedAt: now } : {}), updatedAt: now });
+    if (fallbackRef && fallbackId && !fallback?.exists) tx.create(fallbackRef, { ...row, id: fallbackId, deliveryId: fallbackId,
+      channel: 'email', status: 'queued', attemptCount: 0, nextAttemptAt: now, nextReceiptAt: null,
+      endpointId: null, endpointToken: null, endpointTokenFingerprint: null, providerMessageId: null, failureCode: null,
+      lease: null, leaseUntil: null, receiptLease: null, receiptLeaseUntil: null, createdAt: now, updatedAt: now });
+    if (notification.exists) {
+      const current = notification.data()?.deliveryStatus;
+      const deliveryStatuses = notification.data()?.deliveryStatuses ?? {};
+      const otherChannelSucceeded = Object.entries(deliveryStatuses).some(([channel, status]) => channel !== row.channel
+        && ['providerAccepted', 'providerReceiptOk'].includes(status as string));
+      tx.update(notificationRef, { [`deliveryStatuses.${row.channel ?? 'fake'}`]: 'permanentFailure',
+        deliveryStatus: otherChannelSucceeded && typeof current === 'string' ? current : 'permanentFailure',
+        ...(fallbackId ? { deliveryIds: FieldValue.arrayUnion(fallbackId) } : {}), updatedAt: now });
+    }
+    const endpointData = endpoint?.data();
+    if (endpointRef && endpointData && endpointData.userId === row.recipientUid && typeof endpointData.expoPushToken === 'string'
+      && pushTokenFingerprint(endpointData.expoPushToken) === tokenFingerprint) {
+      tx.update(endpointRef, { permissionState: 'revoked', expoPushToken: null, revokedAt: now, updatedAt: now });
+    }
+    return true;
   });
 }
 
@@ -351,36 +367,36 @@ export async function processNotificationDelivery(orgId: string, deliveryId: str
     return 'revoked';
   }
   if (!gate.channelAvailable) {
-    await finish(deliveryId, lease, 'permanentFailure', { failureCode: 'CHANNEL_UNAVAILABLE', nextAttemptAt: null });
-    await enqueueEmailFallback(row); return 'permanentFailure';
+    const applied = await finishPermanentWithCleanup(deliveryId, 'sending', 'lease', lease, 'CHANNEL_UNAVAILABLE');
+    return applied ? 'permanentFailure' : 'skipped';
   }
+  let result: ProviderResult;
   try {
     const provider = options.provider ?? (row.channel === 'push' ? process.env.PUSH_DELIVERY_ENABLED === 'true' ? expoPushProvider() : null
       : row.channel === 'email' ? notificationEmailProvider() : fakeNotificationProvider('accepted'));
     if (!provider) { await finish(deliveryId, lease, 'paused', { failureCode: 'PROVIDER_NOT_CONFIGURED', nextAttemptAt: null }); return 'disabled'; }
     const raw = await provider.send({ ...row, ...(gate.endpointToken ? { endpointToken: gate.endpointToken } : {}) });
-    const result = typeof raw === 'string' ? { outcome: raw } : raw;
-    const endpointTokenFingerprint = gate.endpointToken ? pushTokenFingerprint(gate.endpointToken) : undefined;
-    if (result.outcome === 'accepted') { await finish(deliveryId, lease, 'providerAccepted', { providerMessageId: result.messageId ?? `fake:${deliveryId}`,
-      ...(endpointTokenFingerprint ? { endpointTokenFingerprint } : {}),
-      nextReceiptAt: row.channel === 'push' ? Timestamp.fromMillis(now + 15 * 60_000) : null, failureCode: null }); return 'providerAccepted'; }
-    if (result.outcome === 'permanent') {
-      await finish(deliveryId, lease, 'permanentFailure', { failureCode: result.errorCode ?? 'PROVIDER_REJECTED' });
-      if (result.errorCode === 'DeviceNotRegistered') await revokeEndpointIfTokenMatches(row, endpointTokenFingerprint);
-      await enqueueEmailFallback(row); return 'permanentFailure';
-    }
-    if ((row.attemptCount ?? 0) >= MAX_ATTEMPTS) {
-      await finish(deliveryId, lease, 'permanentFailure', { failureCode: 'RETRY_LIMIT_REACHED' });
-      await enqueueEmailFallback(row);
-      return 'permanentFailure';
-    }
-    await finish(deliveryId, lease, 'retryableFailure', { failureCode: 'PROVIDER_RETRY', nextAttemptAt: result.retryAfterMs
-      ? Timestamp.fromMillis(now + result.retryAfterMs) : retryAt(deliveryId, row.attemptCount ?? 1, now) });
-    return 'retryableFailure';
+    result = typeof raw === 'string' ? { outcome: raw } : raw;
   } catch {
     await finish(deliveryId, lease, 'unknownOutcome', { failureCode: 'AMBIGUOUS_PROVIDER_RESULT' });
     return 'unknownOutcome';
   }
+  const endpointTokenFingerprint = gate.endpointToken ? pushTokenFingerprint(gate.endpointToken) : undefined;
+  if (result.outcome === 'accepted') { await finish(deliveryId, lease, 'providerAccepted', { providerMessageId: result.messageId ?? `fake:${deliveryId}`,
+    ...(endpointTokenFingerprint ? { endpointTokenFingerprint } : {}),
+    nextReceiptAt: row.channel === 'push' ? Timestamp.fromMillis(now + 15 * 60_000) : null, failureCode: null }); return 'providerAccepted'; }
+  if (result.outcome === 'permanent') {
+    const applied = await finishPermanentWithCleanup(deliveryId, 'sending', 'lease', lease, result.errorCode ?? 'PROVIDER_REJECTED',
+      result.errorCode === 'DeviceNotRegistered' ? endpointTokenFingerprint : undefined);
+    return applied ? 'permanentFailure' : 'skipped';
+  }
+  if ((row.attemptCount ?? 0) >= MAX_ATTEMPTS) {
+    const applied = await finishPermanentWithCleanup(deliveryId, 'sending', 'lease', lease, 'RETRY_LIMIT_REACHED');
+    return applied ? 'permanentFailure' : 'skipped';
+  }
+  await finish(deliveryId, lease, 'retryableFailure', { failureCode: 'PROVIDER_RETRY', nextAttemptAt: result.retryAfterMs
+    ? Timestamp.fromMillis(now + result.retryAfterMs) : retryAt(deliveryId, row.attemptCount ?? 1, now) });
+  return 'retryableFailure';
 }
 
 export async function processPushReceipt(deliveryId: string, provider: ReceiptProvider = expoReceiptProvider(), now = Date.now()) {
@@ -405,16 +421,9 @@ export async function processPushReceipt(deliveryId: string, provider: ReceiptPr
     return true;
   }); return applied ? 'providerReceiptOk' : 'skipped'; }
   if (result.outcome === 'permanent') {
-    const applied = await db.runTransaction(async tx => {
-      const current = (await tx.get(ref)).data();
-      if (current?.status !== 'providerAccepted' || current.receiptLease !== receiptLease) return false;
-      tx.update(ref, { status: 'permanentFailure', receiptCheckedAt: Timestamp.now(), nextReceiptAt: null,
-        failureCode: result.errorCode ?? 'PUSH_RECEIPT_REJECTED', receiptLease: null, receiptLeaseUntil: null, updatedAt: Timestamp.now() });
-      return true;
-    });
-    if (!applied) return 'skipped';
-    if (result.errorCode === 'DeviceNotRegistered') await revokeEndpointIfTokenMatches(row, row.endpointTokenFingerprint);
-    await enqueueEmailFallback(row); return 'permanentFailure';
+    const applied = await finishPermanentWithCleanup(deliveryId, 'providerAccepted', 'receiptLease', receiptLease,
+      result.errorCode ?? 'PUSH_RECEIPT_REJECTED', result.errorCode === 'DeviceNotRegistered' ? row.endpointTokenFingerprint : undefined);
+    return applied ? 'permanentFailure' : 'skipped';
   }
   const attempts = (row.receiptAttempts ?? 0) + 1;
   const applied = await db.runTransaction(async tx => {

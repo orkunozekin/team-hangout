@@ -202,6 +202,15 @@ test('push device lifecycle is self-only, validates tokens and records denied pe
   assert.equal((await db.doc('notificationEndpoints/notify-self_install-a').get()).data().permissionState, 'revoked');
   await call('notify-self', 'revokePushDevice', { requestId: 'push-revoke', installationId: 'install-a' });
   assert.ok((await db.doc('notificationEndpoints/notify-self_install-a').get()).data().revokedAt);
+  for (let index = 0; index < 5; index++) await call('notify-self', 'registerPushDevice', { requestId: `push-cap-${index}`,
+    installationId: `cap-${index}`, platform: 'ios', projectId: 'project-a', permissionState: 'granted',
+    expoPushToken: `ExponentPushToken[cap-token-${index}]` });
+  await assert.rejects(call('notify-self', 'registerPushDevice', { requestId: 'push-cap-six', installationId: 'cap-5',
+    platform: 'ios', projectId: 'project-a', permissionState: 'granted', expoPushToken: 'ExponentPushToken[cap-token-5]' }),
+    { code: 'functions/resource-exhausted' });
+  assert.equal((await db.collection('notificationEndpoints').where('userId', '==', 'notify-self')
+    .where('permissionState', '==', 'granted').get()).size, 5);
+  await Promise.all(Array.from({ length: 5 }, (_, index) => db.doc(`notificationEndpoints/notify-self_cap-${index}`).delete()));
 });
 
 test('notification targets are resolved after live authorization and disappear after revocation', async () => {
@@ -239,7 +248,12 @@ test('device-not-registered receipt revokes only that endpoint and queues determ
   const worker = require('./lib/notifications/worker.js');
   const push = (await db.collection('notificationDeliveries').where('intentId', '==', 'intent-provider').where('channel', '==', 'push').get()).docs
     .find(doc => doc.data().recipientUid === 'notify-self'); assert.ok(push);
-  await push.ref.update({ status: 'providerAccepted', providerMessageId: 'ticket-2', nextReceiptAt: Timestamp.fromMillis(0) });
+  await Promise.all([
+    push.ref.update({ status: 'providerAccepted', providerMessageId: 'ticket-2', nextReceiptAt: Timestamp.fromMillis(0) }),
+    db.doc(`users/notify-self/notifications/${push.data().notificationId}`).update({
+      deliveryStatus: 'providerAccepted', 'deliveryStatuses.push': 'providerAccepted',
+    }),
+  ]);
   let receiptCalls = 0;
   const receipt = { get: async () => { receiptCalls += 1; await new Promise(resolve => setTimeout(resolve, 25));
     return { outcome: 'permanent', errorCode: 'DeviceNotRegistered' }; } };
@@ -250,6 +264,9 @@ test('device-not-registered receipt revokes only that endpoint and queues determ
   assert.equal(endpoint.permissionState, 'revoked'); assert.equal(endpoint.expoPushToken, null);
   const fallback = await db.collection('notificationDeliveries').where('intentId', '==', 'intent-provider').where('recipientUid', '==', 'notify-self').where('channel', '==', 'email').get();
   assert.equal(fallback.size, 1); assert.equal(fallback.docs[0].data().status, 'queued');
+  const projection = (await db.doc(`users/notify-self/notifications/${push.data().notificationId}`).get()).data();
+  assert.equal(projection.deliveryStatus, 'permanentFailure');
+  assert.ok(projection.deliveryIds.includes(fallback.docs[0].id));
   await fallback.docs[0].ref.update({ status: 'providerAccepted' });
   await db.doc('notificationEndpoints/notify-self_install-b').update({ permissionState: 'granted', expoPushToken: 'ExponentPushToken[rotated-token]', revokedAt: null });
   await push.ref.update({ status: 'providerAccepted', nextReceiptAt: Timestamp.fromMillis(0) });

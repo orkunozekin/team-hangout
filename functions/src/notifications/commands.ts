@@ -58,6 +58,11 @@ export const registerPushDevice = command('registerPushDevice', data => {
   const db = getFirestore(), ref = db.doc(`notificationEndpoints/${uid}_${payload.installationId}`), before = (await tx.get(ref)).data();
   const duplicates = payload.expoPushToken ? await tx.get(db.collection('notificationEndpoints').where('expoPushToken', '==', payload.expoPushToken).limit(6)) : null;
   if (duplicates && duplicates.size > 5) throw new HttpsError('resource-exhausted', 'This device token requires support review.');
+  const active = payload.permissionState === 'granted'
+    ? await tx.get(db.collection('notificationEndpoints').where('userId', '==', uid).where('permissionState', '==', 'granted').limit(6)) : null;
+  const duplicateIds = new Set(duplicates?.docs.map(doc => doc.id) ?? []);
+  const activeOtherCount = active?.docs.filter(doc => doc.id !== ref.id && !duplicateIds.has(doc.id)).length ?? 0;
+  if (activeOtherCount >= 5) throw new HttpsError('resource-exhausted', 'Revoke an existing push device before registering another.');
   const now = Timestamp.now();
   for (const duplicate of duplicates?.docs ?? []) if (duplicate.id !== ref.id) tx.update(duplicate.ref, {
     permissionState: 'revoked', expoPushToken: null, revokedAt: now, updatedAt: now,
