@@ -9,7 +9,7 @@ const PAGE_SIZE = 25;
 export const cleanupHooks = [
   ['importJobs', 'ownerUid'], ['calendarSubscriptions', 'ownerUid'], ['invitations', 'recipientUid'],
   ['emailOutbox', 'recipientUid'], ['notificationEndpoints', 'userId'], ['notificationDeliveries', 'recipientUid'],
-  ['commandRequests', 'uid'],
+  ['deliveryIssues', 'recipientUid'], ['criticalUpdates', 'recipientUid'], ['commandRequests', 'uid'],
 ] as const;
 const projections = ['organizationLinks', 'participantLinks', 'teamAccess', 'agenda', 'notifications', 'notificationEndpoints', 'deviceTokens'];
 const stages = ['teamMembers', 'members', 'guardians', 'participants', ...cleanupHooks.map(([name]) => name), ...projections.map(name => `user:${name}`), 'auth'];
@@ -38,7 +38,8 @@ function queryFor(stage: string, uid: string): Query {
   if (stage.startsWith('user:')) return db.collection(`users/${uid}/${stage.slice(5)}`);
   if (stage === 'teamMembers') return db.collection(stage).where('userId', '==', uid);
   const hook = cleanupHooks.find(([name]) => name === stage)!;
-  return (stage === 'invitations' ? db.collectionGroup('invitations') : db.collection(hook[0])).where(hook[1], '==', uid);
+  const grouped = stage === 'invitations' || stage === 'deliveryIssues' || stage === 'criticalUpdates';
+  return (grouped ? db.collectionGroup(stage) : db.collection(hook[0])).where(hook[1], '==', uid);
 }
 const bump = (row: Data) => ({ revision: (row.revision ?? 0) + 1, accessRevision: (row.accessRevision ?? 0) + 1, updatedAt: Timestamp.now() });
 
@@ -88,6 +89,10 @@ async function prepareRemoval(tx: Transaction, uid: string, stage: string, doc: 
   if (stage === 'importJobs') {
     // Fence workers immediately; scheduled retention removes private bytes and nested rows.
     return () => tx.update(doc.ref, { ownerUid: null, status: 'expired', expiresAt: Timestamp.now(), lease: null, updatedAt: Timestamp.now() });
+  }
+  if (stage === 'deliveryIssues' || stage === 'criticalUpdates') {
+    if (row.recipientUid !== uid) return null;
+    if (parts[0] === 'organizations' && (parts.length !== 4 || parts[2] !== stage)) return null;
   }
   if (stage === 'invitations' && row.tokenHash && row.outboxId) {
     return () => {

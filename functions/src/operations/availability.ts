@@ -12,6 +12,7 @@ import { publishedEvent } from "../scheduling/visibility";
 import { effectiveEvent } from "../facilities/closures";
 import { checkInPolicy } from "./checkInPolicy";
 import { cacheDocumentReads } from "./reads";
+import { stageReminder } from "../notifications/reminders";
 
 export async function householdEvent(tx: Transaction, eventId: string) {
   const event = (await tx.get(getFirestore().doc(`events/${eventId}`))).data();
@@ -416,6 +417,14 @@ export const setEventRsvpDeadline = command(
       : null;
     if (value && value.toMillis() > event.startsAt.toMillis())
       invalid("The deadline must be at or before event start.");
+    const reminderRef = getFirestore().doc(
+      `organizations/${event.orgId}/rsvpReminders/${data.eventId}`,
+    );
+    const [reminderSnap, organization] = await tx.getAll(
+      reminderRef,
+      getFirestore().doc(`organizations/${event.orgId}`),
+    );
+    const closed = await effectiveEvent(tx, event);
     const nextRevision = event.revision + 1;
     const ref = getFirestore().doc(`events/${data.eventId}`);
     tx.update(ref, {
@@ -433,6 +442,21 @@ export const setEventRsvpDeadline = command(
       createdAt: Timestamp.now(),
       auditCorrelationId: `${ref.id}:${nextRevision}`,
     });
+    stageReminder(
+      tx,
+      data.eventId,
+      {
+        ...event,
+        ...closed,
+        rsvpDeadline: value,
+        revision: nextRevision,
+      },
+      reminderSnap.data(),
+      organization.data()?.features?.rsvpReminders === true &&
+        organization.data()?.status === "active",
+      Timestamp.now().toMillis(),
+      true,
+    );
     return { id: ref.id, revision: nextRevision };
   },
 );

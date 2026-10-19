@@ -34,3 +34,17 @@ Decisions made while you were away. Change anything you disagree with.
 
 
 8. **Super admin bootstrap:** First owner must set `users/{uid}.appRole = "superAdmin"` in Firebase console (clients cannot self-promote). After that, super admins can promote others via `setUserAppRole` (rules-enforced).
+
+## Phase 2 P2.15 reminder decisions
+
+These choices are locked for the server reminder and staff diagnostics step. The older MVP "out of scope" row above is historical and does not override the Phase 2 product plan.
+
+| Topic | Decision |
+|-------|----------|
+| Reminder identity | One reminder per schedule version and deadline instant. A moved deadline or reschedule plans a new key. A sent reminder is not recalled and is not the new key's reminder. |
+| Timing | Send at 24 hours before the deadline, or once immediately when at least 1 hour and under 24 hours remain. Do not send in the final hour, after the deadline, or for a non-finite deadline. |
+| Recipients | Linked participant or guardian with `permissions.respond`. Yes, no, and maybe count as responses. Coaches, staff, and view-only guardians are excluded. One notification per login account. |
+| Flag | `features.rsvpReminders` gates sending. Inbox, push, and email still follow their own flags. Flag off writes a paused reminder on deadline and lifecycle commands. |
+| Publication | Bulk publication does not write reminder docs inside publication chunks. The upcoming scan prepares published events. |
+| Diagnostics | Permanent and unknown transport failures are separate from unacknowledged critical updates. The callable response omits email, token, and recipient id. Read is not acknowledgement. Bounce is not acknowledgement. |
+| Staff UI | Web admin Delivery diagnostics only. No new native screen in this step. |

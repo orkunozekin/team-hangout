@@ -2,6 +2,7 @@ import { FieldPath, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { command, Data, id, invalid, keys } from '../commandSupport';
 import { readCommand } from '../participants/policy';
+import { criticalUpdateRef } from './issues';
 import { authorizeNotificationRows, hasNotificationAccess, notificationAccessSourceKeys } from './worker';
 
 const MAX_PAGE_ACCESS_SOURCES = 100;
@@ -105,6 +106,10 @@ export const markNotificationRead = command('markNotificationRead', normalizeMut
 });
 export const acknowledgeCriticalUpdate = command('acknowledgeCriticalUpdate', normalizeMutation, async (tx, data, uid, _actor, replay) => {
   const { ref, row } = await load(tx, uid, data.notificationId); if (row.sourceRevision !== data.sourceRevision) stale(); if (row.critical !== true) throw new HttpsError('failed-precondition', 'Only critical updates require acknowledgement.'); if (replay) return replay;
+  const criticalRef = typeof row.orgId === 'string' ? criticalUpdateRef(row.orgId, ref.id) : null;
+  const critical = criticalRef ? await tx.get(criticalRef) : null;
   const acknowledgedAt = row.acknowledgedAt ?? Timestamp.now(), readAt = row.readAt ?? acknowledgedAt;
-  tx.update(ref, { readAt, acknowledgedAt, updatedAt: Timestamp.now() }); return { id: ref.id, readAt, acknowledgedAt };
+  tx.update(ref, { readAt, acknowledgedAt, updatedAt: Timestamp.now() });
+  if (critical?.exists) tx.update(criticalRef!, { readAt, acknowledgedAt, updatedAt: Timestamp.now() });
+  return { id: ref.id, readAt, acknowledgedAt };
 });
