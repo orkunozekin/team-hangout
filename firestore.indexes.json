@@ -1,6 +1,14 @@
 {
   "indexes": [
     {
+      "collectionGroup": "outbox",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "state", "order": "ASCENDING" },
+        { "fieldPath": "__name__", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "notificationDeliveries",
       "queryScope": "COLLECTION",
       "fields": [

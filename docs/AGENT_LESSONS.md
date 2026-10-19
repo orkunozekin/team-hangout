@@ -281,3 +281,10 @@
 - **Gap:** iOS inactive handling preserved the location prompt, but Android temporary system Activities can report background and invalidate acquisition or unmount ancestor household state.
 - **Going forward:** Audit the requesting component and every ancestor refresh handler for platform permission transitions, including secondary location-settings dialogs after permission resolves. Disable optional settings Activities when manual fallback is available. Preserve the explicit prompt transition while checking actual foreground state after permission returns; genuine background results must cancel acquisition and reauthorize on foreground. Test both event orderings and retain original screenshot provenance after feedback.
 - **Pointers:** `src/lib/checkInLocation.ts`, `src/components/ParticipantCheckIn.tsx`, `src/components/EventAvailability.tsx`, `src/screens/HouseholdScreen.tsx`.
+
+### 2026-10-18 — Keep notification queues phase-specific and cursors consumable
+
+- **Source:** PR #37 · GitHub Codex review at `e3f7a31`.
+- **Gap:** Transient authorization reads consumed a send attempt, disabled tenants repeatedly occupied the oldest due page, terminal intents stayed in the scheduler scan, a revoked page-boundary row invalidated its own cursor, and household-only users could not navigate to their inbox. Household access also survived the server-owned household feature being disabled.
+- **Going forward:** Distinguish pre-dispatch failures from provider outcomes, move disabled work outside due indexes with explicit operator recovery, query only the workflow state being processed, and preserve a consumable boundary before deleting revoked rows. Trace every new screen through each authorized navigation shape and apply live rollout predicates to the grants they enable. Cover queue starvation, zero-send transient retries, cursor consumption, rollout revocation and household-only navigation.
+- **Pointers:** `functions/src/notifications/{worker,commands}.ts`, `App.tsx`, `src/screens/HouseholdScreen.tsx`, notification backend and native regressions.

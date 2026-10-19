@@ -12,6 +12,8 @@ type AccessSource = { kind: 'staff'; programId: string } | { kind: 'team'; teamI
   { kind: 'household'; teamId: string; participantId: string };
 export type ProviderOutcome = 'accepted' | 'retryable' | 'permanent';
 export type NotificationProvider = { send(delivery: Data): Promise<ProviderOutcome> };
+type DeliveryOptions = { provider?: NotificationProvider; now?: number;
+  authorize?: (tx: Transaction, orgId: string, uid: string, sources: AccessSource[]) => Promise<boolean> };
 class AmbiguousProviderError extends Error {}
 
 export function fakeNotificationProvider(outcome: ProviderOutcome | 'ambiguous'): NotificationProvider {
@@ -103,6 +105,7 @@ export async function hasNotificationAccess(tx: Transaction, orgId: string, uid:
   const organization = (await tx.get(db.doc(`organizations/${orgId}`))).data();
   if (organization?.schemaVersion !== 2 || organization.status !== 'active') return false;
   for (const source of sources ?? []) {
+    if (source.kind === 'household' && organization.features?.households !== true) continue;
     if (source.kind === 'staff') {
       const [program, member] = await tx.getAll(db.doc(`organizations/${orgId}/programs/${source.programId}`), db.doc(`organizations/${orgId}/members/${uid}`));
       const row = member.data();
@@ -169,9 +172,24 @@ async function finish(deliveryId: string, lease: string, status: string, patch: 
   });
 }
 
-export async function processNotificationDelivery(orgId: string, deliveryId: string, options: { provider?: NotificationProvider; now?: number } = {}) {
+function retryAt(deliveryId: string, attemptCount: number, now: number) {
+  const parsed = parseInt(deliveryId.slice(0, 4), 16), jitter = Number.isFinite(parsed) ? parsed % 10_001 : 0;
+  return Timestamp.fromMillis(now + Math.min(3_600_000, 30_000 * 2 ** attemptCount) + jitter);
+}
+
+async function releaseUnsent(deliveryId: string, lease: string, now: number) {
+  const ref = getFirestore().doc(`notificationDeliveries/${deliveryId}`);
+  await getFirestore().runTransaction(async tx => {
+    const row = (await tx.get(ref)).data();
+    if (!row || row.status !== 'sending' || row.lease !== lease) return;
+    const attemptCount = Math.max(0, (row.attemptCount ?? 1) - 1);
+    tx.update(ref, { status: 'retryableFailure', attemptCount, failureCode: 'ACCESS_CHECK_RETRY', nextAttemptAt: retryAt(deliveryId, attemptCount + 1, now),
+      lease: null, leaseUntil: null, updatedAt: Timestamp.now() });
+  });
+}
+
+export async function processNotificationDelivery(orgId: string, deliveryId: string, options: DeliveryOptions = {}) {
   const db = getFirestore(), ref = db.doc(`notificationDeliveries/${deliveryId}`), lease = randomUUID(), now = options.now ?? Date.now();
-  if ((await db.doc(`organizations/${orgId}`).get()).data()?.features?.notificationInboxFake !== true) return 'disabled';
   const claim = await db.runTransaction(async tx => {
     const row = (await tx.get(ref)).data();
     if (!row || row.orgId !== orgId) return 'skipped';
@@ -182,15 +200,30 @@ export async function processNotificationDelivery(orgId: string, deliveryId: str
       return 'unknownOutcome';
     }
     if (!['queued', 'retryableFailure'].includes(row.status) || row.nextAttemptAt?.toMillis() > now || (row.attemptCount ?? 0) >= MAX_ATTEMPTS) return 'skipped';
+    const organization = (await tx.get(db.doc(`organizations/${orgId}`))).data();
+    if (organization?.schemaVersion !== 2 || organization.status !== 'active' || organization.features?.notificationInboxFake !== true) {
+      const notification = await tx.get(db.doc(`users/${row.recipientUid}/notifications/${row.notificationId}`));
+      tx.update(ref, { status: 'paused', failureCode: 'FEATURE_DISABLED', nextAttemptAt: null, lease: null, leaseUntil: null, updatedAt: Timestamp.now() });
+      if (notification.exists) tx.update(notification.ref, { deliveryStatus: 'paused', updatedAt: Timestamp.now() });
+      return 'disabled';
+    }
     tx.update(ref, { status: 'sending', lease, leaseUntil: Timestamp.fromMillis(now + LEASE_MS), attemptCount: (row.attemptCount ?? 0) + 1, updatedAt: Timestamp.now() });
     return 'claimed';
   });
   if (claim !== 'claimed') return claim;
   const row = (await ref.get()).data();
   if (!row) return 'skipped';
-  const gate = await db.runTransaction(async tx => ({ enabled: (await tx.get(db.doc(`organizations/${orgId}`))).data()?.features?.notificationInboxFake === true,
-    authorized: await hasNotificationAccess(tx, orgId, row.recipientUid, row.accessSources) }));
-  if (!gate.enabled) { await finish(deliveryId, lease, 'queued', { failureCode: null, nextAttemptAt: Timestamp.now() }); return 'disabled'; }
+  let gate: { enabled: boolean; authorized: boolean };
+  try {
+    gate = await db.runTransaction(async tx => {
+      const enabled = (await tx.get(db.doc(`organizations/${orgId}`))).data()?.features?.notificationInboxFake === true;
+      return { enabled, authorized: enabled ? await (options.authorize ?? hasNotificationAccess)(tx, orgId, row.recipientUid, row.accessSources) : false };
+    });
+  } catch {
+    await releaseUnsent(deliveryId, lease, now);
+    return 'retryableFailure';
+  }
+  if (!gate.enabled) { await finish(deliveryId, lease, 'paused', { failureCode: 'FEATURE_DISABLED', nextAttemptAt: null }); return 'disabled'; }
   const authorized = gate.authorized;
   if (!authorized) {
     await db.runTransaction(async tx => { const current = (await tx.get(ref)).data(); if (current?.status !== 'sending' || current.lease !== lease) return;
@@ -206,8 +239,7 @@ export async function processNotificationDelivery(orgId: string, deliveryId: str
       await finish(deliveryId, lease, 'permanentFailure', { failureCode: 'RETRY_LIMIT_REACHED' });
       return 'permanentFailure';
     }
-    const jitter = parseInt(deliveryId.slice(0, 4), 16) % 10_001;
-    await finish(deliveryId, lease, 'retryableFailure', { failureCode: 'PROVIDER_RETRY', nextAttemptAt: Timestamp.fromMillis(now + Math.min(3_600_000, 30_000 * 2 ** (row.attemptCount ?? 1)) + jitter) });
+    await finish(deliveryId, lease, 'retryableFailure', { failureCode: 'PROVIDER_RETRY', nextAttemptAt: retryAt(deliveryId, row.attemptCount ?? 1, now) });
     return 'retryableFailure';
   } catch {
     await finish(deliveryId, lease, 'unknownOutcome', { failureCode: 'AMBIGUOUS_PROVIDER_RESULT' });
@@ -219,7 +251,7 @@ export async function processNotificationDelivery(orgId: string, deliveryId: str
 export const resumeNotificationInbox = onSchedule('every 1 minutes', async () => {
   const db = getFirestore();
   const scan = db.doc('notificationWorkerScans/intents'), cursor = (await scan.get()).data()?.cursor;
-  let query = db.collectionGroup('outbox').orderBy(FieldPath.documentId()).limit(25);
+  let query = db.collectionGroup('outbox').where('state', '==', 'pending').orderBy(FieldPath.documentId()).limit(25);
   if (cursor) query = query.startAfter(cursor);
   const intents = await query.get();
   for (const intent of intents.docs) {

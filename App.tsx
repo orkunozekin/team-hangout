@@ -101,6 +101,7 @@ export type AuthStackParamList = {
 
 export type OnboardingStackParamList = {
   Household: undefined;
+  Inbox: undefined;
   CreateTeam: undefined;
   JoinTeam: { code?: string } | undefined;
   AdminHome: undefined;
@@ -166,8 +167,9 @@ function OnboardingNavigator({
       screenOptions={{ headerShown: false }}
     >
       <OnboardingStack.Screen name="Household">
-        {({ navigation }) => <HouseholdScreen user={user} onTeams={() => navigation.navigate('CreateTeam')} />}
+        {({ navigation }) => <HouseholdScreen user={user} onTeams={() => navigation.navigate('CreateTeam')} onInbox={() => navigation.navigate('Inbox')} />}
       </OnboardingStack.Screen>
+      <OnboardingStack.Screen name="Inbox" component={NotificationsScreen} options={{ headerShown: true, title: 'Inbox' }} />
       <OnboardingStack.Screen name="CreateTeam" options={{ headerShown: true, title: 'Teams', headerBackTitle: 'Household' }}>
         {({ navigation }) => (
           <CreateTeamScreen

@@ -54,6 +54,35 @@ test('duplicate unordered expansion creates one inbox row and one delivery per l
   assert.equal((await worker.expandNotificationIntent('notify-org', 'intent-1')).state, 'expanded');
 });
 
+test('an access-check outage releases the unsent lease for retry without consuming an attempt', async () => {
+  const worker = require('./lib/notifications/worker.js'), ref = db.collection('notificationDeliveries').doc('access-outage');
+  await ref.set({ ...meta, id: ref.id, orgId: 'notify-org', recipientUid: 'notify-self', notificationId: 'missing-projection',
+    status: 'queued', attemptCount: 0, nextAttemptAt: Timestamp.fromMillis(0), accessSources: [{ kind: 'household', teamId: 'notify-team', participantId: 'notify-child' }] });
+  let sends = 0;
+  assert.equal(await worker.processNotificationDelivery('notify-org', ref.id, { now: 1000,
+    authorize: async () => { throw new Error('UNAVAILABLE'); }, provider: { send: async () => { sends += 1; return 'accepted'; } } }), 'retryableFailure');
+  const row = (await ref.get()).data();
+  assert.equal(sends, 0); assert.equal(row.status, 'retryableFailure'); assert.equal(row.attemptCount, 0); assert.equal(row.failureCode, 'ACCESS_CHECK_RETRY');
+  assert.ok(row.nextAttemptAt.toMillis() > 1000);
+  await ref.delete();
+});
+
+test('disabled organizations pause due deliveries outside the global due queue', async () => {
+  const worker = require('./lib/notifications/worker.js'), ref = db.collection('notificationDeliveries').doc('disabled-delivery');
+  const notification = db.doc('users/notify-self/notifications/disabled-projection');
+  await notification.set({ ...meta, id: notification.id, deliveryStatus: 'queued' });
+  await ref.set({ ...meta, id: ref.id, orgId: 'notify-org', recipientUid: 'notify-self', notificationId: 'missing-projection',
+    status: 'queued', attemptCount: 0, nextAttemptAt: Timestamp.fromMillis(0), accessSources: [{ kind: 'household', teamId: 'notify-team', participantId: 'notify-child' }] });
+  await ref.update({ notificationId: notification.id });
+  await db.doc('organizations/notify-org').update({ 'features.notificationInboxFake': false });
+  assert.equal(await worker.processNotificationDelivery('notify-org', ref.id), 'disabled');
+  const row = (await ref.get()).data();
+  assert.equal(row.status, 'paused'); assert.equal(row.failureCode, 'FEATURE_DISABLED'); assert.equal(row.nextAttemptAt, null);
+  assert.equal((await notification.get()).data().deliveryStatus, 'paused');
+  await db.doc('organizations/notify-org').update({ 'features.notificationInboxFake': true });
+  await Promise.all([ref.delete(), notification.delete()]);
+});
+
 test('send-time revocation cancels delivery and removes the in-app projection', async () => {
   const worker = require('./lib/notifications/worker.js');
   const delivery = (await db.collection('notificationDeliveries').where('recipientUid', '==', 'notify-guardian').get()).docs[0];
@@ -72,6 +101,11 @@ test('forged guardian metadata cannot preserve inbox access', async () => {
     { kind: 'household', teamId: 'notify-team', participantId: 'notify-child' },
   ])), false);
   await grant.update({ participantId: 'notify-child' });
+  await db.doc('organizations/notify-org').update({ 'features.households': false });
+  assert.equal(await db.runTransaction(tx => worker.hasNotificationAccess(tx, 'notify-org', 'notify-self', [
+    { kind: 'household', teamId: 'notify-team', participantId: 'notify-child' },
+  ])), false);
+  await db.doc('organizations/notify-org').update({ 'features.households': true });
   await db.doc('organizations/notify-org').update({ status: 'archived' });
   assert.equal(await db.runTransaction(tx => worker.hasNotificationAccess(tx, 'notify-org', 'notify-guardian', [
     { kind: 'household', teamId: 'notify-team', participantId: 'notify-child' },
@@ -125,4 +159,19 @@ test('read and acknowledgement remain distinct and acknowledgements bind the sou
   const ack = await call('notify-self', 'acknowledgeCriticalUpdate', { notificationId: inbox.id, sourceRevision: 2, requestId: 'ack-current' });
   assert.ok(ack.readAt); assert.ok(ack.acknowledgedAt);
   await assert.rejects(call('notify-outsider', 'markNotificationRead', { notificationId: inbox.id, sourceRevision: 2, requestId: 'steal' }), { code: 'functions/permission-denied' });
+});
+
+test('a revoked row at the page boundary leaves a usable cursor for older notifications', async () => {
+  const collection = db.collection('users/notify-self/notifications'), revoked = collection.doc('cursor-revoked'), older = collection.doc('cursor-older');
+  await revoked.set({ ...meta, id: revoked.id, orgId: 'notify-org', recipientUid: 'notify-self', title: 'Revoked', body: 'Hidden', critical: false,
+    sourceType: 'event', sourceId: 'gone', sourceRevision: 1, createdAt: Timestamp.fromMillis(9_999_999_999_000), readAt: null, acknowledgedAt: null,
+    deliveryStatus: 'queued', accessSources: [{ kind: 'household', teamId: 'notify-team', participantId: 'missing' }] });
+  await older.set({ ...meta, id: older.id, orgId: 'notify-org', recipientUid: 'notify-self', title: 'Older', body: 'Visible', critical: false,
+    sourceType: 'event', sourceId: 'event-older', sourceRevision: 1, createdAt: Timestamp.fromMillis(9_999_999_998_000), readAt: null, acknowledgedAt: null,
+    deliveryStatus: 'queued', accessSources: [{ kind: 'household', teamId: 'notify-team', participantId: 'notify-child' }] });
+  const first = await call('notify-self', 'listNotifications', { pageSize: 1 });
+  assert.deepEqual(first.items, []); assert.equal(first.nextCursor, revoked.id); assert.equal((await revoked.get()).exists, true);
+  const second = await call('notify-self', 'listNotifications', { pageSize: 1, cursor: first.nextCursor });
+  assert.equal(second.items[0].id, older.id);
+  await Promise.all([revoked.delete(), older.delete()]);
 });

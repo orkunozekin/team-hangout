@@ -70,9 +70,11 @@ function Button({
 export default function HouseholdScreen({
   user,
   onTeams,
+  onInbox,
 }: {
   user: User;
   onTeams: () => void;
+  onInbox?: () => void;
 }) {
   const scrollRef = useRef<ScrollView>(null);
   const [subscriptions, setSubscriptions] = useState(false);
@@ -177,6 +179,7 @@ export default function HouseholdScreen({
           Signed in as {user.email || user.displayName || "your account"}
         </Subtitle>
         <Button label="Open Teams" onPress={onTeams} />
+        {onInbox ? <Button label="Open Inbox" onPress={onInbox} /> : null}
         {error ? (
           <Text
             accessibilityRole="alert"

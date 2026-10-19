@@ -20,14 +20,15 @@ export const listNotifications = readCommand(data => { keys(data, ['pageSize', '
   if (data.cursor) { const cursor = await tx.get(getFirestore().doc(`users/${uid}/notifications/${data.cursor}`)); if (!cursor.exists) throw new HttpsError('invalid-argument', 'Invalid cursor.'); query = query.startAfter(cursor); }
   const rows = await tx.get(query), items: Data[] = [];
   const revoked: FirebaseFirestore.DocumentReference[] = [];
+  const boundary = rows.size > data.pageSize ? rows.docs[data.pageSize - 1] : null;
   for (const doc of rows.docs.slice(0, data.pageSize)) {
     const row = doc.data();
-    if (!await hasNotificationAccess(tx, row.orgId, uid, row.accessSources)) { revoked.push(doc.ref); continue; }
+    if (!await hasNotificationAccess(tx, row.orgId, uid, row.accessSources)) { if (doc.id !== boundary?.id) revoked.push(doc.ref); continue; }
     items.push({ id: doc.id, title: row.title, body: row.body, critical: row.critical, sourceType: row.sourceType, sourceId: row.sourceId,
       sourceRevision: row.sourceRevision, createdAt: row.createdAt, readAt: row.readAt, acknowledgedAt: row.acknowledgedAt, deliveryStatus: row.deliveryStatus });
   }
   revoked.forEach(ref => tx.delete(ref));
-  return { items, unreadCount: items.filter(row => row.readAt == null).length, nextCursor: rows.size > data.pageSize ? rows.docs[data.pageSize - 1].id : null };
+  return { items, unreadCount: items.filter(row => row.readAt == null).length, nextCursor: boundary?.id ?? null };
 });
 export const markNotificationRead = command('markNotificationRead', normalizeMutation, async (tx, data, uid, _actor, replay) => {
   const { ref, row } = await load(tx, uid, data.notificationId); if (row.sourceRevision !== data.sourceRevision) stale(); if (replay) return replay;

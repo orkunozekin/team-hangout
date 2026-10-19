@@ -79,8 +79,8 @@ beforeEach(() => {
   );
 });
 test("two children keep identity, acting label and edit permission when switching to Teams and profiles", async () => {
-  const teams = jest.fn();
-  await render(<HouseholdScreen user={user} onTeams={teams} />);
+  const teams = jest.fn(), inbox = jest.fn();
+  await render(<HouseholdScreen user={user} onTeams={teams} onInbox={inbox} />);
   await screen.findByText("Jamie");
   await fireEvent.press(screen.getByLabelText("View Jamie, guardian access"));
   await screen.findByText("Acting as parent@example.test for Jamie");
@@ -93,6 +93,8 @@ test("two children keep identity, acting label and edit permission when switchin
   expect(screen.queryByText("Review and save contact details")).toBeNull();
   await fireEvent.press(screen.getByText("Open Teams"));
   expect(teams).toHaveBeenCalledTimes(1);
+  await fireEvent.press(screen.getByText("Open Inbox"));
+  expect(inbox).toHaveBeenCalledTimes(1);
 });
 test("save confirms account and participant, passes loaded revision and removes profile after revocation", async () => {
   const alert = jest.spyOn(Alert, "alert").mockImplementation(() => {});
