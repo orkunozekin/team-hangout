@@ -82,3 +82,14 @@ These choices are locked for the server reminder and staff diagnostics step. The
 | Bytes | JPEG, PNG, and PDF, 1 byte through 10 MiB. Extension plus magic bytes. Client MIME is not a callable field. Unsafe HTML, SVG, XML, script, MZ, ELF, and shebang content is rejected. At most 3 active files per owner per conversation, tracked on one slot document. |
 | Scanner | `developmentScanner` always returns clean after those checks. Quarantine is not downloadable. Rejected bytes are deleted, and a failed delete is retried on the same request id. A missing object is `INTEGRITY`; a transient storage read stays retryable. `messageId` stays null, and a non-null message id is refused, so this path cannot serve a linked file. |
 | Privacy | File bytes stay out of messages, search, staff notes, notifications, and the outbox. Youth posting gates reserve, PUT, and finalize. Download uses read access, so a guardian can fetch a staff file while posting is closed. Direct messages stay rejected. |
+
+## Phase 2 P2.19 quarantined attachment decisions
+
+| Topic | Decision |
+|-------|----------|
+| Scanner | The production default is the built-in `content` scanner. It strips JPEG, PNG, and PDF metadata and rejects active PDF content. No new secret is required, so an unavailable external product does not block the step. `platformConfig/attachmentScanner.mode` of `unavailable` or an unknown mode rejects the file as `SCAN_FAILED`. `external` also requires `ATTACHMENT_SCANNER_URL` over `https`. That URL is not stored in Firestore. The content scanner runs before the external POST. A failed or unclean external response never marks a file ready. |
+| Codes | `INTEGRITY` and `ACCESS_REVOKED` stay transport results. They are not scanner verdicts. `SIGNATURE_MISMATCH` and `UNSAFE_CONTENT` are decided before the scanner. `ACTIVE_CONTENT` comes from the content scanner. |
+| Linking | A message stores at most 3 ready attachment ids owned by the author. Linking releases the reservation slot in the same transaction. Edits stay text-only. Staff notes reject the field. File names are not search tokens. |
+| Download | A ready file with a null `messageId` stays downloadable by a conversation reader. A linked file requires the live message to include that id and not be tombstoned. The handler hashes a stream and sends a second stream only when the hash and length match. |
+| Cleanup | `pending`, `uploading`, `quarantined`, and `rejected` rows older than 24 hours are purged, along with quarantine objects that have no ready row and a storage clock at least 24 hours old. Ready rows are kept. Account deletion still does not anonymize `ownerUid`. A tombstone does not delete bytes. |
+| Flag | `features.attachments` stays off for new organizations. Both conversation and attachment flags must be true. |

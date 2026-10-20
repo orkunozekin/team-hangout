@@ -1,15 +1,16 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
-/** Keep aligned with shared/attachments.ts. Real scanning and metadata stripping are P2.19. */
+/** Keep aligned with shared/attachments.ts. */
 export const ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
 export const ATTACHMENT_LIMIT = 3;
 export const ATTACHMENT_EXPIRY_SECONDS = 5 * 60;
+export const ATTACHMENT_QUARANTINE_TTL_MS = 24 * 60 * 60 * 1000;
 export const DEMO_ATTACHMENT_UPLOAD_KEY = "demo-attachment-upload-key-v1-do-not-use-live";
 
 export type DetectedType = "image/jpeg" | "image/png" | "application/pdf";
 export type AttachmentExtension = "jpg" | "jpeg" | "png" | "pdf";
 export type ScanRequest = { bytes: Buffer; detectedType: DetectedType };
-export type ScanVerdict = { verdict: "clean" } | { verdict: "rejected"; code: string };
+export type ScanVerdict = { verdict: "clean"; bytes?: Buffer } | { verdict: "rejected"; code: string };
 export type AttachmentScanner = (input: ScanRequest) => ScanVerdict | Promise<ScanVerdict>;
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -148,10 +149,10 @@ export function readUploadGrant(token: string, key: string, nowMs: number): { gr
 }
 
 export type AttachmentReview =
-  | { state: "ready"; detectedType: DetectedType; sha256: string; byteLength: number; scan: { scanner: "fake"; verdict: "clean" } }
-  | { state: "rejected"; code: string; detectedType: null; sha256: string; byteLength: number; scan: { scanner: "fake"; verdict: "rejected"; code: string } };
+  | { state: "ready"; detectedType: DetectedType; sha256: string; byteLength: number; bytes: Buffer; scan: { scanner: string; verdict: "clean" } }
+  | { state: "rejected"; code: string; detectedType: null; sha256: string; byteLength: number; scan: { scanner: string; verdict: "rejected"; code: string } };
 
-function rejected(code: string, bytes: Buffer): AttachmentReview {
+function rejected(code: string, bytes: Buffer, scannerName: string): AttachmentReview {
   const safe = /^[A-Z0-9_]{1,40}$/.test(code) ? code : "SCAN_REJECTED";
   return {
     state: "rejected",
@@ -159,8 +160,200 @@ function rejected(code: string, bytes: Buffer): AttachmentReview {
     detectedType: null,
     sha256: sha256(bytes),
     byteLength: bytes.length,
-    scan: { scanner: "fake", verdict: "rejected", code: safe },
+    scan: { scanner: scannerName, verdict: "rejected", code: safe },
   };
+}
+
+const CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n += 1) {
+    let crc = n;
+    for (let bit = 0; bit < 8; bit += 1) crc = crc & 1 ? 0xedb88320 ^ (crc >>> 1) : crc >>> 1;
+    table[n] = crc >>> 0;
+  }
+  return table;
+})();
+
+export function attachmentCrc32(bytes: Buffer): number {
+  let crc = 0xffffffff;
+  for (const byte of bytes) crc = CRC_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+const PNG_SIG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const PNG_KEEP = new Set(["IHDR", "PLTE", "IDAT", "IEND", "tRNS", "gAMA", "cHRM", "sBIT", "pHYs", "sRGB", "bKGD"]);
+const PDF_ACTIVE = [
+  /\/JavaScript\b/, /\/JS\b/, /\/Launch\b/, /\/OpenAction\b/, /\/AA\b/, /\/RichMedia\b/,
+  /\/EmbeddedFile\b/, /\/SubmitForm\b/, /\/ImportData\b/, /\/GoToR\b/, /\/GoToE\b/,
+  /<script\b/i, /<!doctype\s+html/i, /<html\b/i, /<svg\b/i, /<\?xml\b/i,
+];
+
+function stripJpeg(bytes: Buffer): Buffer | null {
+  if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
+  const pieces: Buffer[] = [Buffer.from([0xff, 0xd8])];
+  let index = 2;
+  const marker = (): number | null => {
+    if (index >= bytes.length || bytes[index] !== 0xff) return null;
+    while (index < bytes.length && bytes[index] === 0xff) index += 1;
+    if (index >= bytes.length) return null;
+    const value = bytes[index];
+    index += 1;
+    return value;
+  };
+  while (index < bytes.length) {
+    const kind = marker();
+    if (kind == null) return null;
+    if (kind === 0xd9) {
+      pieces.push(Buffer.from([0xff, 0xd9]));
+      return Buffer.concat(pieces);
+    }
+    if (kind === 0x00 || (kind >= 0xd0 && kind <= 0xd7)) {
+      pieces.push(Buffer.from([0xff, kind]));
+      continue;
+    }
+    if (index + 2 > bytes.length) return null;
+    const length = bytes.readUInt16BE(index);
+    if (length < 2 || index + length > bytes.length) return null;
+    const metadata = (kind >= 0xe0 && kind <= 0xef) || kind === 0xfe;
+    if (kind === 0xda) {
+      let scan = index + length;
+      while (scan < bytes.length) {
+        if (bytes[scan] !== 0xff) { scan += 1; continue; }
+        let fill = scan;
+        while (fill < bytes.length && bytes[fill] === 0xff) fill += 1;
+        if (fill >= bytes.length) return null;
+        const next = bytes[fill];
+        if (next === 0x00 || (next >= 0xd0 && next <= 0xd7)) { scan = fill + 1; continue; }
+        break;
+      }
+      if (!metadata) pieces.push(Buffer.concat([Buffer.from([0xff, kind]), bytes.subarray(index, scan)]));
+      index = scan;
+      continue;
+    }
+    if (!metadata) pieces.push(Buffer.concat([Buffer.from([0xff, kind]), bytes.subarray(index, index + length)]));
+    index += length;
+  }
+  return null;
+}
+
+function stripPng(bytes: Buffer): Buffer | null {
+  if (bytes.length < PNG_SIG.length || !bytes.subarray(0, PNG_SIG.length).equals(PNG_SIG)) return null;
+  const pieces: Buffer[] = [PNG_SIG];
+  let index = PNG_SIG.length;
+  let ihdr = false;
+  let idat = false;
+  let iend = false;
+  while (index + 12 <= bytes.length) {
+    const length = bytes.readUInt32BE(index);
+    if (length > bytes.length || index + 12 + length > bytes.length) return null;
+    const type = bytes.subarray(index + 4, index + 8).toString("ascii");
+    const checked = bytes.subarray(index + 4, index + 8 + length);
+    if (attachmentCrc32(checked) !== bytes.readUInt32BE(index + 8 + length)) return null;
+    const chunk = bytes.subarray(index, index + 12 + length);
+    if (type === "IHDR") ihdr = true;
+    if (type === "IDAT") idat = true;
+    const critical = type.charCodeAt(0) >= 65 && type.charCodeAt(0) <= 90;
+    index += 12 + length;
+    if (type === "IEND") {
+      iend = true;
+      pieces.push(chunk);
+      break;
+    }
+    if (PNG_KEEP.has(type)) pieces.push(chunk);
+    else if (critical) return null;
+  }
+  if (!ihdr || !idat || !iend) return null;
+  return Buffer.concat(pieces);
+}
+
+function stripPdf(bytes: Buffer): Buffer | { code: "ACTIVE_CONTENT" } | null {
+  if (bytes.length < 5 || bytes.subarray(0, 5).toString("ascii") !== "%PDF-") return null;
+  const latin = bytes.toString("latin1");
+  if (PDF_ACTIVE.some((pattern) => pattern.test(latin))) return { code: "ACTIVE_CONTENT" };
+  const eof = latin.lastIndexOf("%%EOF");
+  if (eof < 0) return null;
+  let end = eof + 5;
+  if (latin[end] === "\r") end += 1;
+  if (latin[end] === "\n") end += 1;
+  const text = latin.slice(0, end)
+    .replace(/\/(Title|Author|Subject|Keywords|Creator|Producer|CreationDate|ModDate)\s*\((?:\\.|[^)])*\)/g, "")
+    .replace(/\/Info\s*<<[^<>]*>>/g, "");
+  const cleaned = Buffer.from(text, "latin1");
+  if (cleaned.length < 5 || cleaned.subarray(0, 5).toString("ascii") !== "%PDF-") return null;
+  return cleaned;
+}
+
+/** Rewrite JPEG and PNG without metadata, and reject active PDF content. Stripping is idempotent. */
+export function contentScanner(input: ScanRequest): ScanVerdict {
+  if (input.detectedType === "image/jpeg") {
+    const stripped = stripJpeg(input.bytes);
+    return stripped ? { verdict: "clean", bytes: stripped } : { verdict: "rejected", code: "MALFORMED" };
+  }
+  if (input.detectedType === "image/png") {
+    const stripped = stripPng(input.bytes);
+    return stripped ? { verdict: "clean", bytes: stripped } : { verdict: "rejected", code: "MALFORMED" };
+  }
+  if (input.detectedType === "application/pdf") {
+    const stripped = stripPdf(input.bytes);
+    if (!stripped) return { verdict: "rejected", code: "MALFORMED" };
+    if ("code" in stripped) return { verdict: "rejected", code: stripped.code };
+    return { verdict: "clean", bytes: stripped };
+  }
+  return { verdict: "rejected", code: "MALFORMED" };
+}
+
+type ScannerFetch = (url: string, init: { method: string; redirect: "error"; signal: AbortSignal; headers: Record<string, string>; body: Uint8Array }) => Promise<{ ok: boolean; json: () => Promise<unknown> }>;
+
+async function scanWithExternal(url: string, input: ScanRequest, fetchImpl: ScannerFetch): Promise<ScanVerdict> {
+  const local = contentScanner(input);
+  if (local.verdict !== "clean") return local;
+  const bytes = local.bytes ?? input.bytes;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetchImpl(url, {
+      method: "POST",
+      redirect: "error",
+      signal: controller.signal,
+      headers: { "content-type": "application/octet-stream", "x-detected-type": input.detectedType },
+      body: new Uint8Array(bytes),
+    });
+    if (!response.ok) throw new Error("Attachment scanner is unavailable.");
+    const payload = await response.json() as { verdict?: unknown; code?: unknown };
+    if (payload?.verdict === "clean") return { verdict: "clean", bytes };
+    if (payload?.verdict === "rejected") {
+      const code = typeof payload.code === "string" && /^[A-Z0-9_]{1,40}$/.test(payload.code) ? payload.code : "SCAN_REJECTED";
+      return { verdict: "rejected", code };
+    }
+    throw new Error("Attachment scanner is unavailable.");
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Missing, unknown, or unreachable scanners throw. They never return clean. */
+export function selectAttachmentScanner(config: { mode?: unknown; externalUrl?: unknown }, fetchImpl?: ScannerFetch): { name: "content" | "external"; scan: AttachmentScanner } {
+  const mode = config.mode == null || config.mode === "" ? "content" : config.mode;
+  if (mode === "content") return { name: "content", scan: contentScanner };
+  const unavailable = (): { name: "content" | "external"; scan: AttachmentScanner } => ({
+    name: mode === "external" ? "external" : "content",
+    scan: () => { throw new Error("Attachment scanner is unavailable."); },
+  });
+  if (mode !== "external") return unavailable();
+  const url = config.externalUrl;
+  if (typeof url !== "string" || url.length > 200 || !/^https:\/\/[A-Za-z0-9.-]+(?::\d{1,5})?(?:\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*)?$/.test(url)) return unavailable();
+  const fallback: ScannerFetch = (target, init) => fetch(target, init as RequestInit);
+  return { name: "external", scan: (input) => scanWithExternal(url, input, fetchImpl ?? fallback) };
+}
+
+export function abandonedAttachment(input: { state: string; createdAtMs: number; nowMs: number }): boolean {
+  if (input.state === "ready" || !["pending", "uploading", "quarantined", "rejected"].includes(input.state)) return false;
+  return Number.isFinite(input.createdAtMs) && input.nowMs - input.createdAtMs >= ATTACHMENT_QUARANTINE_TTL_MS;
+}
+
+export function abandonedObject(input: { timeCreatedMs: number | null; nowMs: number; ready: boolean }): boolean {
+  if (input.ready || input.timeCreatedMs == null || !Number.isFinite(input.timeCreatedMs)) return false;
+  return input.nowMs - input.timeCreatedMs >= ATTACHMENT_QUARANTINE_TTL_MS;
 }
 
 export async function reviewAttachment(input: {
@@ -170,25 +363,32 @@ export async function reviewAttachment(input: {
   expiresAtMs: number;
   nowMs: number;
   scanner: AttachmentScanner;
+  scannerName?: string;
 }): Promise<AttachmentReview> {
+  const scannerName = input.scannerName ?? "fake";
   const named = attachmentFileName(input.fileName);
-  if ("error" in named) return rejected("SIGNATURE_MISMATCH", input.bytes);
-  if (input.expiresAtMs <= input.nowMs) return rejected("EXPIRED", input.bytes);
-  if (input.declaredBytes > ATTACHMENT_MAX_BYTES || input.bytes.length > ATTACHMENT_MAX_BYTES) return rejected("OVERSIZED", input.bytes);
+  if ("error" in named) return rejected("SIGNATURE_MISMATCH", input.bytes, "transport");
+  if (input.expiresAtMs <= input.nowMs) return rejected("EXPIRED", input.bytes, "transport");
+  if (input.declaredBytes > ATTACHMENT_MAX_BYTES || input.bytes.length > ATTACHMENT_MAX_BYTES) return rejected("OVERSIZED", input.bytes, "transport");
   if (!Number.isSafeInteger(input.declaredBytes) || input.declaredBytes < 1 || input.bytes.length !== input.declaredBytes) {
-    return rejected("SIZE_MISMATCH", input.bytes);
+    return rejected("SIZE_MISMATCH", input.bytes, "transport");
   }
   const detected = detectAttachment(named.extension, input.bytes);
-  if ("code" in detected) return rejected(detected.code, input.bytes);
+  if ("code" in detected) return rejected(detected.code, input.bytes, "transport");
   let verdict: ScanVerdict;
   try { verdict = await input.scanner({ bytes: input.bytes, detectedType: detected.type }); }
-  catch { return rejected("SCAN_FAILED", input.bytes); }
-  if (verdict.verdict === "rejected") return rejected(verdict.code || "SCAN_REJECTED", input.bytes);
+  catch { return rejected("SCAN_FAILED", input.bytes, scannerName); }
+  if (verdict.verdict === "rejected") return rejected(verdict.code || "SCAN_REJECTED", input.bytes, scannerName);
+  const produced = verdict.bytes ?? input.bytes;
+  if (produced.length < 1 || produced.length > ATTACHMENT_MAX_BYTES) return rejected("SCAN_REJECTED", produced, scannerName);
+  const again = detectAttachment(named.extension, produced);
+  if ("code" in again) return rejected("SCAN_REJECTED", produced, scannerName);
   return {
     state: "ready",
-    detectedType: detected.type,
-    sha256: sha256(input.bytes),
-    byteLength: input.bytes.length,
-    scan: { scanner: "fake", verdict: "clean" },
+    detectedType: again.type,
+    sha256: sha256(produced),
+    byteLength: produced.length,
+    bytes: produced,
+    scan: { scanner: scannerName, verdict: "clean" },
   };
 }

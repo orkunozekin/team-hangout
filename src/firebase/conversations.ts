@@ -10,7 +10,7 @@ const requestId = () => doc(collection(db, 'requestIds')).id;
 export async function listConversationMessages(input: ChannelQuery): Promise<ConversationPage> {
   return (await httpsCallable<ChannelQuery & { pageSize: number }, ConversationPage>(functions, 'listConversationMessages')({ ...input, pageSize: 25 })).data;
 }
-export async function postConversationMessage(input: ChannelQuery & { text: string }) {
+export async function postConversationMessage(input: ChannelQuery & { text: string; attachmentIds?: string[] }) {
   return runCommand('postConversationMessage', input, requestId());
 }
 export async function editConversationMessage(input: ChannelQuery & { messageId: string; text: string; expectedRevision: number }) {

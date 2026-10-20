@@ -12,7 +12,15 @@ test.describe.configure({ mode: "serial" });
 let app: any;
 const orgId = "browser-attachments";
 const owner = "browser-attachments-owner";
-const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from("JFIF"), Buffer.from([0xff, 0xd9])]);
+const exif = Buffer.concat([Buffer.from("Exif\0\0"), Buffer.from("GPS-SYNTHETIC")]);
+const exifLength = Buffer.alloc(2);
+exifLength.writeUInt16BE(exif.length + 2);
+const jpeg = Buffer.concat([
+  Buffer.from([0xff, 0xd8, 0xff, 0xe1]), exifLength, exif,
+  Buffer.from("ffdb004300080606070605080707070909080a0c140d0c0b0b0c1912130f141d1a1f1e1d1a1c1c20242e2720222c231c1c2837292c30313434341f27393d38323c2e333432ffc0000b080001000101011100ffc4001f0000010501010101010100000000000000000102030405060708090a0bffda000800010100003f007f00ffd9", "hex"),
+]);
+const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+const html = Buffer.from("<!DOCTYPE html><p>SYNTHETIC-HTML</p>");
 async function capture(page: Page, name: string) {
   if (!process.env.ADMIN_EVIDENCE_DIR) return;
   await mkdir(process.env.ADMIN_EVIDENCE_DIR, { recursive: true });
@@ -31,7 +39,7 @@ test.beforeAll(async () => {
   await db.doc("teams/browser-file-team").set({ ...meta, programId: "soccer", seasonId: "fall", divisionId: "u10", name: "Falcons" });
 });
 test.afterAll(async () => { if (app) await deleteApp(app); });
-test("staff can upload a JPEG and download the same bytes", async ({ page }) => {
+test("staff see scanning, rejected, and ready files and can send the ready ones", async ({ page }) => {
   await page.goto(`/organizations/${orgId}/conversations`);
   await page.getByLabel("Email address").fill(`${owner}@example.test`);
   await page.getByLabel("Password", { exact: true }).fill("SyntheticPassword123!");
@@ -41,8 +49,30 @@ test("staff can upload a JPEG and download the same bytes", async ({ page }) => 
   await expect(page.getByLabel("Attachment file")).toBeVisible();
   await page.getByLabel("Attachment file").setInputFiles({ name: "photo.jpg", mimeType: "text/plain", buffer: jpeg });
   await page.getByRole("button", { name: "Upload attachment" }).click();
-  await expect(page.getByText(/Ready · photo\.jpg · image\/jpeg · \d+ bytes\. Download matched the uploaded file\./)).toBeVisible();
-  await expect(page.getByRole("region", { name: "Household channel" })).not.toContainText("JFIF");
-  await expect(page.getByRole("region", { name: "Staff notes" })).not.toContainText("JFIF");
-  await capture(page, "attachment-ready");
+  await expect(page.getByText(/Ready · photo\.jpg · image\/jpeg · \d+ bytes/)).toBeVisible();
+  await page.getByLabel("Attachment file").setInputFiles({ name: "photo.jpg", mimeType: "text/plain", buffer: html });
+  await page.getByRole("button", { name: "Upload attachment" }).click();
+  await expect(page.getByText("Rejected · photo.jpg · UNSAFE_CONTENT")).toBeVisible();
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/finalizeAttachment", async (route) => {
+    await gate;
+    await route.continue();
+  });
+  await page.getByLabel("Attachment file").setInputFiles({ name: "diagram.png", mimeType: "image/png", buffer: png });
+  await page.getByRole("button", { name: "Upload attachment" }).click();
+  await expect(page.getByText("Scanning · diagram.png")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Household channel" })).not.toContainText("GPS-SYNTHETIC");
+  await expect(page.getByRole("region", { name: "Staff notes" })).not.toContainText("GPS-SYNTHETIC");
+  await capture(page, "attachment-states");
+  release();
+  await expect(page.getByText(/Ready · diagram\.png · image\/png · \d+ bytes/)).toBeVisible();
+  await page.getByRole("textbox", { name: "Announcement" }).fill("Practice photo is attached");
+  await page.getByRole("button", { name: "Post announcement" }).click();
+  await expect(page.getByRole("region", { name: "Household channel" })).toContainText("Practice photo is attached");
+  await expect(page.getByLabel("Attachment status")).not.toContainText("Ready ·");
+  await expect(page.getByRole("region", { name: "Household channel" })).toContainText("photo.jpg · image/jpeg");
+  await expect(page.getByRole("region", { name: "Household channel" })).toContainText("diagram.png · image/png");
+  await expect(page.getByRole("region", { name: "Household channel" })).not.toContainText("GPS-SYNTHETIC");
+  await expect(page.getByRole("region", { name: "Staff notes" })).not.toContainText("photo.jpg");
 });

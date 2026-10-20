@@ -144,6 +144,40 @@ test('uploads a picked file only when the attachment spike is enabled for a post
   expect(await screen.findByText('This file is larger than 10 MB.')).toBeTruthy();
 });
 
+test('shows scanning then rejected, and sends ready attachment ids with the message', async () => {
+  let resolveFinalize: (value: { id: string; state: string; rejectionCode?: string; detectedType?: string; byteLength?: number }) => void = () => {};
+  const file = { uri: 'file:///cache/photo.jpg', size: 128 };
+  (api.listConversationMessages as jest.Mock).mockResolvedValue({
+    ...page, attachments: 'enabled', canPost: true, youthPosting: 'open',
+    items: [{ ...page.items[0], attachments: [{ id: 'file-1', fileName: 'photo.jpg', detectedType: 'image/jpeg', byteLength: 90 }] }],
+  });
+  (transport.pickConversationAttachment as jest.Mock).mockResolvedValue({ file, name: 'notes.pdf', size: 128 });
+  (attachments.createAttachmentUpload as jest.Mock)
+    .mockResolvedValueOnce({ id: 'file-2', uploadUrl: 'https://example.test/upload', token: 'grant', expiresAt: '2099-01-01T00:00:00.000Z', maxBytes: 128, state: 'pending' })
+    .mockResolvedValueOnce({ id: 'file-3', uploadUrl: 'https://example.test/upload', token: 'grant-2', expiresAt: '2099-01-01T00:00:00.000Z', maxBytes: 128, state: 'pending' });
+  (transport.uploadConversationFile as jest.Mock).mockResolvedValue(undefined);
+  (attachments.finalizeAttachment as jest.Mock).mockImplementation(() => new Promise((resolve) => { resolveFinalize = resolve; }));
+  (api.postConversationMessage as jest.Mock).mockResolvedValue({ id: 'm2', sequence: 2 });
+  await render(<ConversationScreen orgId="org" scopeType="team" scopeId="team" />);
+  expect(await screen.findByText('photo.jpg · image/jpeg · 90 bytes')).toBeTruthy();
+  await fireEvent.press(screen.getByText('Choose a JPEG, PNG, or PDF'));
+  expect(await screen.findByText('Scanning · notes.pdf')).toBeTruthy();
+  resolveFinalize({ id: 'file-2', state: 'rejected', rejectionCode: 'ACTIVE_CONTENT' });
+  expect(await screen.findByText('Rejected · notes.pdf · ACTIVE_CONTENT')).toBeTruthy();
+  fireEvent.changeText(screen.getByLabelText('Message'), 'Practice photo is attached');
+  await waitFor(() => expect(screen.getByLabelText('Message').props.value).toBe('Practice photo is attached'));
+  await fireEvent.press(screen.getByLabelText('Send message'));
+  await waitFor(() => expect(api.postConversationMessage).toHaveBeenCalledWith({ orgId: 'org', scopeType: 'team', scopeId: 'team', text: 'Practice photo is attached' }));
+  (attachments.finalizeAttachment as jest.Mock).mockResolvedValue({ id: 'file-3', state: 'ready', detectedType: 'image/jpeg', byteLength: 90, rejectionCode: null });
+  (transport.pickConversationAttachment as jest.Mock).mockResolvedValue({ file, name: 'photo.jpg', size: 128 });
+  await fireEvent.press(screen.getByText('Choose a JPEG, PNG, or PDF'));
+  expect(await screen.findByText('Ready · photo.jpg · image/jpeg · 90 bytes')).toBeTruthy();
+  fireEvent.changeText(screen.getByLabelText('Message'), 'Second photo');
+  await waitFor(() => expect(screen.getByLabelText('Message').props.value).toBe('Second photo'));
+  await fireEvent.press(screen.getByLabelText('Send message'));
+  await waitFor(() => expect(api.postConversationMessage).toHaveBeenLastCalledWith({ orgId: 'org', scopeType: 'team', scopeId: 'team', text: 'Second photo', attachmentIds: ['file-3'] }));
+});
+
 test('keeps the closed-policy banner when the channel has no messages yet', async () => {
   (api.listConversationMessages as jest.Mock).mockResolvedValue({ ...page, items: [] });
   await render(<ConversationScreen orgId="org" scopeType="team" scopeId="team" />);

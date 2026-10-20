@@ -79,6 +79,8 @@ test('client mutations cannot change authority or references, including for coac
     await assertFails(getDoc(doc(db, 'organizations/org-a/conversations/channel-a/messages/message-a/edits/1')));
     await assertFails(getDoc(doc(db, 'organizations/org-a/messageSearch/message-a')));
     await assertFails(setDoc(doc(db, 'organizations/org-a/messageSearch/message-a'), { tokens: ['private'] }));
+    await assertFails(getDoc(doc(db, 'platformConfig/attachmentScanner')));
+    await assertFails(setDoc(doc(db, 'platformConfig/attachmentScanner'), { mode: 'unavailable' }));
     await assertFails(getDoc(doc(db, 'organizations/org-a/attachments/file-a')));
     await assertFails(setDoc(doc(db, 'organizations/org-a/attachments/file-a'), { state: 'ready' }));
     await assertFails(getDoc(doc(db, 'organizations/org-a/attachmentSlots/slot-a')));

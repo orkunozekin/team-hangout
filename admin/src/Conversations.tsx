@@ -23,7 +23,7 @@ export function Conversations({ services, orgId }: { services: BrowserServices; 
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [transport, setTransport] = useState("");
+  const [files, setFiles] = useState<{ key: string; attachmentId?: string; detail: string; state: "scanning" | "rejected" | "ready" }[]>([]);
   const fileInput = useRef<HTMLInputElement>(null);
   const searchGeneration = useRef(0);
   const clearSearch = useCallback(() => {
@@ -86,10 +86,14 @@ export function Conversations({ services, orgId }: { services: BrowserServices; 
     setError("");
     try {
       const text = kind === "announcement" ? announcement.trim() : note.trim();
+      const attachmentIds = kind === "announcement" ? files.filter((item) => item.state === "ready" && item.attachmentId).slice(0, 3).map((item) => item.attachmentId!) : [];
       await services.call(kind === "announcement" ? "postConversationMessage" : "postStaffNote", {
-        requestId: requestId(), orgId, scopeType, scopeId: scopeId.trim(), text,
+        requestId: requestId(), orgId, scopeType, scopeId: scopeId.trim(), text, ...(attachmentIds.length ? { attachmentIds } : {}),
       });
-      if (kind === "announcement") setAnnouncement(""); else setNote("");
+      if (kind === "announcement") {
+        setAnnouncement("");
+        if (attachmentIds.length) setFiles((current) => current.filter((item) => !attachmentIds.includes(item.attachmentId ?? "")));
+      } else setNote("");
       await load();
     } catch (caught) {
       setError(message(caught));
@@ -155,28 +159,38 @@ export function Conversations({ services, orgId }: { services: BrowserServices; 
       setError(message(caught));
     }
   }
+  function updateFile(key: string, patch: Partial<{ attachmentId: string; detail: string; state: "scanning" | "rejected" | "ready" }>) {
+    setFiles((current) => current.map((item) => item.key === key ? { ...item, ...patch } : item));
+  }
   async function uploadFile(event: FormEvent) {
     event.preventDefault();
     const file = fileInput.current?.files?.[0];
     if (!file || !scopeId.trim()) return;
+    const key = requestId();
     setError("");
-    setTransport("");
+    setFiles((current) => [...current, { key, detail: `Scanning · ${file.name}`, state: "scanning" }]);
     try {
       const grant = await services.call("createAttachmentUpload", {
         requestId: requestId(), orgId, scopeType, scopeId: scopeId.trim(), fileName: file.name, declaredBytes: file.size,
       });
+      updateFile(key, { attachmentId: grant.id });
       const put = await fetch(grant.uploadUrl, {
         method: "PUT",
         headers: { Authorization: `Attachment ${grant.token}`, "Content-Type": "application/octet-stream" },
         body: file,
       });
       if (!put.ok) {
+        updateFile(key, { state: "rejected", detail: `Rejected · ${file.name}` });
         setError(put.status === 410 ? "This upload expired. Choose the file again." : put.status === 413 ? "This file does not match the reserved upload." : "This file was not uploaded.");
         return;
       }
       const done = await services.call("finalizeAttachment", {
         requestId: requestId(), orgId, scopeType, scopeId: scopeId.trim(), attachmentId: grant.id,
       });
+      if (done.state !== "ready") {
+        updateFile(key, { state: "rejected", detail: `Rejected · ${file.name} · ${done.rejectionCode ?? "rejected"}` });
+        return;
+      }
       const idToken = await services.auth.currentUser?.getIdToken();
       const downloaded = await fetch(grant.uploadUrl, {
         method: "GET",
@@ -188,13 +202,16 @@ export function Conversations({ services, orgId }: { services: BrowserServices; 
           "X-Attachment-Id": grant.id,
         },
       });
-      const saved = new Uint8Array(await downloaded.arrayBuffer());
-      const source = new Uint8Array(await file.arrayBuffer());
-      const matched = downloaded.ok && saved.length === source.length && saved.every((byte, index) => byte === source[index]);
-      setTransport(done.state === "ready" && matched
-        ? `Ready · ${file.name} · ${done.detectedType} · ${done.byteLength} bytes. Download matched the uploaded file.`
-        : "This file was rejected.");
+      updateFile(key, {
+        attachmentId: grant.id,
+        state: "ready",
+        detail: downloaded.ok
+          ? `Ready · ${file.name} · ${done.detectedType} · ${done.byteLength} bytes`
+          : `Ready · ${file.name} · download unavailable`,
+      });
+      if (fileInput.current) fileInput.current.value = "";
     } catch (caught) {
+      updateFile(key, { state: "rejected", detail: `Rejected · ${file.name}` });
       setError(message(caught));
     }
   }
@@ -225,6 +242,7 @@ export function Conversations({ services, orgId }: { services: BrowserServices; 
         <h2 id="household-channel">Household channel</h2>
         <ul>{messages.map((item) => <li key={item.id}>
           <p>{item.tombstoned ? "Message removed by a moderator" : item.body}{item.pinned ? " · Pinned" : ""}{item.editedAt ? " · Edited" : ""}</p>
+          {item.tombstoned ? null : item.attachments?.map((file) => <p key={file.id}>{file.fileName} · {file.detectedType} · {file.byteLength} bytes</p>)}
           {item.tombstoned ? null : <div>
             {CONVERSATION_REACTIONS.map((choice) => {
               const reaction = item.reactions?.find((row) => row.emoji === choice.emoji);
@@ -249,13 +267,13 @@ export function Conversations({ services, orgId }: { services: BrowserServices; 
         {!messages.length && !error ? <p>No household messages.</p> : null}
         {messageCursor ? <button type="button" onClick={() => void older("messages")}>Load older messages</button> : null}
         {attachmentsOpen ? <form onSubmit={(event) => void uploadFile(event)}>
-          <h2 id="attachment-transport">Development attachment</h2>
-          <p>JPEG, PNG, and PDF files up to 10 MB. The file is not part of the message, search, or staff notes.</p>
+          <h2 id="attachment-transport">Attachments</h2>
+          <p>JPEG, PNG, and PDF files up to 10 MB. Metadata is removed and the file is scanned before it can be sent. A rejected file is not added to the message. Ready files are included with the next announcement, up to 3.</p>
           <label>Attachment file
             <input ref={fileInput} type="file" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" />
           </label>
           <button type="submit">Upload attachment</button>
-          {transport ? <p role="status">{transport}</p> : null}
+          <ul aria-label="Attachment status">{files.map((item) => <li key={item.key}>{item.detail}</li>)}</ul>
         </form> : null}
         <form onSubmit={(event) => void post(event, "announcement")}>
           <label>Announcement

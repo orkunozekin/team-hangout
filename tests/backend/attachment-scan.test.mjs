@@ -48,6 +48,91 @@ test('review rejects expired, oversized, and mismatched bytes before a rejecting
   assert.equal(failed.code, 'SCAN_FAILED');
 });
 
+const validJpeg = Buffer.from("ffd8ffe000104a46494600010100000100010000ffdb004300080606070605080707070909080a0c140d0c0b0b0c1912130f141d1a1f1e1d1a1c1c20242e2720222c231c1c2837292c30313434341f27393d38323c2e333432ffc0000b080001000101011100ffc4001f0000010501010101010100000000000000000102030405060708090a0bffda000800010100003f007f00ffd9", "hex");
+function app1(payload) {
+  const data = Buffer.concat([Buffer.from("Exif\0\0"), Buffer.from(payload)]);
+  const length = Buffer.alloc(2);
+  length.writeUInt16BE(data.length + 2);
+  return Buffer.concat([Buffer.from([0xff, 0xe1]), length, data]);
+}
+function withExif(bytes, payload) {
+  return Buffer.concat([bytes.subarray(0, 2), app1(payload), bytes.subarray(2)]);
+}
+function pngText(bytes, text) {
+  const data = Buffer.concat([Buffer.from("Comment\0"), Buffer.from(text)]);
+  const type = Buffer.from("tEXt");
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(data.length);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(scan.attachmentCrc32(Buffer.concat([type, data])) >>> 0);
+  const chunk = Buffer.concat([length, type, data, crc]);
+  const end = bytes.lastIndexOf(Buffer.from("IEND"));
+  return Buffer.concat([bytes.subarray(0, end - 4), chunk, bytes.subarray(end - 4)]);
+}
+
+test('the content scanner strips image metadata, rejects active PDF content, and fails closed', async () => {
+  assert.equal(scan.ATTACHMENT_QUARANTINE_TTL_MS, 24 * 60 * 60 * 1000);
+  const marked = withExif(validJpeg, "GPS-SYNTHETIC");
+  const jpeg = await scan.reviewAttachment({ fileName: "photo.jpg", declaredBytes: marked.length, bytes: marked, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.contentScanner, scannerName: "content" });
+  assert.equal(jpeg.state, "ready");
+  assert.equal(jpeg.scan.scanner, "content");
+  assert.equal(jpeg.bytes.includes(Buffer.from("GPS-SYNTHETIC")), false);
+  assert.equal(jpeg.bytes.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff])), true);
+  assert.notEqual(jpeg.sha256, scan.sha256(marked));
+  const again = await scan.contentScanner({ bytes: jpeg.bytes, detectedType: "image/jpeg" });
+  assert.equal(Buffer.compare(again.bytes, jpeg.bytes), 0);
+  const text = pngText(png, "GPS-SYNTHETIC");
+  const image = await scan.reviewAttachment({ fileName: "diagram.png", declaredBytes: text.length, bytes: text, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.contentScanner, scannerName: "content" });
+  assert.equal(image.state, "ready");
+  assert.equal(image.bytes.includes(Buffer.from("GPS-SYNTHETIC")), false);
+  assert.equal(Buffer.compare(image.bytes, png), 0);
+  const info = Buffer.from("%PDF-1.4\n1 0 obj\n<< /Title (GPS-SYNTHETIC) >>\nendobj\n%%EOF\nTRAILING-GARBAGE");
+  const pdf = await scan.reviewAttachment({ fileName: "notes.pdf", declaredBytes: info.length, bytes: info, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.contentScanner, scannerName: "content" });
+  assert.equal(pdf.state, "ready");
+  assert.equal(pdf.bytes.includes(Buffer.from("GPS-SYNTHETIC")), false);
+  assert.equal(pdf.bytes.includes(Buffer.from("TRAILING-GARBAGE")), false);
+  assert.equal(pdf.bytes.includes(Buffer.from("%PDF-")), true);
+  const active = Buffer.from("%PDF-1.4\n1 0 obj\n<< /JavaScript (alert) >>\nendobj\n%%EOF");
+  const script = await scan.reviewAttachment({ fileName: "notes.pdf", declaredBytes: active.length, bytes: active, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.contentScanner, scannerName: "content" });
+  assert.equal(script.state, "rejected");
+  assert.equal(script.code, "ACTIVE_CONTENT");
+  assert.equal(script.scan.scanner, "content");
+  assert.notEqual(script.code, "INTEGRITY");
+  assert.notEqual(script.code, "ACCESS_REVOKED");
+  assert.notEqual(script.code, "SIGNATURE_MISMATCH");
+  const offline = scan.selectAttachmentScanner({ mode: "unavailable" });
+  const failed = await scan.reviewAttachment({ fileName: "photo.jpg", declaredBytes: validJpeg.length, bytes: validJpeg, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: offline.scan, scannerName: offline.name });
+  assert.equal(failed.code, "SCAN_FAILED");
+  assert.notEqual(failed.code, "INTEGRITY");
+  const missing = scan.selectAttachmentScanner({ mode: "external" });
+  const blocked = await scan.reviewAttachment({ fileName: "photo.jpg", declaredBytes: validJpeg.length, bytes: validJpeg, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: missing.scan, scannerName: missing.name });
+  assert.equal(blocked.code, "SCAN_FAILED");
+  const calls = [];
+  const external = scan.selectAttachmentScanner({ mode: "external", externalUrl: "https://scanner.example.test/scan" }, async (url, init) => {
+    calls.push({ url, type: init.headers["x-detected-type"], body: Buffer.from(init.body) });
+    return { ok: false, status: 503, json: async () => ({}) };
+  });
+  const remoteDown = await scan.reviewAttachment({ fileName: "photo.jpg", declaredBytes: marked.length, bytes: marked, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: external.scan, scannerName: external.name });
+  assert.equal(remoteDown.code, "SCAN_FAILED");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].body.includes(Buffer.from("GPS-SYNTHETIC")), false);
+  const rejecting = scan.selectAttachmentScanner({ mode: "external", externalUrl: "https://scanner.example.test/scan" }, async () => ({ ok: true, status: 200, json: async () => ({ verdict: "rejected", code: "MALWARE" }) }));
+  const malware = await scan.reviewAttachment({ fileName: "photo.jpg", declaredBytes: validJpeg.length, bytes: validJpeg, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: rejecting.scan, scannerName: rejecting.name });
+  assert.equal(malware.code, "MALWARE");
+  assert.equal(malware.scan.scanner, "external");
+  const clean = scan.selectAttachmentScanner({ mode: "content" });
+  assert.equal(clean.name, "content");
+  assert.equal(scan.selectAttachmentScanner({ mode: "skip" }).scan === clean.scan, false);
+  const unknown = await scan.reviewAttachment({ fileName: "photo.jpg", declaredBytes: validJpeg.length, bytes: validJpeg, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.selectAttachmentScanner({ mode: "skip" }).scan, scannerName: "content" });
+  assert.equal(unknown.code, "SCAN_FAILED");
+  assert.equal(scan.abandonedAttachment({ state: "ready", createdAtMs: 1, nowMs: scan.ATTACHMENT_QUARANTINE_TTL_MS + 5 }), false);
+  assert.equal(scan.abandonedAttachment({ state: "quarantined", createdAtMs: 1, nowMs: scan.ATTACHMENT_QUARANTINE_TTL_MS + 1 }), true);
+  assert.equal(scan.abandonedAttachment({ state: "quarantined", createdAtMs: 10_000, nowMs: 10_000 + scan.ATTACHMENT_QUARANTINE_TTL_MS - 1 }), false);
+  assert.equal(scan.abandonedObject({ timeCreatedMs: 1, nowMs: scan.ATTACHMENT_QUARANTINE_TTL_MS + 1, ready: false }), true);
+  assert.equal(scan.abandonedObject({ timeCreatedMs: 1, nowMs: scan.ATTACHMENT_QUARANTINE_TTL_MS + 1, ready: true }), false);
+  assert.equal(scan.abandonedObject({ timeCreatedMs: null, nowMs: scan.ATTACHMENT_QUARANTINE_TTL_MS + 1, ready: false }), false);
+});
+
 test('upload grants expire and reject a tampered signature', () => {
   const grant = { v: 1, exp: Math.floor(Date.now() / 1000) + 300, attachmentId: 'file', uid: 'owner', orgId: 'org', bytes: jpeg.length, path: 'quarantine/org/file/1' };
   const token = scan.signUploadGrant(grant, key);
