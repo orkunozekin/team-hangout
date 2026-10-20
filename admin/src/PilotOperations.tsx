@@ -65,7 +65,6 @@ export function PilotOperations({
     };
   }, [load]);
   async function rollback() {
-    const request = ++generation.current;
     setRolling(true);
     setError("");
     try {
@@ -74,14 +73,12 @@ export function PilotOperations({
         requestId: crypto.randomUUID(),
         confirm: PILOT_ROLLBACK_CONFIRM,
       });
-      if (request !== generation.current) return;
       setNotice(
         `Phase 2 writers are off. History was kept. Quarantined publications: ${result.quarantinedOperationIds.length}${result.truncated ? " and more remain" : ""}.`,
       );
       setConfirmed(false);
-      await load(request);
+      await load(++generation.current);
     } catch (reason) {
-      if (request !== generation.current) return;
       setError(message(reason));
     } finally {
       setRolling(false);
@@ -129,6 +126,7 @@ export function PilotOperations({
           ) : (
             <p>No publication has been stuck for {report.budgets.stuckAfterMinutes} minutes.</p>
           )}
+          {report.stuckTruncated ? <p>More stuck publications exist than this list shows.</p> : null}
           <h2>Attachments</h2>
           <p>
             Pending {report.attachments.pending}, uploading {report.attachments.uploading}, quarantined {report.attachments.quarantined}, canonicalizing {report.attachments.canonicalizing}, rejected {report.attachments.rejected}, ready {report.attachments.ready}.

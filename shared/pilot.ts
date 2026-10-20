@@ -17,6 +17,7 @@ export type PilotOperations = {
   flags: PilotFlag[];
   youthChannels: "approved" | "closed";
   stuckOperations: PilotStuckOperation[];
+  stuckTruncated: boolean;
   attachments: PilotAttachmentCounts;
   rejections: PilotRejection[];
   rejectionsTruncated: boolean;

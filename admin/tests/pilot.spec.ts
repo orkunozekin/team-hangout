@@ -104,11 +104,17 @@ test("an administrator sees stuck work and can stop writers without losing histo
   await expect(page.getByRole("alert")).toBeVisible();
   await expect(page.getByText("SCAN_FAILED")).toHaveCount(0);
 });
-test("a refresh during rollback leaves the action usable", async ({ page }) => {
+test("a refresh during rollback shows the disabled writers", async ({ page }) => {
   await db.doc(`organizations/${orgId}/members/${owner}`).update({ status: "active" });
+  await db.doc(`organizations/${orgId}`).update({ "features.conversations": true });
   let release: () => void = () => {};
   const gate = new Promise<void>((resolve) => {
     release = resolve;
+  });
+  let lists = 0;
+  await page.route("**/listPilotOperations", async (route) => {
+    lists += 1;
+    await route.continue();
   });
   await page.route("**/applyPilotRollback", async (route) => {
     await gate;
@@ -116,12 +122,43 @@ test("a refresh during rollback leaves the action usable", async ({ page }) => {
   });
   await page.goto(`/organizations/${orgId}/pilot`);
   await login(page);
-  await expect(page.getByRole("heading", { name: "Pilot operations" })).toBeVisible();
+  await expect(page.getByText("conversations on")).toBeVisible();
+  const seen = lists;
   await page.getByRole("checkbox", { name: "I understand new phase 2 writes stop and history stays" }).check();
   const action = page.getByRole("button", { name: "Disable phase 2 writers" });
   await action.click();
   await expect(action).toBeDisabled();
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect.poll(() => lists).toBeGreaterThan(seen);
+  await expect(page.getByText("conversations on")).toBeVisible();
   release();
+  await expect(page.getByText("Phase 2 writers are off. History was kept.")).toBeVisible();
+  await expect(page.getByText("conversations off")).toBeVisible();
+  const confirm = page.getByRole("checkbox", { name: "I understand new phase 2 writes stop and history stays" });
+  await expect(confirm).not.toBeChecked();
+  await confirm.check();
   await expect(action).toBeEnabled();
+});
+test("stuck publications say when the oldest page is incomplete", async ({ page }) => {
+  await db.doc(`organizations/${orgId}/members/${owner}`).update({ status: "active" });
+  const batch = db.batch();
+  const now = Date.now();
+  for (let index = 0; index < 26; index += 1) {
+    const id = `aged-${String(index).padStart(2, "0")}`;
+    batch.set(db.doc(`organizations/${orgId}/scheduleOperations/${id}`), {
+      schemaVersion: 2,
+      revision: 1,
+      status: "active",
+      orgId,
+      state: "staging",
+      updatedAt: Timestamp.fromMillis(now - (40 - index) * 60 * 1000),
+      createdAt: Timestamp.now(),
+    });
+  }
+  await batch.commit();
+  await page.goto(`/organizations/${orgId}/pilot`);
+  await login(page);
+  await expect(page.getByText("More stuck publications exist than this list shows.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "aged-00" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "aged-25" })).toHaveCount(0);
 });

@@ -393,6 +393,24 @@ test('attachment samples stay at 100 rows and omit file names', async () => {
   assert.equal(body.includes('.jpg'), false);
 });
 
+test('stuck publications stop at 25 and say when more are old', async () => {
+  const batch = db.batch();
+  const now = Date.now();
+  for (let index = 0; index < 26; index += 1) {
+    batch.set(db.doc(`organizations/${orgId}/scheduleOperations/aged-${String(index).padStart(2, '0')}`), {
+      schemaVersion: 2, orgId, state: 'verifying', revision: 1,
+      updatedAt: Timestamp.fromMillis(now - (40 - index) * 60 * 1000),
+    });
+  }
+  await batch.commit();
+  const report = await call('p220-admin', 'listPilotOperations', { orgId });
+  assert.equal(report.stuckTruncated, true);
+  assert.equal(report.stuckOperations.length, 25);
+  assert.equal(report.stuckOperations.some((row) => row.id === 'aged-00'), true);
+  assert.equal(report.stuckOperations.some((row) => row.id === 'aged-25'), false);
+  assert.equal(JSON.stringify(report).includes('actorUid'), false);
+});
+
 test('attachment functions keep a 10 MiB ceiling inside 512 MiB', () => {
   assert.equal(ATTACHMENT_MAX_BYTES, 10 * 1024 * 1024);
   assert.equal(PILOT_FUNCTION_MEMORY, '512MiB');

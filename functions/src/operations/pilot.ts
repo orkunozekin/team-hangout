@@ -72,13 +72,15 @@ export const listPilotOperations = onCall(async (request) => {
   const stuckSnap = await db.collection(`organizations/${orgId}/scheduleOperations`)
     .where("state", "in", [...IN_FLIGHT])
     .orderBy("updatedAt", "asc")
-    .limit(25)
+    .limit(26)
     .get();
   const stuckOperations = stuckSnap.docs.flatMap((doc) => {
     const age = ageMinutes(doc.data().updatedAt, nowMs);
     if (age < PILOT_STUCK_AFTER_MS / 60000) return [];
     return [{ id: doc.id, state: String(doc.data().state), ageMinutes: age }];
   });
+  const stuckTruncated = stuckOperations.length > 25;
+  stuckOperations.splice(25);
   let attachmentsTruncated = false;
   const counts = {} as Record<(typeof ATTACHMENT_STATES)[number], number>;
   for (const state of ATTACHMENT_STATES) {
@@ -111,6 +113,7 @@ export const listPilotOperations = onCall(async (request) => {
     flags,
     youthChannels: scope.youthChannels === "approved" ? "approved" : "closed",
     stuckOperations,
+    stuckTruncated,
     attachments: { ...counts, truncated: attachmentsTruncated },
     rejections: [...rejectionCounts.entries()].map(([code, count]) => ({ code, count })).sort((a, b) => a.code < b.code ? -1 : 1),
     rejectionsTruncated: rejected.size > SAMPLE,
