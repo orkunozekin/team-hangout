@@ -72,3 +72,13 @@ These choices are locked for the server reminder and staff diagnostics step. The
 | Search | Exact words of at least two letters or numbers, at most five query words and 200 indexed words. The private index is scanned 200 at a time, capped at 1,000 candidates, and returns `partial` with a signed cursor only when another candidate or unfinished history backfill remains. Each search indexes at most 100 older messages that predate the index, re-reading those messages in a transaction. An unfinished backfill returns a restart cursor so a later index row is not skipped. Staff notes stay out of search, push, and email. |
 | Cursor key | `CONVERSATION_SEARCH_CURSOR_KEY` is a JSON key ring. The active version signs new cursors and the previous version still verifies. The demo emulator uses a public synthetic ring. |
 | Flag | `features.conversations` is still not enabled by this change. Direct messages stay rejected. Account deletion still does not anonymize authors. Attachments stay a later step. |
+
+## Phase 2 P2.18 attachment transport decisions
+
+| Topic | Decision |
+|-------|----------|
+| Flag | `features.attachments` is separate from `features.conversations`. Both must be true. New organizations still receive only `features.organizationV2`. The picker stays hidden until the server reports attachments enabled and the caller can post. |
+| Grant | HMAC upload grant, 5 minutes. The demo emulator uses `demo-attachment-upload-key-v1-do-not-use-live`. Production requires `ATTACHMENT_UPLOAD_KEY` of at least 32 characters and fails closed. The storage emulator has no signed URLs, so PUT and GET use the `attachmentTransport` HTTP function. Download is a live bearer ID token, not a saved URL. |
+| Bytes | JPEG, PNG, and PDF, 1 byte through 10 MiB. Extension plus magic bytes. Client MIME is not a callable field. Unsafe HTML, SVG, XML, script, MZ, ELF, and shebang content is rejected. At most 3 active files per owner per conversation, tracked on one slot document. |
+| Scanner | `developmentScanner` always returns clean after those checks. Quarantine is not downloadable. Rejected bytes are deleted. `messageId` stays null, and a non-null message id is refused, so this path cannot serve a linked file. |
+| Privacy | File bytes stay out of messages, search, staff notes, notifications, and the outbox. Youth posting gates reserve, PUT, and finalize. Download uses read access, so a guardian can fetch a staff file while posting is closed. Direct messages stay rejected. |

@@ -132,6 +132,12 @@ service cloud.firestore {
     match /organizations/{orgId}/messageSearch/{messageId} {
       allow read, write: if false;
     }
+    match /organizations/{orgId}/attachments/{attachmentId} {
+      allow read, write: if false;
+    }
+    match /organizations/{orgId}/attachmentSlots/{slotId} {
+      allow read, write: if false;
+    }
     match /organizations/{orgId}/staffNotes/{scopeKey} {
       allow read, write: if false;
       match /entries/{noteId} {

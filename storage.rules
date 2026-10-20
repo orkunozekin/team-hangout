@@ -1,7 +1,7 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // CSV bytes are accepted only by the authenticated upload callable. No public URLs.
+    // CSV bytes and attachment quarantine objects are accepted only by server callables. No public URLs.
     match /{path=**} { allow read, write: if false; }
   }
 }

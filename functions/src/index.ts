@@ -57,5 +57,6 @@ export { getParticipantCheckIn, checkInParticipant, setEventCheckInPolicy } from
 export { listNotifications, markNotificationRead, acknowledgeCriticalUpdate, registerPushDevice, revokePushDevice, resolveNotificationTarget } from './notifications/commands';
 export { listDeliveryDiagnostics } from './notifications/diagnostics';
 export { postConversationMessage, listConversationMessages, setConversationPin, moderateConversationMessage, editConversationMessage, reactToConversationMessage, searchConversationMessages, postStaffNote, listStaffNotes } from './communications/conversations';
+export { createAttachmentUpload, finalizeAttachment, attachmentTransport } from './communications/attachments';
 export { resumeNotificationInbox } from './notifications/worker';
 export { resumeRsvpReminders } from './notifications/reminders';
