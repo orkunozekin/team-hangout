@@ -138,3 +138,27 @@ test("staff see delivery failure and missing acknowledgement as separate facts",
   await expect(page.getByText("Not acknowledged", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("alert")).toBeVisible();
 });
+test("older delivery failures stay reachable", async ({ page }) => {
+  await db.doc(`organizations/${orgId}/members/${owner}`).update({ status: "active" });
+  for (let index = 0; index < 26; index += 1) {
+    await db.doc(`organizations/${orgId}/deliveryIssues/page-${index}`).set({
+      schemaVersion: 2,
+      revision: 1,
+      status: "permanentFailure",
+      orgId,
+      channel: "email",
+      failureCode: index === 0 ? "OLDEST_FAILURE" : "PAGE_FAILURE",
+      templateKey: "rsvpReminder",
+      programId: "soccer",
+      updatedAt: Timestamp.fromMillis(Date.parse("2026-10-01T00:00:00.000Z") + index * 60000),
+      createdAt: Timestamp.fromMillis(Date.parse("2026-10-01T00:00:00.000Z")),
+    });
+  }
+  await page.goto(`/organizations/${orgId}/diagnostics`);
+  await login(page);
+  await expect(page.getByRole("heading", { name: "EMAIL_BOUNCED" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "OLDEST_FAILURE" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Show more delivery failures" }).click();
+  await expect(page.getByRole("heading", { name: "OLDEST_FAILURE" })).toBeVisible();
+  await expect(page.getByText("secret@example.test")).toHaveCount(0);
+});

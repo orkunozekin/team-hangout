@@ -23,15 +23,35 @@ export function DeliveryDiagnostics({
   const [loading, setLoading] = useState(true);
   const generation = useRef(0);
   const load = useCallback(
-    async (request: number) => {
+    async (request: number, cursors?: { failureCursor?: string | null; acknowledgementCursor?: string | null }) => {
       setLoading(true);
       try {
         const value = await services.call("listDeliveryDiagnostics", {
           orgId,
           pageSize: 25,
+          ...(cursors?.failureCursor ? { failureCursor: cursors.failureCursor } : {}),
+          ...(cursors?.acknowledgementCursor
+            ? { acknowledgementCursor: cursors.acknowledgementCursor }
+            : {}),
         });
         if (request !== generation.current) return;
-        setReport(value);
+        setReport((current) => {
+          if (!current || !cursors) return value;
+          return {
+            failures: cursors.failureCursor
+              ? {
+                  items: [...current.failures.items, ...value.failures.items],
+                  nextCursor: value.failures.nextCursor,
+                }
+              : current.failures,
+            unacknowledged: cursors.acknowledgementCursor
+              ? {
+                  items: [...current.unacknowledged.items, ...value.unacknowledged.items],
+                  nextCursor: value.unacknowledged.nextCursor,
+                }
+              : current.unacknowledged,
+          };
+        });
         setError("");
       } catch (reason) {
         if (request !== generation.current) return;
@@ -113,6 +133,19 @@ export function DeliveryDiagnostics({
                 ))}
               </div>
             )}
+            {report.failures.nextCursor ? (
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() =>
+                  void load(++generation.current, {
+                    failureCursor: report.failures.nextCursor,
+                  })
+                }
+              >
+                Show more delivery failures
+              </button>
+            ) : null}
           </section>
           <section aria-labelledby="unacknowledged-critical">
             <h2 id="unacknowledged-critical">Unacknowledged critical updates</h2>
@@ -133,6 +166,19 @@ export function DeliveryDiagnostics({
                 ))}
               </div>
             )}
+            {report.unacknowledged.nextCursor ? (
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() =>
+                  void load(++generation.current, {
+                    acknowledgementCursor: report.unacknowledged.nextCursor,
+                  })
+                }
+              >
+                Show more unacknowledged updates
+              </button>
+            ) : null}
           </section>
         </>
       ) : null}

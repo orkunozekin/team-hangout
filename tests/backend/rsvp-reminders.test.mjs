@@ -204,6 +204,83 @@ test('bounced email and expired push tokens are failures, while read is not ackn
   await db.doc('organizations/remind-org/members/remind-staff').update({ programIds: ['other-program'] });
 });
 
+test('a pending reminder does not expand after it stops being eligible', async () => {
+  const cancelled = 'stale-cancel-event';
+  await db.doc(`events/${cancelled}`).set(event(cancelled, { deadlineMs: now + 6 * HOUR }));
+  await reminders.dispatchRsvpReminder('remind-org', cancelled, now);
+  const cancelIntent = (await intentsFor(cancelled)).docs[0];
+  await db.doc(`events/${cancelled}`).update({ status: 'cancelled' });
+  await worker.expandNotificationIntent('remind-org', cancelIntent.id);
+  assert.equal((await db.collection('users/remind-guardian/notifications').where('sourceId', '==', cancelled).get()).size, 0);
+  assert.equal((await db.doc(`organizations/remind-org/outbox/${cancelIntent.id}`).get()).data().state, 'expanded');
+
+  const moved = 'stale-move-event';
+  await db.doc(`events/${moved}`).set(event(moved, { deadlineMs: now + 6 * HOUR }));
+  await reminders.dispatchRsvpReminder('remind-org', moved, now);
+  const movedIntent = (await intentsFor(moved)).docs[0];
+  await db.doc(`events/${moved}`).update({ rsvpDeadline: Timestamp.fromMillis(now + 10 * HOUR), scheduleVersion: 2 });
+  await worker.expandNotificationIntent('remind-org', movedIntent.id);
+  assert.equal((await db.collection('users/remind-self/notifications').where('sourceId', '==', moved).get()).size, 0);
+  const replacement = await reminders.dispatchRsvpReminder('remind-org', moved, now);
+  assert.equal(replacement.result, 'sent');
+  const fresh = (await intentsFor(moved)).docs.find(doc => doc.id !== movedIntent.id);
+  await worker.expandNotificationIntent('remind-org', fresh.id);
+  assert.equal((await db.collection('users/remind-self/notifications').where('sourceId', '==', moved).get()).size, 1);
+
+  const flaggedId = 'stale-flag-event';
+  await db.doc(`events/${flaggedId}`).set(event(flaggedId, { deadlineMs: now + 6 * HOUR }));
+  await reminders.dispatchRsvpReminder('remind-org', flaggedId, now);
+  const flaggedIntent = (await intentsFor(flaggedId)).docs[0];
+  await db.doc('organizations/remind-org').update({ 'features.rsvpReminders': false });
+  await worker.expandNotificationIntent('remind-org', flaggedIntent.id);
+  assert.equal((await db.collection('users/remind-guardian/notifications').where('sourceId', '==', flaggedId).get()).size, 0);
+  const disabled = await reminders.dispatchRsvpReminder('remind-org', flaggedId, now);
+  assert.equal(disabled.result, 'disabled');
+  await db.doc('organizations/remind-org').update({ 'features.rsvpReminders': true });
+
+  const hidden = 'stale-hidden-event';
+  await db.doc(`events/${hidden}`).set(event(hidden, { deadlineMs: now + 6 * HOUR }));
+  await reminders.dispatchRsvpReminder('remind-org', hidden, now);
+  const hiddenIntent = (await intentsFor(hidden)).docs[0];
+  await db.doc(`events/${hidden}`).update({ publicationState: 'staged' });
+  await worker.expandNotificationIntent('remind-org', hiddenIntent.id);
+  assert.equal((await db.collection('users/remind-guardian/notifications').where('sourceId', '==', hidden).get()).size, 0);
+});
+
+test('a near deadline on a far event is prepared, including after the flag was off', async () => {
+  const id = 'far-deadline-event';
+  await db.doc('organizations/remind-org').update({ 'features.rsvpReminders': false });
+  await db.doc(`events/${id}`).set(event(id, { startsAtMs: now + 20 * 7 * 24 * HOUR, deadlineMs: now + 20 * HOUR }));
+  assert.equal((await reminders.syncRsvpReminder('remind-org', id, now)).state, 'paused');
+  await db.doc('organizations/remind-org').update({ 'features.rsvpReminders': true });
+  let reminder;
+  for (let page = 0; page < 40 && reminder?.state !== 'scheduled'; page += 1) {
+    await reminders.scanUpcomingReminders(now);
+    reminder = (await db.doc(`organizations/remind-org/rsvpReminders/${id}`).get()).data();
+  }
+  assert.equal(reminder.state, 'scheduled');
+  assert.equal(reminder.reason, 'immediate');
+});
+
+test('losing access removes a critical projection that has no delivery', async () => {
+  await db.doc('organizations/remind-org').update({ 'features.notificationInboxFake': false, 'features.notificationPush': true });
+  await db.doc('organizations/remind-org/outbox/critical-no-delivery').set({ ...meta, orgId: 'remind-org', sourceType: 'event', sourceId: 'critical-event', sourceRevision: 2,
+    templateKey: 'event:cancel', critical: true, state: 'pending', programId: 'remind-program', audience: { teamIds: ['remind-team'] } });
+  await worker.expandNotificationIntent('remind-org', 'critical-no-delivery');
+  const note = (await db.collection('users/remind-guardian/notifications').where('templateKey', '==', 'event:cancel').get()).docs[0];
+  assert.ok(note);
+  assert.equal((await db.collection('notificationDeliveries').where('notificationId', '==', note.id).get()).size, 0);
+  assert.equal((await db.doc(`organizations/remind-org/criticalUpdates/${note.id}`).get()).exists, true);
+  await db.doc('organizations/remind-org/participants/remind-child/guardians/remind-guardian').update({ status: 'revoked' });
+  await db.doc('organizations/remind-org/participants/remind-sibling/guardians/remind-guardian').update({ status: 'revoked' });
+  await call('remind-guardian', 'listNotifications');
+  assert.equal((await db.doc(`users/remind-guardian/notifications/${note.id}`).get()).exists, false);
+  assert.equal((await db.doc(`organizations/remind-org/criticalUpdates/${note.id}`).get()).exists, false);
+  await db.doc('organizations/remind-org/participants/remind-child/guardians/remind-guardian').update({ status: 'active' });
+  await db.doc('organizations/remind-org/participants/remind-sibling/guardians/remind-guardian').update({ status: 'active' });
+  await db.doc('organizations/remind-org').update({ 'features.notificationInboxFake': true, 'features.notificationPush': false });
+});
+
 test('account deletion removes reminder diagnostic rows for that person only', async () => {
   await db.doc('organizations/remind-org/deliveryIssues/delete-self').set({ ...meta, orgId: 'remind-org', recipientUid: 'remind-self', channel: 'email', status: 'permanentFailure', failureCode: 'EMAIL_BOUNCED' });
   await db.doc('organizations/remind-org/criticalUpdates/delete-self').set({ ...meta, orgId: 'remind-org', recipientUid: 'remind-self', title: 'Schedule changed', acknowledgedAt: null });

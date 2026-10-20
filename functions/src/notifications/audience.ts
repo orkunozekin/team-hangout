@@ -1,6 +1,12 @@
 import { getFirestore, Transaction } from "firebase-admin/firestore";
 import { Data } from "../commandSupport";
-import { isCurrentResponse } from "./reminderPlan";
+import { effectiveEvent } from "../facilities/closures";
+import { publishedEvent } from "../scheduling/visibility";
+import {
+  isCurrentResponse,
+  RSVP_REMINDER_MIN_REMAINING_MS,
+  rsvpReminderKey,
+} from "./reminderPlan";
 
 export type HouseholdSource = {
   kind: "household";
@@ -140,7 +146,32 @@ export async function collectReminderRecipients(
   return recipientsOf(map);
 }
 
-/** Drop recipients who responded or lost respond access after the reminder was recorded. */
+function timestampMillis(value: { toMillis?: () => number } | null | undefined) {
+  const millis = value?.toMillis?.();
+  return typeof millis === "number" && Number.isFinite(millis) ? millis : null;
+}
+
+/** A queued reminder may expand only while that same key is still eligible. */
+async function reminderStillEligible(tx: Transaction, intent: Data, event: Data) {
+  const organization = (
+    await tx.get(getFirestore().doc(`organizations/${intent.orgId}`))
+  ).data();
+  if (organization?.features?.rsvpReminders !== true || organization.status !== "active")
+    return false;
+  if (!(await publishedEvent(tx, event))) return false;
+  const effective = await effectiveEvent(tx, event);
+  const deadlineMs = timestampMillis(effective.rsvpDeadline ?? effective.startsAt);
+  if (
+    effective.status !== "scheduled" ||
+    effective.resourceClosed === true ||
+    deadlineMs == null ||
+    Date.now() >= deadlineMs - RSVP_REMINDER_MIN_REMAINING_MS
+  )
+    return false;
+  return intent.reminderKey === rsvpReminderKey(effective.scheduleVersion ?? 1, deadlineMs);
+}
+
+/** Drop recipients who responded, lost respond access, or whose reminder is no longer eligible. */
 export async function recheckExplicitRecipients(tx: Transaction, intent: Data) {
   const db = getFirestore();
   const listed = intent.audience?.recipients;
@@ -152,6 +183,8 @@ export async function recheckExplicitRecipients(tx: Transaction, intent: Data) {
   const event = (await tx.get(db.doc(`events/${eventId}`))).data();
   if (!event || event.orgId !== intent.orgId || event.schemaVersion !== 2)
     throw new Error("NOTIFICATION_AUDIENCE_STALE");
+  if (intent.templateKey === "rsvpReminder" && !(await reminderStillEligible(tx, intent, event)))
+    return [];
   const scheduleVersion = event.scheduleVersion ?? 1;
   const map = new Map<string, ReminderRecipient>();
   for (const entry of listed) {

@@ -5,7 +5,7 @@ import { effectiveEvent } from "../facilities/closures";
 import { fingerprint } from "../operations/requests";
 import { publishedEvent } from "../scheduling/visibility";
 import { collectReminderRecipients } from "./audience";
-import { planRsvpReminder } from "./reminderPlan";
+import { planRsvpReminder, RSVP_REMINDER_LEAD_MS } from "./reminderPlan";
 
 const HORIZON_MS = 16 * 7 * 24 * 60 * 60 * 1000;
 
@@ -182,6 +182,7 @@ export async function dispatchRsvpReminder(orgId: string, eventId: string, nowMs
         state: "pending",
         critical: false,
         programId: event.programId ?? null,
+        reminderKey: plan.key,
         audience: { mode: "explicit", teamIds: event.teamIds, recipients },
         createdAt: now,
         updatedAt: now,
@@ -253,6 +254,49 @@ export async function scanUpcomingReminders(nowMs: number) {
     .where("startsAt", ">=", earliest)
     .where("startsAt", "<=", Timestamp.fromMillis(nowMs + HORIZON_MS))
     .orderBy("startsAt")
+    .orderBy(FieldPath.documentId())
+    .limit(25);
+  if (typeof saved?.cursorPath === "string") {
+    const cursor = await db.doc(saved.cursorPath).get();
+    if (cursor.exists) query = query.startAfter(cursor);
+  }
+  const page = await query.get();
+  let prepared = 0;
+  for (const doc of page.docs) {
+    const event = doc.data();
+    if (event.deletedAt != null || event.schemaVersion !== 2 || typeof event.orgId !== "string")
+      continue;
+    const organization = (await db.doc(`organizations/${event.orgId}`).get()).data();
+    if (organization?.features?.rsvpReminders !== true || organization.status !== "active")
+      continue;
+    await syncRsvpReminder(event.orgId, doc.id, nowMs);
+    prepared += 1;
+  }
+  await scanRef.set({
+    schemaVersion: 2,
+    cursorPath: page.size === 25 ? page.docs[24].ref.path : null,
+    prepared,
+    updatedAt: Timestamp.fromMillis(nowMs),
+  });
+  const deadlines = await scanDeadlineReminders(nowMs);
+  return {
+    examined: page.size + deadlines.examined,
+    prepared: prepared + deadlines.prepared,
+  };
+}
+
+/** A deadline can be due while the event start is still outside the 16-week horizon. */
+async function scanDeadlineReminders(nowMs: number) {
+  const db = getFirestore();
+  const scanRef = db.doc("rsvpReminderScans/deadlines");
+  const saved = (await scanRef.get()).data();
+  let query = db
+    .collection("events")
+    .where("publicationState", "==", "published")
+    .where("status", "==", "scheduled")
+    .where("rsvpDeadline", ">=", Timestamp.fromMillis(nowMs))
+    .where("rsvpDeadline", "<=", Timestamp.fromMillis(nowMs + RSVP_REMINDER_LEAD_MS + 60 * 60 * 1000))
+    .orderBy("rsvpDeadline")
     .orderBy(FieldPath.documentId())
     .limit(25);
   if (typeof saved?.cursorPath === "string") {

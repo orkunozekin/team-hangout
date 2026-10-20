@@ -31,15 +31,18 @@ export const listNotifications = readCommand(data => { keys(data, ['pageSize', '
     added.forEach(key => sourceKeys.add(key)); pageDocs.push(doc);
   }
   const access = await authorizeNotificationRows(tx, uid, pageDocs.map(doc => ({ orgId: doc.data().orgId, accessSources: doc.data().accessSources })));
-  const revoked: FirebaseFirestore.DocumentReference[] = [];
+  const revoked: FirebaseFirestore.QueryDocumentSnapshot[] = [];
   const boundary = rows.size > pageDocs.length ? pageDocs[pageDocs.length - 1] : null;
   for (const [index, doc] of pageDocs.entries()) {
     const row = doc.data();
-    if (!access[index]) { if (doc.id !== boundary?.id) revoked.push(doc.ref); continue; }
+    if (!access[index]) { if (doc.id !== boundary?.id) revoked.push(doc); continue; }
     items.push({ id: doc.id, title: row.title, body: row.body, critical: row.critical, sourceType: row.sourceType, sourceId: row.sourceId,
       sourceRevision: row.sourceRevision, createdAt: row.createdAt, readAt: row.readAt, acknowledgedAt: row.acknowledgedAt, deliveryStatus: row.deliveryStatus });
   }
-  revoked.forEach(ref => tx.delete(ref));
+  revoked.forEach(doc => {
+    tx.delete(doc.ref);
+    if (typeof doc.data().orgId === 'string') tx.delete(criticalUpdateRef(doc.data().orgId, doc.id));
+  });
   return { items, unreadCount: items.filter(row => row.readAt == null).length, nextCursor: boundary?.id ?? null };
 });
 

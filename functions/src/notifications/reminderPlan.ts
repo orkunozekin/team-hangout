@@ -15,6 +15,14 @@ export type ReminderPlan = {
   dueAtMs: number | null;
 };
 
+export function rsvpReminderKey(scheduleVersion: number, deadlineMs: number) {
+  const version =
+    Number.isSafeInteger(scheduleVersion) && scheduleVersion > 0
+      ? scheduleVersion
+      : 1;
+  return `${version}:${deadlineMs}`;
+}
+
 /** One server-owned reminder per schedule version and deadline. Not a device timer. */
 export function planRsvpReminder(input: {
   nowMs: number;
@@ -25,11 +33,7 @@ export function planRsvpReminder(input: {
   resourceClosed: boolean;
   published: boolean;
 }): ReminderPlan {
-  const scheduleVersion =
-    Number.isSafeInteger(input.scheduleVersion) && input.scheduleVersion > 0
-      ? input.scheduleVersion
-      : 1;
-  const key = `${scheduleVersion}:${input.deadlineMs}`;
+  const key = rsvpReminderKey(input.scheduleVersion, input.deadlineMs);
   if (!input.published)
     return { key, action: "skip", reason: "unpublished", dueAtMs: null };
   if (
