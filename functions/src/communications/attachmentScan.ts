@@ -1,4 +1,5 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { inflateSync } from "node:zlib";
 
 /** Keep aligned with shared/attachments.ts. */
 export const ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
@@ -343,10 +344,256 @@ function stripPng(bytes: Buffer): Buffer | null {
   return Buffer.concat(pieces);
 }
 
+function skipPdfSpace(value: string, index: number): number {
+  while (index < value.length && " \t\r\n\f".includes(value[index])) index += 1;
+  return index;
+}
+
+function canonicalPdfFilter(name: string): "FlateDecode" | "ASCIIHexDecode" | "ASCII85Decode" | "image" | "unknown" {
+  if (name === "FlateDecode" || name === "Fl") return "FlateDecode";
+  if (name === "ASCIIHexDecode" || name === "AHx") return "ASCIIHexDecode";
+  if (name === "ASCII85Decode" || name === "A85") return "ASCII85Decode";
+  if (name === "DCTDecode" || name === "DCT" || name === "JPXDecode" || name === "JPX" || name === "CCITTFaxDecode" || name === "CCF" || name === "JBIG2Decode") return "image";
+  return "unknown";
+}
+
+function dictionaryFilters(dict: string): string[] | null {
+  const filters: string[] = [];
+  for (let index = 0; index < dict.length; index += 1) {
+    if (dict[index] !== "/") continue;
+    const parsed = pdfName(dict, index);
+    if (!parsed) continue;
+    if (parsed.name !== "Filter") {
+      index = parsed.end - 1;
+      continue;
+    }
+    let cursor = skipPdfSpace(dict, parsed.end);
+    if (dict[cursor] === "/") {
+      const name = pdfName(dict, cursor);
+      if (!name) return null;
+      filters.push(name.name);
+      index = name.end - 1;
+      continue;
+    }
+    if (dict[cursor] !== "[") return null;
+    cursor += 1;
+    while (cursor < dict.length && dict[cursor] !== "]") {
+      cursor = skipPdfSpace(dict, cursor);
+      if (dict[cursor] === "]") break;
+      if (dict[cursor] !== "/") return null;
+      const name = pdfName(dict, cursor);
+      if (!name) return null;
+      filters.push(name.name);
+      cursor = name.end;
+    }
+    index = cursor;
+  }
+  return filters;
+}
+
+function dictionaryLength(dict: string): number | "indirect" | "missing" {
+  for (let index = 0; index < dict.length; index += 1) {
+    if (dict[index] !== "/") continue;
+    const parsed = pdfName(dict, index);
+    if (!parsed) continue;
+    if (parsed.name !== "Length") {
+      index = parsed.end - 1;
+      continue;
+    }
+    const cursor = skipPdfSpace(dict, parsed.end);
+    const match = /^(\d+)/.exec(dict.slice(cursor));
+    if (!match) return "indirect";
+    if (/^\s+\d+\s+R\b/.test(dict.slice(cursor + match[1].length))) return "indirect";
+    const value = Number(match[1]);
+    if (!Number.isSafeInteger(value) || value < 0 || value > ATTACHMENT_MAX_BYTES) return "indirect";
+    return value;
+  }
+  return "missing";
+}
+
+function dictionaryBefore(latin: string, streamAt: number): string | null {
+  let end = streamAt - 1;
+  while (end >= 0 && " \t\r\n\f".includes(latin[end])) end -= 1;
+  if (end < 1 || latin[end] !== ">" || latin[end - 1] !== ">") return null;
+  let depth = 0;
+  for (let index = end; index >= 1; index -= 1) {
+    if (latin[index] === ">" && latin[index - 1] === ">") {
+      depth += 1;
+      index -= 1;
+      continue;
+    }
+    if (latin[index] === "<" && latin[index - 1] === "<") {
+      depth -= 1;
+      if (depth === 0) return latin.slice(index - 1, end + 1);
+      index -= 1;
+    }
+  }
+  return null;
+}
+
+function nextPdfStream(latin: string, from: number): number {
+  let index = from;
+  while (index < latin.length) {
+    const at = latin.indexOf("stream", index);
+    if (at < 0) return -1;
+    const previous = at === 0 ? "\n" : latin[at - 1];
+    const next = latin[at + 6];
+    if (" \t\r\n\f>".includes(previous) && (next === "\n" || next === "\r")) return at;
+    index = at + 6;
+  }
+  return -1;
+}
+
+function inflatePdf(data: Buffer): Buffer | null {
+  if (data.length < 1 || data.length > ATTACHMENT_MAX_BYTES) return null;
+  try {
+    const inflated = inflateSync(data, { maxOutputLength: ATTACHMENT_MAX_BYTES });
+    return inflated.length <= ATTACHMENT_MAX_BYTES ? inflated : null;
+  } catch {
+    return null;
+  }
+}
+
+function asciiHexDecode(data: Buffer): Buffer | null {
+  const out: number[] = [];
+  let high: number | null = null;
+  for (const byte of data) {
+    if (byte === 0x3e) break;
+    if (byte === 0x20 || byte === 0x09 || byte === 0x0d || byte === 0x0a || byte === 0x0c || byte === 0x00) continue;
+    const hex = byte >= 48 && byte <= 57 ? byte - 48 : byte >= 65 && byte <= 70 ? byte - 55 : byte >= 97 && byte <= 102 ? byte - 87 : -1;
+    if (hex < 0) return null;
+    if (high == null) high = hex;
+    else {
+      out.push((high << 4) | hex);
+      high = null;
+    }
+    if (out.length > ATTACHMENT_MAX_BYTES) return null;
+  }
+  if (high != null) out.push(high << 4);
+  return Buffer.from(out);
+}
+
+function ascii85Decode(data: Buffer): Buffer | null {
+  const out: number[] = [];
+  let group: number[] = [];
+  const flush = (count: number): boolean => {
+    let value = 0;
+    for (let index = 0; index < 5; index += 1) value = value * 85 + (index < group.length ? group[index] : 84);
+    if (value > 0xffffffff) return false;
+    const bytes = [(value >>> 24) & 0xff, (value >>> 16) & 0xff, (value >>> 8) & 0xff, value & 0xff];
+    for (let index = 0; index < count; index += 1) out.push(bytes[index]);
+    group = [];
+    return out.length <= ATTACHMENT_MAX_BYTES;
+  };
+  for (let index = 0; index < data.length; index += 1) {
+    const byte = data[index];
+    if (byte === 0x20 || byte === 0x09 || byte === 0x0d || byte === 0x0a || byte === 0x0c || byte === 0x00) continue;
+    if (byte === 0x7e) {
+      if (data[index + 1] !== 0x3e) return null;
+      break;
+    }
+    if (byte === 0x7a && group.length === 0) {
+      out.push(0, 0, 0, 0);
+      if (out.length > ATTACHMENT_MAX_BYTES) return null;
+      continue;
+    }
+    if (byte < 33 || byte > 117) return null;
+    group.push(byte - 33);
+    if (group.length === 5 && !flush(4)) return null;
+  }
+  if (group.length === 1 || (group.length > 0 && !flush(group.length - 1))) return null;
+  return Buffer.from(out);
+}
+
+function decodePdfStream(filters: string[], data: Buffer): Buffer | "skip" | "active" | "malformed" {
+  if (filters.length === 0 || filters.every((filter) => canonicalPdfFilter(filter) === "image")) return "skip";
+  let current = data;
+  let decoded = false;
+  for (const filter of filters) {
+    const name = canonicalPdfFilter(filter);
+    if (name === "image") return decoded ? current : "skip";
+    if (name === "FlateDecode") {
+      const inflated = inflatePdf(current);
+      if (!inflated) return "malformed";
+      current = inflated;
+      decoded = true;
+      continue;
+    }
+    if (name === "ASCIIHexDecode") {
+      const decodedHex = asciiHexDecode(current);
+      if (!decodedHex) return "malformed";
+      current = decodedHex;
+      decoded = true;
+      continue;
+    }
+    if (name === "ASCII85Decode") {
+      const decoded85 = ascii85Decode(current);
+      if (!decoded85) return "malformed";
+      current = decoded85;
+      decoded = true;
+      continue;
+    }
+    return "active";
+  }
+  return current;
+}
+
+function pdfStreamBytes(bytes: Buffer, latin: string, dataStart: number, length: number | "indirect" | "missing"): Buffer | null {
+  const endAt = latin.indexOf("endstream", dataStart);
+  const untilEnd = (): Buffer | null => {
+    if (endAt < dataStart) return null;
+    let stop = endAt;
+    if (stop > dataStart && bytes[stop - 1] === 0x0a) stop -= 1;
+    if (stop > dataStart && bytes[stop - 1] === 0x0d) stop -= 1;
+    return bytes.subarray(dataStart, stop);
+  };
+  if (typeof length === "number") {
+    if (dataStart + length > bytes.length) return null;
+    return bytes.subarray(dataStart, dataStart + length);
+  }
+  return untilEnd();
+}
+
+/** Reject active names in cleartext and in streams that can hide PDF objects. Image streams stay opaque. */
+function inspectPdfObjects(bytes: Buffer, depth: number): "ok" | "active" | "malformed" {
+  const latin = bytes.toString("latin1");
+  if (pdfHasActiveContent(latin)) return "active";
+  if (depth >= 4) return "active";
+  let index = 0;
+  let streams = 0;
+  while (index < latin.length) {
+    const at = nextPdfStream(latin, index);
+    if (at < 0) return "ok";
+    streams += 1;
+    if (streams > 32) return "active";
+    const dict = dictionaryBefore(latin, at);
+    const dataStart = latin[at + 6] === "\r" && latin[at + 7] === "\n" ? at + 8 : at + 7;
+    if (!dict || dataStart < 0) {
+      index = at + 6;
+      continue;
+    }
+    const filters = dictionaryFilters(dict);
+    if (!filters) return "malformed";
+    const data = pdfStreamBytes(bytes, latin, dataStart, dictionaryLength(dict));
+    if (!data) return "malformed";
+    const decoded = decodePdfStream(filters, data);
+    if (decoded === "active" || decoded === "malformed") return decoded;
+    if (decoded !== "skip") {
+      const nested = inspectPdfObjects(decoded, depth + 1);
+      if (nested !== "ok") return nested;
+    }
+    const end = latin.indexOf("endstream", dataStart);
+    index = end >= dataStart ? end + "endstream".length : dataStart + data.length;
+  }
+  return "ok";
+}
+
 function stripPdf(bytes: Buffer): Buffer | { code: "ACTIVE_CONTENT" } | null {
   if (bytes.length < 5 || bytes.subarray(0, 5).toString("ascii") !== "%PDF-") return null;
+  const inspected = inspectPdfObjects(bytes, 0);
+  if (inspected === "malformed") return null;
+  if (inspected === "active") return { code: "ACTIVE_CONTENT" };
   const latin = bytes.toString("latin1");
-  if (pdfHasActiveContent(latin)) return { code: "ACTIVE_CONTENT" };
   const eof = latin.lastIndexOf("%%EOF");
   if (eof < 0) return null;
   let end = eof + 5;

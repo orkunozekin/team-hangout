@@ -409,5 +409,53 @@ test('orphan cleanup continues past the first storage page', async () => {
   assert.equal(removed, true);
   const laterToken = (await db.doc('platformConfig/attachmentPurge').get()).data().objectPageToken;
   assert.notEqual(laterToken, firstToken);
+  const canonicalOrphan = 'quarantine/zzz/late-canonical/2';
+  const readyCanonical = 'quarantine/zzz/kept-canonical/2';
+  const staleUpload = 'quarantine/zzz/kept-canonical/1';
+  await bucket.file(canonicalOrphan).save(Buffer.from('late-canonical'));
+  await bucket.file(readyCanonical).save(Buffer.from('kept-canonical'));
+  await bucket.file(staleUpload).save(Buffer.from('stale-upload'));
+  await db.doc('organizations/zzz/attachments/kept-canonical').set({
+    state: 'ready', objectPath: readyCanonical, createdAt: Timestamp.fromMillis(Date.now() - ATTACHMENT_QUARANTINE_TTL_MS - 5000),
+  });
+  await db.doc('platformConfig/attachmentPurge').set({ objectPageToken: null }, { merge: true });
+  const aged = new Set([canonicalOrphan, readyCanonical, staleUpload]);
+  const agedClock = (name, created) => aged.has(name) ? Date.now() - ATTACHMENT_QUARANTINE_TTL_MS - 1000 : Date.now();
+  const paged = { db, bucket, objectPages: 1, objectPageSize: 1, objectTimeMs: agedClock };
+  let canonicalRemoved = false;
+  let staleRemoved = false;
+  for (let attempt = 0; attempt < 60 && (!canonicalRemoved || !staleRemoved); attempt += 1) {
+    await purgeAbandonedAttachments(Date.now(), paged);
+    canonicalRemoved = (await bucket.file(canonicalOrphan).exists())[0] === false;
+    staleRemoved = (await bucket.file(staleUpload).exists())[0] === false;
+  }
+  assert.equal(canonicalRemoved, true);
+  assert.equal(staleRemoved, true);
+  assert.equal((await bucket.file(readyCanonical).exists())[0], true);
   for (const name of pads) assert.equal((await bucket.file(name).exists())[0], true);
+});
+
+test('an expired grant finalizes a fenced canonical object and still rejects a missing one', async () => {
+  const missing = await call('file-poster', 'createAttachmentUpload', { requestId: rid(), ...team, fileName: 'expired.jpg', declaredBytes: jpeg.length });
+  assert.equal((await putBytes(missing.token, jpeg)).status, 200);
+  await db.doc(`organizations/file-org/attachments/${missing.id}`).update({ expiresAt: Timestamp.fromMillis(Date.now() - 1000) });
+  const expired = await call('file-poster', 'finalizeAttachment', { requestId: rid(), ...team, attachmentId: missing.id });
+  assert.equal(expired.state, 'rejected');
+  assert.equal(expired.rejectionCode, 'EXPIRED');
+  const grant = await call('file-poster', 'createAttachmentUpload', { requestId: rid(), ...team, fileName: 'late.jpg', declaredBytes: jpeg.length });
+  assert.equal((await putBytes(grant.token, jpeg)).status, 200);
+  const bucket = getStorage(admin).bucket(`${projectId}.appspot.com`);
+  const canonicalPath = `quarantine/file-org/${grant.id}/2`;
+  await bucket.file(canonicalPath).save(cleanedJpeg, { resumable: false });
+  await db.doc(`organizations/file-org/attachments/${grant.id}`).update({
+    state: 'canonicalizing', canonicalSha256: sha256(cleanedJpeg), canonicalBytes: cleanedJpeg.length, expiresAt: Timestamp.fromMillis(Date.now() - 1000),
+  });
+  const done = await call('file-poster', 'finalizeAttachment', { requestId: rid(), ...team, attachmentId: grant.id });
+  assert.equal(done.state, 'ready');
+  assert.equal(done.rejectionCode, null);
+  assert.equal(done.byteLength, cleanedJpeg.length);
+  assert.equal(done.sha256, sha256(cleanedJpeg));
+  const downloaded = await download('file-poster', grant.id);
+  assert.equal(downloaded.status, 200);
+  assert.equal(Buffer.compare(Buffer.from(await downloaded.arrayBuffer()), cleanedJpeg), 0);
 });

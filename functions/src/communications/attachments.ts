@@ -465,27 +465,33 @@ export const finalizeAttachment = onCall(callableOptions, async (request) => {
   }
   let review: AttachmentReview | null = null;
   if (opened.kind === "review") {
-    if (opened.expiresAtMs <= Date.now()) {
+    const canonicalPath = canonicalObjectPath(payload.orgId, payload.attachmentId);
+    const canonicalStored = opened.canonicalSha256 ? await readQuarantine(canonicalPath) : Buffer.alloc(0);
+    const storedCanonicalHash = opened.canonicalSha256 ? sha256(canonicalStored) : "";
+    const usingCanonical = opened.canonicalSha256 != null && canonicalStored.length > 0 && storedCanonicalHash === opened.canonicalSha256;
+    if (!usingCanonical && opened.expiresAtMs <= Date.now()) {
       review = await reviewAttachment({
         fileName: opened.fileName, declaredBytes: opened.declaredBytes, bytes: Buffer.alloc(0), expiresAtMs: opened.expiresAtMs, nowMs: Date.now(), scanner: () => ({ verdict: "clean" }),
       });
     } else {
-      const uploaded = await readQuarantine(opened.path);
-      const canonicalPath = canonicalObjectPath(payload.orgId, payload.attachmentId);
-      const canonicalStored = opened.canonicalSha256 ? await readQuarantine(canonicalPath) : Buffer.alloc(0);
+      const uploaded = usingCanonical ? Buffer.alloc(0) : await readQuarantine(opened.path);
       const uploadedHash = sha256(uploaded);
-      const storedCanonicalHash = sha256(canonicalStored);
-      const usingCanonical = opened.canonicalSha256 != null && canonicalStored.length > 0 && storedCanonicalHash === opened.canonicalSha256;
-      const usingUpload = uploadedHash === opened.sha256;
+      const usingUpload = !usingCanonical && uploadedHash === opened.sha256;
       if (!usingCanonical && !usingUpload) {
         const objectHash = canonicalStored.length > 0 ? storedCanonicalHash : uploadedHash;
-        review = { state: "rejected", code: "INTEGRITY", detectedType: null, sha256: objectHash, byteLength: usingCanonical ? canonicalStored.length : uploaded.length, scan: transportScan("INTEGRITY") };
+        review = { state: "rejected", code: "INTEGRITY", detectedType: null, sha256: objectHash, byteLength: canonicalStored.length > 0 ? canonicalStored.length : uploaded.length, scan: transportScan("INTEGRITY") };
       } else {
         const source = usingCanonical ? canonicalStored : uploaded;
         const declaredBytes = usingCanonical ? (opened.canonicalBytes ?? source.length) : opened.declaredBytes;
         const selected = await loadScanner();
         review = await reviewAttachment({
-          fileName: opened.fileName, declaredBytes, bytes: source, expiresAtMs: opened.expiresAtMs, nowMs: Date.now(), scanner: selected.scan, scannerName: selected.name,
+          fileName: opened.fileName,
+          declaredBytes,
+          bytes: source,
+          expiresAtMs: usingCanonical ? Math.max(opened.expiresAtMs, Date.now() + 1) : opened.expiresAtMs,
+          nowMs: Date.now(),
+          scanner: selected.scan,
+          scannerName: selected.name,
         });
         if (review.state === "ready" && review.sha256 !== sha256(source)) {
           const canonicalHash = review.sha256;
@@ -581,15 +587,21 @@ async function writeCanonical(path: string, bytes: Buffer) {
   if (sha256(written) !== sha256(bytes)) throw new HttpsError("unavailable", "Attachment storage could not be updated. Try again.");
 }
 
-async function hashReadable(stream: Readable): Promise<{ hash: string; length: number }> {
+async function hashReadable(stream: Readable): Promise<{ hash: string; length: number; bytes: Buffer }> {
   const hash = createHash("sha256");
+  const chunks: Buffer[] = [];
   let length = 0;
   for await (const chunk of stream) {
     const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     length += bytes.length;
+    if (length > ATTACHMENT_MAX_BYTES) {
+      stream.destroy();
+      return { hash: "", length, bytes: Buffer.alloc(0) };
+    }
     hash.update(bytes);
+    chunks.push(bytes);
   }
-  return { hash: hash.digest("hex"), length };
+  return { hash: hash.digest("hex"), length, bytes: Buffer.concat(chunks) };
 }
 
 async function streamVerified(res: Response, allowed: { path: string; sha256: string; byteLength: number; detectedType: string; fileName: string }) {
@@ -612,17 +624,15 @@ async function streamVerified(res: Response, allowed: { path: string; sha256: st
   res.setHeader("Content-Length", String(allowed.byteLength));
   res.status(200);
   await new Promise<void>((resolve, reject) => {
-    const stream = file.createReadStream();
-    stream.on("error", reject);
     res.on("error", reject);
-    stream.pipe(res);
     res.on("finish", () => resolve());
+    res.end(hashed.bytes);
   });
 }
 
 function quarantineParts(name: string): { orgId: string; attachmentId: string } | null {
   const parts = name.split("/");
-  if (parts.length !== 4 || parts[0] !== "quarantine" || parts[3] !== "1") return null;
+  if (parts.length !== 4 || parts[0] !== "quarantine" || (parts[3] !== "1" && parts[3] !== "2")) return null;
   if (!/^[A-Za-z0-9_-]+$/.test(parts[1]) || !/^[A-Za-z0-9_-]+$/.test(parts[2])) return null;
   return { orgId: parts[1], attachmentId: parts[2] };
 }

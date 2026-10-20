@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { deflateSync } from 'node:zlib';
 import { createRequire } from 'node:module';
 const require = createRequire(new URL('../../functions/package.json', import.meta.url));
 const scan = require('./lib/communications/attachmentScan.js');
@@ -156,6 +157,69 @@ test('the content scanner strips image metadata, rejects active PDF content, and
   assert.equal(scan.abandonedObject({ timeCreatedMs: 1, nowMs: scan.ATTACHMENT_QUARANTINE_TTL_MS + 1, ready: true }), false);
   assert.equal(scan.abandonedObject({ timeCreatedMs: null, nowMs: scan.ATTACHMENT_QUARANTINE_TTL_MS + 1, ready: false }), false);
 });
+
+function flateObject(payload, filter = '/FlateDecode') {
+  const compressed = deflateSync(payload);
+  const header = `%PDF-1.4\n1 0 obj\n<< /Type /ObjStm /N 1 /First 0 /Filter ${filter} /Length ${compressed.length} >>\nstream\n`;
+  return Buffer.concat([Buffer.from(header), compressed, Buffer.from('\nendstream\nendobj\n%%EOF')]);
+}
+
+test('the content scanner rejects active PDF content hidden in a compressed object', async () => {
+  const hidden = flateObject(Buffer.from('<< /JavaScript (alert) >>'));
+  assert.equal(hidden.includes(Buffer.from('/JavaScript')), false);
+  const script = await scan.reviewAttachment({ fileName: 'notes.pdf', declaredBytes: hidden.length, bytes: hidden, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.contentScanner, scannerName: 'content' });
+  assert.equal(script.state, 'rejected');
+  assert.equal(script.code, 'ACTIVE_CONTENT');
+  const abbreviated = flateObject(Buffer.from('<< /JS (alert) >>'), '/Fl');
+  assert.equal(abbreviated.includes(Buffer.from('/JS')), false);
+  const short = await scan.reviewAttachment({ fileName: 'notes.pdf', declaredBytes: abbreviated.length, bytes: abbreviated, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.contentScanner, scannerName: 'content' });
+  assert.equal(short.code, 'ACTIVE_CONTENT');
+  const encoded = flateObject(Buffer.from('<< /OpenAction << /S /JavaScript >> >>'), '/Fl#61teDecode');
+  const escaped = await scan.reviewAttachment({ fileName: 'notes.pdf', declaredBytes: encoded.length, bytes: encoded, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.contentScanner, scannerName: 'content' });
+  assert.equal(escaped.code, 'ACTIVE_CONTENT');
+  const asciiPayload = ascii85(Buffer.from('<< /Launch (cmd) >>'));
+  const ascii = Buffer.from(`%PDF-1.4\n1 0 obj\n<< /Filter /ASCII85Decode /Length ${asciiPayload.length} >>\nstream\n${asciiPayload}\nendstream\nendobj\n%%EOF`);
+  assert.equal(ascii.includes(Buffer.from('/Launch')), false);
+  const launched = await scan.reviewAttachment({ fileName: 'notes.pdf', declaredBytes: ascii.length, bytes: ascii, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.contentScanner, scannerName: 'content' });
+  assert.equal(launched.code, 'ACTIVE_CONTENT');
+  const broken = Buffer.from('%PDF-1.4\n1 0 obj\n<< /Length 8 /Filter /FlateDecode >>\nstream\nnotflate\nendstream\nendobj\n%%EOF');
+  const malformed = await scan.reviewAttachment({ fileName: 'notes.pdf', declaredBytes: broken.length, bytes: broken, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.contentScanner, scannerName: 'content' });
+  assert.equal(malformed.state, 'rejected');
+  assert.equal(malformed.code, 'MALFORMED');
+  const sealed = Buffer.from('%PDF-1.4\n1 0 obj\n<< /Length 4 /Filter /Crypt >>\nstream\nabcd\nendstream\nendobj\n%%EOF');
+  const crypt = await scan.reviewAttachment({ fileName: 'notes.pdf', declaredBytes: sealed.length, bytes: sealed, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.contentScanner, scannerName: 'content' });
+  assert.equal(crypt.code, 'ACTIVE_CONTENT');
+  const compressed = deflateSync(Buffer.from('hello'));
+  const clean = Buffer.concat([
+    Buffer.from(`%PDF-1.4\n1 0 obj\n<< /Length ${compressed.length} /Filter /FlateDecode >>\nstream\n`),
+    compressed,
+    Buffer.from('\nendstream\nendobj\n2 0 obj\n<< /Title (GPS-SYNTHETIC) >>\nendobj\n%%EOF'),
+  ]);
+  const ready = await scan.reviewAttachment({ fileName: 'notes.pdf', declaredBytes: clean.length, bytes: clean, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.contentScanner, scannerName: 'content' });
+  assert.equal(ready.state, 'ready');
+  assert.equal(ready.bytes.includes(Buffer.from('GPS-SYNTHETIC')), false);
+  assert.equal(ready.bytes.subarray(0, 5).toString('ascii'), '%PDF-');
+  const image = Buffer.from('%PDF-1.4\n1 0 obj\n<< /Length 4 /Filter /DCTDecode >>\nstream\nxxxx\nendstream\nendobj\n%%EOF');
+  const photo = await scan.reviewAttachment({ fileName: 'notes.pdf', declaredBytes: image.length, bytes: image, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.contentScanner, scannerName: 'content' });
+  assert.equal(photo.state, 'ready');
+});
+
+function ascii85(bytes) {
+  let out = '';
+  for (let index = 0; index < bytes.length; index += 4) {
+    const chunk = bytes.subarray(index, Math.min(index + 4, bytes.length));
+    if (chunk.length === 4 && chunk.every((value) => value === 0)) { out += 'z'; continue; }
+    let value = 0;
+    for (let byte = 0; byte < 4; byte += 1) value = value * 256 + (chunk[byte] ?? 0);
+    let group = '';
+    for (let piece = 0; piece < 5; piece += 1) {
+      group = String.fromCharCode((value % 85) + 33) + group;
+      value = Math.floor(value / 85);
+    }
+    out += group.slice(0, chunk.length + 1);
+  }
+  return out;
+}
 
 test('upload grants expire and reject a tampered signature', () => {
   const grant = { v: 1, exp: Math.floor(Date.now() / 1000) + 300, attachmentId: 'file', uid: 'owner', orgId: 'org', bytes: jpeg.length, path: 'quarantine/org/file/1' };
