@@ -56,7 +56,8 @@ test('upload grants expire and reject a tampered signature', () => {
   const expired = scan.signUploadGrant({ ...grant, exp: 10 }, key);
   assert.equal(scan.readUploadGrant(expired, key, Date.now()).error, 'expired');
   const [body, signature] = token.split('.');
-  assert.equal(scan.readUploadGrant(`${body}.${signature.slice(0, -1)}A`, key, Date.now()).error, 'invalid');
+  const flipped = `${signature.slice(0, -1)}${signature.endsWith('A') ? 'B' : 'A'}`;
+  assert.equal(scan.readUploadGrant(`${body}.${flipped}`, key, Date.now()).error, 'invalid');
   assert.equal(scan.configuredAttachmentBucket('team-hangout-ddf27.firebasestorage.app'), 'team-hangout-ddf27.firebasestorage.app');
   assert.equal(scan.configuredAttachmentBucket('gs://team-hangout-staging.firebasestorage.app'), 'team-hangout-staging.firebasestorage.app');
   assert.equal(scan.configuredAttachmentBucket('demo-team-hangout.appspot.com'), 'demo-team-hangout.appspot.com');
