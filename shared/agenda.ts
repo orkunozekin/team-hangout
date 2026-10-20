@@ -9,6 +9,8 @@ export type AgendaTeam = {
   seasonId: string;
   seasonName: string;
   seasonStatus: "draft" | "active" | "archived";
+  divisionId?: string;
+  divisionName?: string;
   archived: boolean;
   participants: AgendaParticipant[];
 };

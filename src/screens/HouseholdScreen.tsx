@@ -34,6 +34,7 @@ import {
   TextField,
 } from "../components/ui";
 import { colors, type } from "../theme/theme";
+import type { ConversationRoute } from "../lib/conversationNavigation";
 
 function errorMessage(e: unknown) {
   const code = (e as { code?: string }).code;
@@ -71,10 +72,12 @@ export default function HouseholdScreen({
   user,
   onTeams,
   onInbox,
+  onConversation,
 }: {
   user: User;
   onTeams: () => void;
   onInbox?: () => void;
+  onConversation?: (target: ConversationRoute) => void;
 }) {
   const scrollRef = useRef<ScrollView>(null);
   const [subscriptions, setSubscriptions] = useState(false);
@@ -223,6 +226,7 @@ export default function HouseholdScreen({
                   setError("");
                   setDiscoveryVersion((n) => n + 1);
                 }}
+                onConversation={onConversation}
                 onAccessDenied={() => {
                   householdGeneration.current++;
                   setSelected(null);

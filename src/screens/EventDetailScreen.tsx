@@ -1,4 +1,5 @@
 import { agendaTime } from '../lib/agendaTime';
+import { eventConversationTarget } from '../lib/conversationNavigation';
 import EventAttendance from '../components/EventAttendance';
 import EventAvailability from "../components/EventAvailability";
 import React, {
@@ -76,6 +77,7 @@ import {
 type RootStackParamList = {
   EventDetail: { eventId: string };
   CreateEditEvent: { eventId?: string; action?: 'reschedule' };
+  Conversation: { orgId: string; scopeType: 'organization' | 'division' | 'team' | 'event'; scopeId: string };
 };
 
 type Props = {
@@ -257,6 +259,7 @@ export default function EventDetailScreen({
 
         {cached ? <Text style={styles.row}>Updates, responses, check-in, and attendance require a connection. No offline changes are queued.</Text> : null}
         {!cached && event.schemaVersion === 2 ? <EventAvailability key={`${event.id}:${event.revision}`} eventId={event.id} canManage={canManage} /> : null}
+        {!cached && eventConversationTarget(event) ? <SecondaryButton label="Open event conversation" onPress={() => navigation.navigate('Conversation', { orgId: event.orgId!, scopeType: 'event', scopeId: event.id })} /> : null}
         {!cached && event.schemaVersion === 2 ? <EventAttendance key={`attendance:${event.id}:${event.revision}`} eventId={event.id} teamId={membership.teamId} /> : null}
         {event.history?.length ? <>
           <Text style={styles.row}>Schedule history{event.historyHasMore ? ' (latest 20)' : ''}</Text>

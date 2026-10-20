@@ -73,6 +73,10 @@ test('client mutations cannot change authority or references, including for coac
     await assertFails(deleteDoc(doc(db, 'inviteCodes/AAAAAAAA')));
     await assertFails(getDocs(collection(db, 'inviteCodes')));
     await assertFails(getDocs(collection(db, 'commandRequests')));
+    await assertFails(getDoc(doc(db, 'organizations/org-a/conversations/channel-a')));
+    await assertFails(getDoc(doc(db, 'organizations/org-a/conversations/channel-a/messages/message-a')));
+    await assertFails(getDoc(doc(db, 'organizations/org-a/staffNotes/team_team-a/entries/note-a')));
+    await assertFails(setDoc(doc(db, 'organizations/org-a/staffNotes/team_team-a/entries/note-a'), { body: 'private' }));
     await assertFails(getDoc(doc(db, 'organizations/org-a/rsvpReminders/event-a')));
     await assertFails(getDoc(doc(db, 'organizations/org-a/deliveryIssues/issue-a')));
     await assertFails(getDoc(doc(db, 'organizations/org-a/criticalUpdates/update-a')));

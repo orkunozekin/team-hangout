@@ -29,6 +29,7 @@ import {
   saveCachedAgenda,
   type CachedValue,
 } from "../lib/gameDayCache";
+import { householdConversationTargets, type ConversationRoute } from "../lib/conversationNavigation";
 
 function Action({
   label,
@@ -71,11 +72,13 @@ export default function HouseholdAgenda({
   refresh,
   onAccessDenied,
   onAccessRefreshed,
+  onConversation,
   userId,
 }: {
   refresh: number;
   onAccessDenied?: () => void;
   onAccessRefreshed?: () => void;
+  onConversation?: (target: ConversationRoute) => void;
   userId?: string;
 }) {
   const deniedCallback = useRef(onAccessDenied);
@@ -412,6 +415,15 @@ export default function HouseholdAgenda({
           single-team schedules.
         </Text>
       ) : null}
+      {!cached && onConversation
+        ? householdConversationTargets(page?.teams ?? [], items).map((target) => (
+            <Action
+              key={`${target.scopeType}:${target.orgId}:${target.scopeId}`}
+              label={target.label}
+              onPress={() => onConversation({ orgId: target.orgId, scopeType: target.scopeType, scopeId: target.scopeId })}
+            />
+          ))
+        : null}
       {page && !items.length ? (
         <Text style={styles.copy}>
           No published events match this date window and these filters.

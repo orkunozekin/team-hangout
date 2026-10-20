@@ -309,6 +309,14 @@ export async function readAgenda(
         seasonId: team.seasonId,
         seasonName: parents.season.name,
         seasonStatus: parents.season.status,
+        ...(typeof team.divisionId === "string"
+          ? {
+              divisionId: team.divisionId,
+              ...(typeof parents.division?.name === "string"
+                ? { divisionName: parents.division.name }
+                : {}),
+            }
+          : {}),
         archived: [
           team,
           parents.org,

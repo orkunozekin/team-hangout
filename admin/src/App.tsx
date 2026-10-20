@@ -1,3 +1,4 @@
+import { Conversations } from "./Conversations";
 import { DeliveryDiagnostics } from "./DeliveryDiagnostics";
 import { Closures } from "./Closures";
 import { ScheduleDrafts } from "./ScheduleDrafts";
@@ -203,6 +204,8 @@ export function App({ services }: { services: BrowserServices }) {
               />
             ) : route.section === "invitation" ? (
               <Invitations services={services} orgId={route.orgId} />
+            ) : route.section === "conversations" ? (
+              <Conversations services={services} orgId={route.orgId} />
             ) : route.section === "diagnostics" ? (
               <DeliveryDiagnostics services={services} orgId={route.orgId} />
             ) : route.section === "closures" ? (

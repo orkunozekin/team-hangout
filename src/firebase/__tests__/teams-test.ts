@@ -69,6 +69,10 @@ describe('firebase/teams', () => {
         updatedAt: new Date(),
       }).name,
     ).toBe('Tigers');
+    expect(mapTeamDoc('canonical', {
+      schemaVersion: 2, name: 'Falcons', orgId: 'org', divisionId: 'u12', sport: null,
+      createdAt: new Date(), updatedAt: new Date(),
+    })).toMatchObject({ orgId: 'org', divisionId: 'u12', schemaVersion: 2 });
 
     expect(
       mapMemberDoc('t1_u1', {
