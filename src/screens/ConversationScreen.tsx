@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { editConversationMessage, listConversationMessages, postConversationMessage, reactToConversationMessage, searchConversationMessages } from '../firebase/conversations';
 import { CONVERSATION_REACTIONS, type ConversationMessage, type ConversationPage, type ConversationScopeType, type ConversationSearchPage } from '../../shared/conversations';
@@ -18,6 +18,7 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState<ConversationSearchPage | null>(null);
   const [searching, setSearching] = useState(false);
+  const searchToken = useRef(0);
   async function refresh(initial = false) {
     if (initial) { setLoading(true); setPage(null); setItems([]); setDenied(false); }
     setError(null);
@@ -27,9 +28,11 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
       setItems(next.items);
       setDenied(false);
     } catch {
+      searchToken.current += 1;
       setPage(null);
       setItems([]);
       setSearch(null);
+      setSearching(false);
       setDenied(true);
       setError('This conversation is unavailable.');
     } finally { setLoading(false); }
@@ -46,7 +49,7 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
       setError('Older messages could not be loaded. Try again.');
     } finally { setLoadingOlder(false); }
   }
-  useEffect(() => { setSearch(null); void refresh(true); }, [orgId, scopeType, scopeId]);
+  useEffect(() => { searchToken.current += 1; setSearch(null); setSearching(false); void refresh(true); }, [orgId, scopeType, scopeId]);
   async function send() {
     if (!draft.trim()) return;
     setSaving(true); setError(null);
@@ -71,14 +74,20 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
   }
   async function find(cursor?: string) {
     if (!query.trim()) return;
+    const token = searchToken.current;
+    const scopeKey = `${orgId}:${scopeType}:${scopeId}`;
     setSearching(true); setError(null);
     try {
       const next = await searchConversationMessages({ orgId, scopeType, scopeId, text: query.trim(), ...(cursor ? { cursor } : {}) });
+      if (token !== searchToken.current || scopeKey !== `${orgId}:${scopeType}:${scopeId}`) return;
       setSearch(current => cursor && current ? { ...next, items: [...current.items, ...next.items.filter(item => !current.items.some(row => row.id === item.id))] } : next);
     } catch {
+      if (token !== searchToken.current) return;
       setSearch(null);
       setError('Search could not be completed.');
-    } finally { setSearching(false); }
+    } finally {
+      if (token === searchToken.current) setSearching(false);
+    }
   }
   const youthClosed = page?.mode === 'youth' && page.youthPosting === 'closed';
   const title = scopeType === 'event' ? 'Event conversation' : scopeType === 'team' ? 'Team conversation' : scopeType === 'division' ? 'Division announcements' : 'Organization announcements';

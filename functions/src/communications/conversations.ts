@@ -698,6 +698,19 @@ const SEARCH_CAP = 1000;
 const SEARCH_PAGE = 50;
 const BACKFILL_BATCH = 100;
 
+function writeFreshIndex(tx: Transaction, orgId: string, conversationId: string, messageId: string, row: Data | undefined) {
+  const ref = searchReference(orgId, messageId);
+  const createdAt = row?.createdAt;
+  const tokens = textTokens(typeof row?.body === "string" ? row.body : "").slice(0, 200);
+  if (!row || row.tombstoned === true || !tokens.length || !(createdAt instanceof Timestamp) || typeof row.sequence !== "number") {
+    tx.delete(ref);
+    return;
+  }
+  tx.set(ref, {
+    schemaVersion: 2, orgId, conversationId, tokens, revision: row.revision ?? 0, createdAt, sequence: row.sequence,
+  });
+}
+
 async function backfillSearchIndex(uid: string, orgId: string, scope: ScopeType, scopeId: string, conversationId: string) {
   const db = getFirestore();
   const conversationRef = db.doc(`organizations/${orgId}/conversations/${conversationId}`);
@@ -711,30 +724,22 @@ async function backfillSearchIndex(uid: string, orgId: string, scope: ScopeType,
   }
   const snap = await query.get();
   const page = snap.docs.slice(0, BACKFILL_BATCH);
-  const batch = db.batch();
-  for (const doc of page) {
-    const row = doc.data();
-    const ref = searchReference(orgId, doc.id);
-    const createdAt = row.createdAt;
-    const tokens = textTokens(typeof row.body === "string" ? row.body : "").slice(0, 200);
-    if (row.tombstoned === true || !tokens.length || !(createdAt instanceof Timestamp) || typeof row.sequence !== "number") {
-      batch.delete(ref);
-      continue;
-    }
-    batch.set(ref, {
-      schemaVersion: 2, orgId, conversationId, tokens, revision: row.revision ?? 0, createdAt, sequence: row.sequence,
+  const complete = snap.size <= BACKFILL_BATCH;
+  await liveRead(uid, orgId, scope, scopeId);
+  if (conversation.exists || page.length) {
+    await db.runTransaction(async (tx) => {
+      const fresh = [];
+      for (const doc of page) fresh.push(await tx.get(doc.ref));
+      const currentConversation = await tx.get(conversationRef);
+      for (const doc of fresh) writeFreshIndex(tx, orgId, conversationId, doc.id, doc.data());
+      if (currentConversation.get("searchIndexComplete") === true) return;
+      const last = page[page.length - 1];
+      tx.set(conversationRef, {
+        searchIndexComplete: complete,
+        ...(last ? { searchIndexCursor: { sequence: last.get("sequence"), messageId: last.id } } : {}),
+      }, { merge: true });
     });
   }
-  const complete = snap.size <= BACKFILL_BATCH;
-  const last = page[page.length - 1];
-  if (conversation.exists || page.length) {
-    batch.set(conversationRef, {
-      searchIndexComplete: complete,
-      ...(last ? { searchIndexCursor: { sequence: last.get("sequence"), messageId: last.id } } : {}),
-    }, { merge: true });
-  }
-  await liveRead(uid, orgId, scope, scopeId);
-  if (conversation.exists || page.length) await batch.commit();
   return complete;
 }
 
@@ -829,13 +834,15 @@ export const searchConversationMessages = onCall(emulatorDemo() ? {} : { secrets
       mine.set(messageId, codes);
     });
   }
-  const resume = !exhausted && position != null;
   const backfillRemains = !indexComplete;
+  const restart = backfillRemains || position == null;
+  const resume = !exhausted && position != null && !backfillRemains;
   const more = resume || backfillRemains;
-  const restart = position == null;
+  const cursorAt = restart || position == null ? new Timestamp(0, 0) : position.createdAt;
+  const cursorId = restart || position == null ? "restart" : position.messageId;
   return wire({
     items: matches.map((match) => projectMessage({ id: match.messageId, data: () => match.message }, pinned, uid, mine.get(match.messageId) ?? new Set())),
-    nextCursor: more ? signSearchCursor(position?.createdAt ?? new Timestamp(0, 0), position?.messageId ?? "restart", binding, restart) : null,
+    nextCursor: more ? signSearchCursor(cursorAt, cursorId, binding, restart) : null,
     partial: (scanned >= SEARCH_CAP && resume) || backfillRemains,
   });
 });

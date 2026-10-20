@@ -104,6 +104,24 @@ test('drops search results when the channel changes', async () => {
   expect(screen.queryByText('Practice moved to the south field')).toBeNull();
 });
 
+test('ignores a search that completes after the channel changes', async () => {
+  let resolveSearch: (value: { items: Array<{ id: string; sequence: number; authorUid: string; body: string; tombstoned: boolean; pinned: boolean; createdAt: string }>; nextCursor: null; partial: false }) => void = () => {};
+  (api.listConversationMessages as jest.Mock).mockResolvedValue(page);
+  (api.searchConversationMessages as jest.Mock).mockImplementation(() => new Promise((resolve) => { resolveSearch = resolve; }));
+  const view = await render(<ConversationScreen orgId="org" scopeType="team" scopeId="team" />);
+  expect(await screen.findByText('Practice is at the north field')).toBeTruthy();
+  fireEvent.changeText(screen.getByLabelText('Search words'), 'south');
+  await waitFor(() => expect(screen.getByLabelText('Search words').props.value).toBe('south'));
+  fireEvent.press(screen.getByText('Search messages'));
+  await waitFor(() => expect(api.searchConversationMessages).toHaveBeenCalled());
+  (api.listConversationMessages as jest.Mock).mockResolvedValue({ ...page, items: [] });
+  view.rerender(<ConversationScreen orgId="org" scopeType="team" scopeId="other-team" />);
+  expect(await screen.findByText('No messages yet.')).toBeTruthy();
+  resolveSearch({ items: [{ ...page.items[0], body: 'Practice moved to the south field' }], nextCursor: null, partial: false });
+  await expect(screen.findByText('Practice moved to the south field', {}, { timeout: 400 })).rejects.toThrow();
+  expect(screen.getByText('No messages yet.')).toBeTruthy();
+});
+
 test('keeps the closed-policy banner when the channel has no messages yet', async () => {
   (api.listConversationMessages as jest.Mock).mockResolvedValue({ ...page, items: [] });
   await render(<ConversationScreen orgId="org" scopeType="team" scopeId="team" />);

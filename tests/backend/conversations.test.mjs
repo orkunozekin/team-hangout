@@ -403,6 +403,66 @@ test('search backfills messages that predate the token index', async () => {
   assert.equal(indexed.data().revision, 3);
 });
 
+test('an unfinished backfill restarts continuation so a later index row is not skipped', async () => {
+  const { fingerprint } = require('./lib/operations/requests.js');
+  const conversationId = fingerprint({ kind: 'conversation', orgId: 'talk-org', scopeType: 'team', scopeId: 'talk-team', channel: 'household' });
+  const conversationRef = db.doc(`organizations/talk-org/conversations/${conversationId}`);
+  await conversationRef.update({ searchIndexComplete: false, searchIndexCursor: null });
+  const batch = db.batch();
+  batch.set(db.doc(`organizations/talk-org/conversations/${conversationId}/messages/restart-target`), {
+    schemaVersion: 2, orgId: 'talk-org', conversationId, authorUid: 'talk-staff', sequence: 50050,
+    body: 'restartglyph hidden early', tombstoned: false, revision: 1,
+    createdAt: Timestamp.fromMillis(Date.parse('2025-01-01T00:00:00.000Z')),
+  });
+  batch.set(db.doc(`organizations/talk-org/conversations/${conversationId}/messages/restart-anchor`), {
+    schemaVersion: 2, orgId: 'talk-org', conversationId, authorUid: 'talk-staff', sequence: 50010,
+    body: 'restartglyph already indexed', tombstoned: false, revision: 0,
+    createdAt: Timestamp.fromMillis(Date.parse('2020-01-01T00:00:00.000Z')),
+  });
+  batch.set(db.doc('organizations/talk-org/messageSearch/restart-anchor'), {
+    schemaVersion: 2, orgId: 'talk-org', conversationId, tokens: ['restartglyph', 'already', 'indexed'], revision: 0,
+    createdAt: Timestamp.fromMillis(Date.parse('2020-01-01T00:00:00.000Z')), sequence: 50010,
+  });
+  for (let index = 0; index < 101; index += 1) {
+    const id = `restart-pad-${String(index).padStart(3, '0')}`;
+    batch.set(db.doc(`organizations/talk-org/conversations/${conversationId}/messages/${id}`), {
+      schemaVersion: 2, orgId: 'talk-org', conversationId, authorUid: 'talk-staff', sequence: 50100 + index,
+      body: 'ordinary practice note', tombstoned: false, revision: 0,
+      createdAt: Timestamp.fromMillis(Date.parse('2023-01-01T00:00:00.000Z') + index * 1000),
+    });
+  }
+  await batch.commit();
+  const first = await call('talk-admin', 'searchConversationMessages', { ...team, text: 'restartglyph' });
+  assert.equal(first.items.some(item => item.id === 'restart-target'), false);
+  assert.equal(first.partial, true);
+  assert.equal(typeof first.nextCursor, 'string');
+  const second = await call('talk-admin', 'searchConversationMessages', { ...team, text: 'restartglyph', cursor: first.nextCursor });
+  assert.equal(second.items.some(item => item.id === 'restart-target' && item.body === 'restartglyph hidden early'), true);
+});
+
+test('search backfill indexes the current message revision', async () => {
+  const { fingerprint } = require('./lib/operations/requests.js');
+  const conversationId = fingerprint({ kind: 'conversation', orgId: 'talk-org', scopeType: 'team', scopeId: 'talk-team', channel: 'household' });
+  await db.doc(`organizations/talk-org/conversations/${conversationId}`).update({ searchIndexComplete: false, searchIndexCursor: null });
+  await db.doc(`organizations/talk-org/conversations/${conversationId}/messages/kept-target`).set({
+    schemaVersion: 2, orgId: 'talk-org', conversationId, authorUid: 'talk-staff', sequence: 61000,
+    body: 'keptglyph final', tombstoned: false, revision: 6,
+    createdAt: Timestamp.fromMillis(Date.parse('2024-05-01T00:00:00.000Z')),
+  });
+  await db.doc('organizations/talk-org/messageSearch/kept-target').set({
+    schemaVersion: 2, orgId: 'talk-org', conversationId, tokens: ['oldglyph'], revision: 1,
+    createdAt: Timestamp.fromMillis(Date.parse('2024-05-01T00:00:00.000Z')), sequence: 61000,
+  });
+  const found = await call('talk-admin', 'searchConversationMessages', { ...team, text: 'keptglyph' });
+  const indexed = await db.doc('organizations/talk-org/messageSearch/kept-target').get();
+  assert.equal(indexed.data().revision, 6);
+  assert.equal(indexed.data().tokens.includes('keptglyph'), true);
+  assert.equal(indexed.data().tokens.includes('oldglyph'), false);
+  assert.equal(found.items.some(item => item.id === 'kept-target' && item.body === 'keptglyph final'), true);
+  const stale = await call('talk-admin', 'searchConversationMessages', { ...team, text: 'oldglyph' });
+  assert.equal(stale.items.some(item => item.id === 'kept-target'), false);
+});
+
 function resignSearchCursor(token, keyId, key, binding) {
   const bytes = Buffer.from(token, 'base64url');
   const body = Buffer.from(bytes.subarray(0, bytes.length - 16));
