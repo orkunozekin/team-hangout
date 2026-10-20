@@ -65,6 +65,14 @@ export function uploadObjectPath(orgId: string, attachmentId: string): string {
   return `quarantine/${orgId}/${attachmentId}/1`;
 }
 
+/** Stripped bytes live beside the upload so a grant replay cannot replace them. */
+export function canonicalObjectPath(orgId: string, attachmentId: string): string {
+  if (!/^[A-Za-z0-9_-]+$/.test(orgId) || !/^[A-Za-z0-9_-]+$/.test(attachmentId)) {
+    throw new Error("Invalid attachment path.");
+  }
+  return `quarantine/${orgId}/${attachmentId}/2`;
+}
+
 export function attachmentFileName(value: unknown): { name: string; extension: AttachmentExtension } | { error: "invalid" } {
   if (typeof value !== "string") return { error: "invalid" };
   const base = value.split(/[/\\]/).pop() ?? "";
@@ -182,11 +190,80 @@ export function attachmentCrc32(bytes: Buffer): number {
 
 const PNG_SIG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const PNG_KEEP = new Set(["IHDR", "PLTE", "IDAT", "IEND", "tRNS", "gAMA", "cHRM", "sBIT", "pHYs", "sRGB", "bKGD"]);
-const PDF_ACTIVE = [
-  /\/JavaScript\b/, /\/JS\b/, /\/Launch\b/, /\/OpenAction\b/, /\/AA\b/, /\/RichMedia\b/,
-  /\/EmbeddedFile\b/, /\/SubmitForm\b/, /\/ImportData\b/, /\/GoToR\b/, /\/GoToE\b/,
-  /<script\b/i, /<!doctype\s+html/i, /<html\b/i, /<svg\b/i, /<\?xml\b/i,
-];
+const PDF_ACTIVE_NAMES = new Set(["JavaScript", "JS", "Launch", "OpenAction", "AA", "RichMedia", "EmbeddedFile", "SubmitForm", "ImportData", "GoToR", "GoToE"]);
+const PDF_METADATA_NAMES = new Set(["Title", "Author", "Subject", "Keywords", "Creator", "Producer", "CreationDate", "ModDate"]);
+const PDF_MARKUP = [/<script\b/i, /<!doctype\s+html/i, /<html\b/i, /<svg\b/i, /<\?xml\b/i];
+const RESERVED_SCAN_CODES = new Set(["INTEGRITY", "ACCESS_REVOKED", "SIGNATURE_MISMATCH", "EXPIRED", "OVERSIZED", "SIZE_MISMATCH", "UNSAFE_CONTENT"]);
+
+function pdfName(latin: string, start: number): { name: string; end: number } | null {
+  if (latin[start] !== "/") return null;
+  let name = "";
+  let index = start + 1;
+  while (index < latin.length) {
+    const character = latin[index];
+    const code = latin.charCodeAt(index);
+    if (code <= 32 || "()<>[]{}/%".includes(character)) break;
+    if (character === "#") {
+      const hex = latin.slice(index + 1, index + 3);
+      if (!/^[0-9A-Fa-f]{2}$/.test(hex)) break;
+      name += String.fromCharCode(Number.parseInt(hex, 16));
+      index += 3;
+      continue;
+    }
+    name += character;
+    index += 1;
+  }
+  if (!name) return null;
+  return { name, end: index };
+}
+
+function pdfHasActiveContent(latin: string): boolean {
+  if (PDF_MARKUP.some((pattern) => pattern.test(latin))) return true;
+  for (let index = 0; index < latin.length; index += 1) {
+    if (latin[index] !== "/") continue;
+    const parsed = pdfName(latin, index);
+    if (!parsed) continue;
+    if (PDF_ACTIVE_NAMES.has(parsed.name)) return true;
+    index = parsed.end - 1;
+  }
+  return false;
+}
+
+function blankPdfMetadata(bytes: Buffer): Buffer {
+  const output = Buffer.from(bytes);
+  const latin = output.toString("latin1");
+  for (let index = 0; index < latin.length; index += 1) {
+    if (latin[index] !== "/") continue;
+    const parsed = pdfName(latin, index);
+    if (!parsed) continue;
+    if (!PDF_METADATA_NAMES.has(parsed.name)) {
+      index = parsed.end - 1;
+      continue;
+    }
+    let cursor = parsed.end;
+    while (cursor < latin.length && " \t\r\n\f".includes(latin[cursor])) cursor += 1;
+    if (latin[cursor] === "(") {
+      let end = cursor + 1;
+      while (end < latin.length) {
+        if (latin[end] === "\\") { end += 2; continue; }
+        if (latin[end] === ")") break;
+        end += 1;
+      }
+      for (let offset = cursor + 1; offset < end && offset < output.length; offset += 1) output[offset] = 0x20;
+      index = Math.max(end, cursor);
+      continue;
+    }
+    if (latin[cursor] === "<" && latin[cursor + 1] !== "<") {
+      let end = cursor + 1;
+      while (end < latin.length && latin[end] !== ">") end += 1;
+      for (let offset = cursor + 1; offset < end && offset < output.length; offset += 1) output[offset] = 0x20;
+      index = Math.max(end, cursor);
+      continue;
+    }
+    index = parsed.end - 1;
+  }
+  return output;
+}
 
 function stripJpeg(bytes: Buffer): Buffer | null {
   if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
@@ -269,16 +346,13 @@ function stripPng(bytes: Buffer): Buffer | null {
 function stripPdf(bytes: Buffer): Buffer | { code: "ACTIVE_CONTENT" } | null {
   if (bytes.length < 5 || bytes.subarray(0, 5).toString("ascii") !== "%PDF-") return null;
   const latin = bytes.toString("latin1");
-  if (PDF_ACTIVE.some((pattern) => pattern.test(latin))) return { code: "ACTIVE_CONTENT" };
+  if (pdfHasActiveContent(latin)) return { code: "ACTIVE_CONTENT" };
   const eof = latin.lastIndexOf("%%EOF");
   if (eof < 0) return null;
   let end = eof + 5;
-  if (latin[end] === "\r") end += 1;
-  if (latin[end] === "\n") end += 1;
-  const text = latin.slice(0, end)
-    .replace(/\/(Title|Author|Subject|Keywords|Creator|Producer|CreationDate|ModDate)\s*\((?:\\.|[^)])*\)/g, "")
-    .replace(/\/Info\s*<<[^<>]*>>/g, "");
-  const cleaned = Buffer.from(text, "latin1");
+  if (bytes[end] === 0x0d) end += 1;
+  if (bytes[end] === 0x0a) end += 1;
+  const cleaned = blankPdfMetadata(bytes.subarray(0, end));
   if (cleaned.length < 5 || cleaned.subarray(0, 5).toString("ascii") !== "%PDF-") return null;
   return cleaned;
 }
@@ -322,7 +396,7 @@ async function scanWithExternal(url: string, input: ScanRequest, fetchImpl: Scan
     const payload = await response.json() as { verdict?: unknown; code?: unknown };
     if (payload?.verdict === "clean") return { verdict: "clean", bytes };
     if (payload?.verdict === "rejected") {
-      const code = typeof payload.code === "string" && /^[A-Z0-9_]{1,40}$/.test(payload.code) ? payload.code : "SCAN_REJECTED";
+      const code = typeof payload.code === "string" && /^[A-Z0-9_]{1,40}$/.test(payload.code) && !RESERVED_SCAN_CODES.has(payload.code) ? payload.code : "SCAN_REJECTED";
       return { verdict: "rejected", code };
     }
     throw new Error("Attachment scanner is unavailable.");
@@ -347,7 +421,7 @@ export function selectAttachmentScanner(config: { mode?: unknown; externalUrl?: 
 }
 
 export function abandonedAttachment(input: { state: string; createdAtMs: number; nowMs: number }): boolean {
-  if (input.state === "ready" || !["pending", "uploading", "quarantined", "rejected"].includes(input.state)) return false;
+  if (input.state === "ready" || !["pending", "uploading", "quarantined", "canonicalizing", "rejected"].includes(input.state)) return false;
   return Number.isFinite(input.createdAtMs) && input.nowMs - input.createdAtMs >= ATTACHMENT_QUARANTINE_TTL_MS;
 }
 

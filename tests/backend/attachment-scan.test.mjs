@@ -96,6 +96,22 @@ test('the content scanner strips image metadata, rejects active PDF content, and
   const script = await scan.reviewAttachment({ fileName: "notes.pdf", declaredBytes: active.length, bytes: active, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.contentScanner, scannerName: "content" });
   assert.equal(script.state, "rejected");
   assert.equal(script.code, "ACTIVE_CONTENT");
+  const encoded = Buffer.from("%PDF-1.4\n1 0 obj\n<< /J#61vaScript (alert) >>\nendobj\n%%EOF");
+  const escaped = await scan.reviewAttachment({ fileName: "notes.pdf", declaredBytes: encoded.length, bytes: encoded, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.contentScanner, scannerName: "content" });
+  assert.equal(escaped.code, "ACTIVE_CONTENT");
+  const hexName = Buffer.from("%PDF-1.4\n1 0 obj\n<< /#4A#53 (alert) >>\nendobj\n%%EOF");
+  const hex = await scan.reviewAttachment({ fileName: "notes.pdf", declaredBytes: hexName.length, bytes: hexName, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.contentScanner, scannerName: "content" });
+  assert.equal(hex.code, "ACTIVE_CONTENT");
+  const head = "%PDF-1.4\n1 0 obj\n<< /Title (GPS-SYNTHETIC) >>\nendobj\n";
+  const xrefAt = Buffer.byteLength(head);
+  const linkedPdf = Buffer.from(`${head}xref\n0 1\n0000000000 65535 f \ntrailer\n<< /Size 1 >>\nstartxref\n${xrefAt}\n%%EOF\nTRAILING-GARBAGE`);
+  const stable = await scan.reviewAttachment({ fileName: "notes.pdf", declaredBytes: linkedPdf.length, bytes: linkedPdf, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.contentScanner, scannerName: "content" });
+  assert.equal(stable.state, "ready");
+  assert.equal(stable.bytes.includes(Buffer.from("GPS-SYNTHETIC")), false);
+  assert.equal(stable.bytes.includes(Buffer.from("TRAILING-GARBAGE")), false);
+  assert.equal(stable.bytes.indexOf("xref"), xrefAt);
+  assert.equal(stable.bytes.includes(Buffer.from(`startxref\n${xrefAt}\n`)), true);
+  assert.equal(stable.byteLength, linkedPdf.length - Buffer.from("TRAILING-GARBAGE").length);
   assert.equal(script.scan.scanner, "content");
   assert.notEqual(script.code, "INTEGRITY");
   assert.notEqual(script.code, "ACCESS_REVOKED");
@@ -120,6 +136,13 @@ test('the content scanner strips image metadata, rejects active PDF content, and
   const malware = await scan.reviewAttachment({ fileName: "photo.jpg", declaredBytes: validJpeg.length, bytes: validJpeg, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: rejecting.scan, scannerName: rejecting.name });
   assert.equal(malware.code, "MALWARE");
   assert.equal(malware.scan.scanner, "external");
+  for (const code of ["INTEGRITY", "ACCESS_REVOKED"]) {
+    const spoof = scan.selectAttachmentScanner({ mode: "external", externalUrl: "https://scanner.example.test/scan" }, async () => ({ ok: true, status: 200, json: async () => ({ verdict: "rejected", code }) }));
+    const reserved = await scan.reviewAttachment({ fileName: "photo.jpg", declaredBytes: validJpeg.length, bytes: validJpeg, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: spoof.scan, scannerName: spoof.name });
+    assert.equal(reserved.code, "SCAN_REJECTED");
+    assert.equal(reserved.scan.scanner, "external");
+    assert.notEqual(reserved.code, code);
+  }
   const clean = scan.selectAttachmentScanner({ mode: "content" });
   assert.equal(clean.name, "content");
   assert.equal(scan.selectAttachmentScanner({ mode: "skip" }).scan === clean.scan, false);
@@ -127,6 +150,7 @@ test('the content scanner strips image metadata, rejects active PDF content, and
   assert.equal(unknown.code, "SCAN_FAILED");
   assert.equal(scan.abandonedAttachment({ state: "ready", createdAtMs: 1, nowMs: scan.ATTACHMENT_QUARANTINE_TTL_MS + 5 }), false);
   assert.equal(scan.abandonedAttachment({ state: "quarantined", createdAtMs: 1, nowMs: scan.ATTACHMENT_QUARANTINE_TTL_MS + 1 }), true);
+  assert.equal(scan.abandonedAttachment({ state: "canonicalizing", createdAtMs: 1, nowMs: scan.ATTACHMENT_QUARANTINE_TTL_MS + 1 }), true);
   assert.equal(scan.abandonedAttachment({ state: "quarantined", createdAtMs: 10_000, nowMs: 10_000 + scan.ATTACHMENT_QUARANTINE_TTL_MS - 1 }), false);
   assert.equal(scan.abandonedObject({ timeCreatedMs: 1, nowMs: scan.ATTACHMENT_QUARANTINE_TTL_MS + 1, ready: false }), true);
   assert.equal(scan.abandonedObject({ timeCreatedMs: 1, nowMs: scan.ATTACHMENT_QUARANTINE_TTL_MS + 1, ready: true }), false);

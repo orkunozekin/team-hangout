@@ -24,6 +24,7 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
   const [held, setHeld] = useState<{ key: string; attachmentId?: string; state: 'scanning' | 'rejected' | 'ready' }[]>([]);
   const [uploading, setUploading] = useState(false);
   const searchToken = useRef(0);
+  const uploadGeneration = useRef(0);
   async function refresh(initial = false) {
     if (initial) { setLoading(true); setPage(null); setItems([]); setDenied(false); }
     setError(null);
@@ -54,7 +55,7 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
       setError('Older messages could not be loaded. Try again.');
     } finally { setLoadingOlder(false); }
   }
-  useEffect(() => { searchToken.current += 1; setSearch(null); setSearching(false); setTransport(null); void refresh(true); }, [orgId, scopeType, scopeId]);
+  useEffect(() => { searchToken.current += 1; uploadGeneration.current += 1; setSearch(null); setSearching(false); setTransport(null); setHeld([]); void refresh(true); }, [orgId, scopeType, scopeId]);
   async function send() {
     if (!draft.trim()) return;
     setSaving(true); setError(null);
@@ -100,22 +101,25 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
     }
   }
   async function chooseFile() {
+    const generation = uploadGeneration.current;
     setUploading(true); setError(null);
     try {
       const picked = await pickConversationAttachment();
-      if (!picked) return;
+      if (!picked || generation !== uploadGeneration.current) return;
       const key = `${picked.name}-${Date.now()}`;
       setHeld(current => [...current, { key, state: 'scanning' }]);
       setTransport(`Scanning · ${picked.name}`);
       const grant = await createAttachmentUpload({ orgId, scopeType, scopeId, fileName: picked.name, declaredBytes: picked.size });
       await uploadConversationFile(picked.file, grant);
       const done = await finalizeAttachment({ orgId, scopeType, scopeId, attachmentId: grant.id });
+      if (generation !== uploadGeneration.current) return;
       const ready = done.state === 'ready';
       setHeld(current => current.map(item => item.key === key ? { ...item, attachmentId: grant.id, state: ready ? 'ready' : 'rejected' } : item));
       setTransport(ready ? `Ready · ${picked.name} · ${done.detectedType} · ${done.byteLength} bytes` : `Rejected · ${picked.name}${done.rejectionCode ? ` · ${done.rejectionCode}` : ''}`);
     } catch (caught) {
+      if (generation !== uploadGeneration.current) return;
       setTransport(caught instanceof Error && caught.message ? caught.message : 'This file was not uploaded.');
-    } finally { setUploading(false); }
+    } finally { if (generation === uploadGeneration.current) setUploading(false); }
   }
   const youthClosed = page?.mode === 'youth' && page.youthPosting === 'closed';
   const title = scopeType === 'event' ? 'Event conversation' : scopeType === 'team' ? 'Team conversation' : scopeType === 'division' ? 'Division announcements' : 'Organization announcements';

@@ -26,6 +26,7 @@ export function Conversations({ services, orgId }: { services: BrowserServices; 
   const [files, setFiles] = useState<{ key: string; attachmentId?: string; detail: string; state: "scanning" | "rejected" | "ready" }[]>([]);
   const fileInput = useRef<HTMLInputElement>(null);
   const searchGeneration = useRef(0);
+  const uploadGeneration = useRef(0);
   const clearSearch = useCallback(() => {
     searchGeneration.current += 1;
     setSearch(null);
@@ -80,7 +81,7 @@ export function Conversations({ services, orgId }: { services: BrowserServices; 
       setError(message(caught));
     }
   }
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { uploadGeneration.current += 1; setFiles([]); void load(); }, [load]);
   async function post(event: FormEvent, kind: "announcement" | "note") {
     event.preventDefault();
     setError("");
@@ -166,6 +167,7 @@ export function Conversations({ services, orgId }: { services: BrowserServices; 
     event.preventDefault();
     const file = fileInput.current?.files?.[0];
     if (!file || !scopeId.trim()) return;
+    const generation = uploadGeneration.current;
     const key = requestId();
     setError("");
     setFiles((current) => [...current, { key, detail: `Scanning · ${file.name}`, state: "scanning" }]);
@@ -173,12 +175,14 @@ export function Conversations({ services, orgId }: { services: BrowserServices; 
       const grant = await services.call("createAttachmentUpload", {
         requestId: requestId(), orgId, scopeType, scopeId: scopeId.trim(), fileName: file.name, declaredBytes: file.size,
       });
+      if (generation !== uploadGeneration.current) return;
       updateFile(key, { attachmentId: grant.id });
       const put = await fetch(grant.uploadUrl, {
         method: "PUT",
         headers: { Authorization: `Attachment ${grant.token}`, "Content-Type": "application/octet-stream" },
         body: file,
       });
+      if (generation !== uploadGeneration.current) return;
       if (!put.ok) {
         updateFile(key, { state: "rejected", detail: `Rejected · ${file.name}` });
         setError(put.status === 410 ? "This upload expired. Choose the file again." : put.status === 413 ? "This file does not match the reserved upload." : "This file was not uploaded.");
@@ -187,6 +191,7 @@ export function Conversations({ services, orgId }: { services: BrowserServices; 
       const done = await services.call("finalizeAttachment", {
         requestId: requestId(), orgId, scopeType, scopeId: scopeId.trim(), attachmentId: grant.id,
       });
+      if (generation !== uploadGeneration.current) return;
       if (done.state !== "ready") {
         updateFile(key, { state: "rejected", detail: `Rejected · ${file.name} · ${done.rejectionCode ?? "rejected"}` });
         return;
@@ -202,6 +207,7 @@ export function Conversations({ services, orgId }: { services: BrowserServices; 
           "X-Attachment-Id": grant.id,
         },
       });
+      if (generation !== uploadGeneration.current) return;
       updateFile(key, {
         attachmentId: grant.id,
         state: "ready",
@@ -211,6 +217,7 @@ export function Conversations({ services, orgId }: { services: BrowserServices; 
       });
       if (fileInput.current) fileInput.current.value = "";
     } catch (caught) {
+      if (generation !== uploadGeneration.current) return;
       updateFile(key, { state: "rejected", detail: `Rejected · ${file.name}` });
       setError(message(caught));
     }

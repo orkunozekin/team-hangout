@@ -363,3 +363,51 @@ test('unauthorized download, revoked membership, wrong signature, scanner failur
     await config.delete();
   }
 });
+
+test('canonicalizing rejects the original upload and finalizes the stripped length', async () => {
+  const grant = await call('file-poster', 'createAttachmentUpload', { requestId: rid(), ...team, fileName: 'retry.jpg', declaredBytes: jpeg.length });
+  assert.equal((await putBytes(grant.token, jpeg)).status, 200);
+  const bucket = getStorage(admin).bucket(`${projectId}.appspot.com`);
+  const canonicalPath = `quarantine/file-org/${grant.id}/2`;
+  await bucket.file(canonicalPath).save(cleanedJpeg, { resumable: false });
+  await db.doc(`organizations/file-org/attachments/${grant.id}`).update({
+    state: 'canonicalizing', canonicalSha256: sha256(cleanedJpeg), canonicalBytes: cleanedJpeg.length,
+  });
+  assert.equal((await putBytes(grant.token, jpeg)).status, 409);
+  const done = await call('file-poster', 'finalizeAttachment', { requestId: rid(), ...team, attachmentId: grant.id });
+  assert.equal(done.state, 'ready');
+  assert.equal(done.byteLength, cleanedJpeg.length);
+  assert.equal(done.sha256, sha256(cleanedJpeg));
+  const downloaded = await download('file-poster', grant.id);
+  assert.equal(downloaded.status, 200);
+  assert.equal(Buffer.compare(Buffer.from(await downloaded.arrayBuffer()), cleanedJpeg), 0);
+  const row = (await db.doc(`organizations/file-org/attachments/${grant.id}`).get()).data();
+  assert.equal(row.objectPath, canonicalPath);
+});
+
+test('orphan cleanup continues past the first storage page', async () => {
+  const bucket = getStorage(admin).bucket(`${projectId}.appspot.com`);
+  const pads = [];
+  for (let index = 0; index < 2; index += 1) {
+    const name = `quarantine/000/p${index}/1`;
+    pads.push(name);
+    await bucket.file(name).save(Buffer.from(`pad-${index}`));
+  }
+  const orphan = 'quarantine/zzz/late-orphan/1';
+  await bucket.file(orphan).save(Buffer.from('late-orphan'));
+  const clock = (name, created) => name === orphan ? Date.now() - ATTACHMENT_QUARANTINE_TTL_MS - 1000 : Date.now();
+  const options = { db, bucket, objectPages: 1, objectPageSize: 1, objectTimeMs: clock };
+  await purgeAbandonedAttachments(Date.now(), options);
+  assert.equal((await bucket.file(orphan).exists())[0], true);
+  const firstToken = (await db.doc('platformConfig/attachmentPurge').get()).data().objectPageToken;
+  assert.equal(typeof firstToken, 'string');
+  let removed = false;
+  for (let attempt = 0; attempt < 40 && !removed; attempt += 1) {
+    await purgeAbandonedAttachments(Date.now(), options);
+    removed = (await bucket.file(orphan).exists())[0] === false;
+  }
+  assert.equal(removed, true);
+  const laterToken = (await db.doc('platformConfig/attachmentPurge').get()).data().objectPageToken;
+  assert.notEqual(laterToken, firstToken);
+  for (const name of pads) assert.equal((await bucket.file(name).exists())[0], true);
+});

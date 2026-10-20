@@ -37,6 +37,7 @@ test.beforeAll(async () => {
   await db.doc(`organizations/${orgId}/programs/soccer`).set({ ...meta, name: "Soccer" });
   await db.doc(`organizations/${orgId}/members/${owner}`).set({ ...meta, roles: ["orgAdmin"], programIds: [] });
   await db.doc("teams/browser-file-team").set({ ...meta, programId: "soccer", seasonId: "fall", divisionId: "u10", name: "Falcons" });
+  await db.doc("teams/browser-file-team-b").set({ ...meta, programId: "soccer", seasonId: "fall", divisionId: "u10", name: "Hawks" });
 });
 test.afterAll(async () => { if (app) await deleteApp(app); });
 test("staff see scanning, rejected, and ready files and can send the ready ones", async ({ page }) => {
@@ -75,4 +76,23 @@ test("staff see scanning, rejected, and ready files and can send the ready ones"
   await expect(page.getByRole("region", { name: "Household channel" })).toContainText("diagram.png · image/png");
   await expect(page.getByRole("region", { name: "Household channel" })).not.toContainText("GPS-SYNTHETIC");
   await expect(page.getByRole("region", { name: "Staff notes" })).not.toContainText("photo.jpg");
+});
+test("a ready file does not follow the staff member to another channel", async ({ page }) => {
+  await page.goto(`/organizations/${orgId}/conversations`);
+  await page.getByLabel("Email address").fill(`${owner}@example.test`);
+  await page.getByLabel("Password", { exact: true }).fill("SyntheticPassword123!");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.getByLabel("Scope id").fill("browser-file-team");
+  await page.getByRole("button", { name: "Open channel" }).click();
+  await page.getByLabel("Attachment file").setInputFiles({ name: "photo.jpg", mimeType: "text/plain", buffer: jpeg });
+  await page.getByRole("button", { name: "Upload attachment" }).click();
+  await expect(page.getByText(/Ready · photo\.jpg · image\/jpeg · \d+ bytes/)).toBeVisible();
+  await page.getByLabel("Scope id").fill("browser-file-team-b");
+  await page.getByRole("button", { name: "Open channel" }).click();
+  await expect(page.getByText(/Ready · photo\.jpg/)).toHaveCount(0);
+  await page.getByRole("textbox", { name: "Announcement" }).fill("Hawks meet at the south field");
+  await page.getByRole("button", { name: "Post announcement" }).click();
+  const channel = page.getByRole("region", { name: "Household channel" });
+  await expect(channel).toContainText("Hawks meet at the south field");
+  await expect(channel).not.toContainText("photo.jpg");
 });

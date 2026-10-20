@@ -178,6 +178,29 @@ test('shows scanning then rejected, and sends ready attachment ids with the mess
   await waitFor(() => expect(api.postConversationMessage).toHaveBeenLastCalledWith({ orgId: 'org', scopeType: 'team', scopeId: 'team', text: 'Second photo', attachmentIds: ['file-3'] }));
 });
 
+test('drops an in-flight attachment when the channel changes', async () => {
+  let resolveFinalize: (value: { id: string; state: string; detectedType: string; byteLength: number; rejectionCode: null }) => void = () => {};
+  const file = { uri: 'file:///cache/photo.jpg', size: 128 };
+  (api.listConversationMessages as jest.Mock).mockResolvedValue({ ...page, attachments: 'enabled', canPost: true, youthPosting: 'open' });
+  (transport.pickConversationAttachment as jest.Mock).mockResolvedValue({ file, name: 'photo.jpg', size: 128 });
+  (attachments.createAttachmentUpload as jest.Mock).mockResolvedValue({ id: 'file-9', uploadUrl: 'https://example.test/upload', token: 'grant', expiresAt: '2099-01-01T00:00:00.000Z', maxBytes: 128, state: 'pending' });
+  (transport.uploadConversationFile as jest.Mock).mockResolvedValue(undefined);
+  (attachments.finalizeAttachment as jest.Mock).mockImplementation(() => new Promise((resolve) => { resolveFinalize = resolve; }));
+  (api.postConversationMessage as jest.Mock).mockResolvedValue({ id: 'm9', sequence: 9 });
+  const view = await render(<ConversationScreen orgId="org" scopeType="team" scopeId="team" />);
+  await fireEvent.press(await screen.findByText('Choose a JPEG, PNG, or PDF'));
+  expect(await screen.findByText('Scanning · photo.jpg')).toBeTruthy();
+  (api.listConversationMessages as jest.Mock).mockResolvedValue({ ...page, items: [], attachments: 'enabled', canPost: true, youthPosting: 'open' });
+  view.rerender(<ConversationScreen orgId="org" scopeType="team" scopeId="other-team" />);
+  expect(await screen.findByText('No messages yet.')).toBeTruthy();
+  resolveFinalize({ id: 'file-9', state: 'ready', detectedType: 'image/jpeg', byteLength: 90, rejectionCode: null });
+  fireEvent.changeText(screen.getByLabelText('Message'), 'Hello from the other channel');
+  await waitFor(() => expect(screen.getByLabelText('Message').props.value).toBe('Hello from the other channel'));
+  await fireEvent.press(screen.getByLabelText('Send message'));
+  await waitFor(() => expect(api.postConversationMessage).toHaveBeenCalledWith({ orgId: 'org', scopeType: 'team', scopeId: 'other-team', text: 'Hello from the other channel' }));
+  expect(screen.queryByText(/Ready · photo.jpg/)).toBeNull();
+});
+
 test('keeps the closed-policy banner when the channel has no messages yet', async () => {
   (api.listConversationMessages as jest.Mock).mockResolvedValue({ ...page, items: [] });
   await render(<ConversationScreen orgId="org" scopeType="team" scopeId="team" />);
