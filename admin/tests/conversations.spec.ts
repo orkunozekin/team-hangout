@@ -47,3 +47,37 @@ test("staff can post a household announcement and a separate staff note", async 
   await expect(page.getByRole("region", { name: "Household channel" }).getByText("Guardian phone is private")).toHaveCount(0);
   await capture(page, "conversations-and-staff-notes");
 });
+test("older household messages and staff notes stay reachable", async ({ page }) => {
+  const { fingerprint } = require("./lib/operations/requests.js");
+  const conversationId = fingerprint({ kind: "conversation", orgId, scopeType: "team", scopeId: "browser-talk-team", channel: "household" });
+  const db = getFirestore(app);
+  const batch = db.batch();
+  for (let i = 1; i <= 26; i += 1) {
+    batch.set(db.doc(`organizations/${orgId}/conversations/${conversationId}/messages/page-${String(i).padStart(2, "0")}`), {
+      schemaVersion: 2, orgId, authorUid: owner, sequence: 100 + i, body: `Paged announcement ${i}`, tombstoned: false,
+      createdAt: Timestamp.fromMillis(Date.parse("2026-10-01T00:00:00Z") + i * 1000),
+    });
+    batch.set(db.doc(`organizations/${orgId}/staffNotes/team_browser-talk-team/entries/note-${String(i).padStart(2, "0")}`), {
+      schemaVersion: 2, orgId, scopeType: "team", scopeId: "browser-talk-team", authorUid: owner, body: `Paged note ${i}`,
+      createdAt: Timestamp.fromMillis(Date.parse("2026-10-01T00:00:00Z") + i * 1000),
+    });
+  }
+  await batch.commit();
+  await page.goto(`/organizations/${orgId}/conversations`);
+  await page.getByLabel("Email address").fill(`${owner}@example.test`);
+  await page.getByLabel("Password", { exact: true }).fill("SyntheticPassword123!");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.getByLabel("Scope id").fill("browser-talk-team");
+  await page.getByRole("button", { name: "Open channel" }).click();
+  const channel = page.getByRole("region", { name: "Household channel" });
+  const notes = page.getByRole("region", { name: "Staff notes" });
+  await expect(channel.getByText("Paged announcement 26", { exact: true })).toBeVisible();
+  await expect(channel.getByText("Paged announcement 1", { exact: true })).toHaveCount(0);
+  await expect(notes.getByText("Paged note 1", { exact: true })).toHaveCount(0);
+  await channel.getByRole("button", { name: "Load older messages" }).click();
+  await expect(channel.getByText("Paged announcement 1", { exact: true })).toBeVisible();
+  await expect(channel.getByText("Paged announcement 26", { exact: true })).toBeVisible();
+  await notes.getByRole("button", { name: "Load older notes" }).click();
+  await expect(notes.getByText("Paged note 1", { exact: true })).toBeVisible();
+  await expect(notes.getByText("Paged note 26", { exact: true })).toBeVisible();
+});

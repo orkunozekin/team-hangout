@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react-native';
+import { fireEvent, render, screen } from '@testing-library/react-native';
 import ConversationScreen from '../ConversationScreen';
 import * as api from '../../firebase/conversations';
 
@@ -29,6 +29,21 @@ test('names an event channel without treating it as a team conversation', async 
   await render(<ConversationScreen orgId="org" scopeType="event" scopeId="event" />);
   expect(await screen.findByText('Event conversation')).toBeTruthy();
   expect(screen.queryByText('Team conversation')).toBeNull();
+});
+
+test('loads older messages from the returned cursor without dropping the first page', async () => {
+  const older = { id: 'm0', sequence: 0, authorUid: 'staff', body: 'Earlier plan', tombstoned: false, pinned: false, createdAt: '2026-10-19T12:00:00.000Z' };
+  const first = { ...page, nextCursor: 'm0' };
+  (api.listConversationMessages as jest.Mock)
+    .mockResolvedValueOnce(first)
+    .mockResolvedValueOnce({ ...page, items: [older], nextCursor: null });
+  await render(<ConversationScreen orgId="org" scopeType="team" scopeId="team" />);
+  expect(await screen.findByText('Practice is at the north field')).toBeTruthy();
+  await fireEvent.press(screen.getByText('Load older messages'));
+  expect(await screen.findByText('Earlier plan')).toBeTruthy();
+  expect(screen.getByText('Practice is at the north field')).toBeTruthy();
+  expect(api.listConversationMessages).toHaveBeenLastCalledWith({ orgId: 'org', scopeType: 'team', scopeId: 'team', cursor: 'm0' });
+  expect(screen.queryByText('Load older messages')).toBeNull();
 });
 
 test('shows an unavailable conversation after access is removed', async () => {

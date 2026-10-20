@@ -9,7 +9,10 @@ export function Conversations({ services, orgId }: { services: BrowserServices; 
   const [scopeType, setScopeType] = useState<ConversationScopeType>("team");
   const [scopeId, setScopeId] = useState("");
   const [channel, setChannel] = useState<ConversationPage | null>(null);
+  const [messages, setMessages] = useState<ConversationPage["items"]>([]);
   const [notes, setNotes] = useState<StaffNote[]>([]);
+  const [messageCursor, setMessageCursor] = useState<string | null>(null);
+  const [noteCursor, setNoteCursor] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState("");
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
@@ -25,15 +28,41 @@ export function Conversations({ services, orgId }: { services: BrowserServices; 
         services.call("listStaffNotes", input),
       ]);
       setChannel(page);
+      setMessages(page.items);
       setNotes(staff.items);
+      setMessageCursor(page.nextCursor);
+      setNoteCursor(staff.nextCursor);
     } catch (caught) {
       setChannel(null);
+      setMessages([]);
       setNotes([]);
+      setMessageCursor(null);
+      setNoteCursor(null);
       setError(message(caught));
     } finally {
       setLoading(false);
     }
   }, [orgId, scopeId, scopeType, services]);
+  async function older(kind: "messages" | "notes") {
+    const cursor = kind === "messages" ? messageCursor : noteCursor;
+    if (!cursor || !scopeId.trim()) return;
+    setError("");
+    try {
+      const input = { orgId, scopeType, scopeId: scopeId.trim(), pageSize: 25, cursor };
+      if (kind === "messages") {
+        const page = await services.call("listConversationMessages", input);
+        setMessages((current) => [...current, ...page.items.filter((item) => !current.some((row) => row.id === item.id))]);
+        setMessageCursor(page.nextCursor);
+        setChannel(page);
+      } else {
+        const staff = await services.call("listStaffNotes", input);
+        setNotes((current) => [...current, ...staff.items.filter((item) => !current.some((row) => row.id === item.id))]);
+        setNoteCursor(staff.nextCursor);
+      }
+    } catch (caught) {
+      setError(message(caught));
+    }
+  }
   useEffect(() => { void load(); }, [load]);
   async function post(event: FormEvent, kind: "announcement" | "note") {
     event.preventDefault();
@@ -73,8 +102,9 @@ export function Conversations({ services, orgId }: { services: BrowserServices; 
     <div className="conversation-columns">
       <section aria-labelledby="household-channel">
         <h2 id="household-channel">Household channel</h2>
-        <ul>{channel?.items.map((item) => <li key={item.id}>{item.tombstoned ? "Message removed by a moderator" : item.body}{item.pinned ? " · Pinned" : ""}</li>)}</ul>
-        {!channel?.items.length && !error ? <p>No household messages.</p> : null}
+        <ul>{messages.map((item) => <li key={item.id}>{item.tombstoned ? "Message removed by a moderator" : item.body}{item.pinned ? " · Pinned" : ""}</li>)}</ul>
+        {!messages.length && !error ? <p>No household messages.</p> : null}
+        {messageCursor ? <button type="button" onClick={() => void older("messages")}>Load older messages</button> : null}
         <form onSubmit={(event) => void post(event, "announcement")}>
           <label>Announcement
             <textarea value={announcement} onChange={(event) => setAnnouncement(event.target.value)} />
@@ -87,6 +117,7 @@ export function Conversations({ services, orgId }: { services: BrowserServices; 
         <p>Only organization administrators and program staff can read these notes.</p>
         <ul>{notes.map((item) => <li key={item.id}>{item.body}</li>)}</ul>
         {!notes.length && !error ? <p>No staff notes.</p> : null}
+        {noteCursor ? <button type="button" onClick={() => void older("notes")}>Load older notes</button> : null}
         <form onSubmit={(event) => void post(event, "note")}>
           <label>Staff note
             <textarea value={note} onChange={(event) => setNote(event.target.value)} />

@@ -8,4 +8,6 @@ Staff notes are stored at `organizations/{orgId}/staffNotes/{scopeType}_{scopeId
 
 Clients cannot read or write conversation or staff-note documents. Account deletion does not yet anonymize message authors; that remains a later retention step.
 
+A guardian grant counts only when its document path is the participant's guardian record in that organization and the participant is still active. Organization announcement reads scan the caller's bounded guardian grants and keep a schedule grant even when another profile-only grant is also active. Message and staff-note lists return a cursor; the native screen and admin page can load the next page.
+
 Native navigation opens the same household channel. A household calendar with a participant on the team offers that organization's announcements, the division announcements, the team channel, and each loaded event channel. A coach-only calendar team offers the team channel. The team tab offers the team channel when the live team read includes its organization. Event detail offers the published event channel. Offline copies hide these actions. A denied read shows an unavailable conversation and does not reveal staff notes. Search, edits, reactions, and attachments remain later steps.

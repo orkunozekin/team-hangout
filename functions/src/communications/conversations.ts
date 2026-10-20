@@ -68,15 +68,13 @@ async function membership(tx: Transaction, orgId: string, uid: string) {
   const grant = (
     await tx.get(getFirestore().doc(`organizations/${orgId}/members/${uid}`))
   ).data();
-  const staff =
-    grant?.status === "active" &&
-    grant.orgId === orgId &&
-    Array.isArray(grant.roles) &&
-    (grant.roles.includes("orgAdmin") || grant.roles.includes("programStaff"));
+  const roles = Array.isArray(grant?.roles) ? grant.roles as string[] : [];
+  const sameOrg = grant?.status === "active" && grant?.orgId === orgId;
+  const staff = sameOrg && (roles.includes("orgAdmin") || roles.includes("programStaff"));
   return {
     staff,
-    admin: grant?.roles?.includes("orgAdmin") === true && grant?.status === "active",
-    programIds: Array.isArray(grant?.programIds) ? (grant.programIds as string[]) : [],
+    admin: sameOrg && roles.includes("orgAdmin"),
+    programIds: sameOrg && Array.isArray(grant?.programIds) ? (grant.programIds as string[]) : [],
   };
 }
 
@@ -97,6 +95,21 @@ async function coachOf(tx: Transaction, orgId: string, teamIds: string[], uid: s
   });
 }
 
+function guardianParticipantId(orgId: string, path: string, row: Data) {
+  const participantId = typeof row.participantId === "string" ? row.participantId : "";
+  const userId = typeof row.userId === "string" ? row.userId : "";
+  if (
+    row.orgId !== orgId ||
+    row.permissions?.viewSchedule !== true ||
+    path !== `organizations/${orgId}/participants/${participantId}/guardians/${userId}`
+  ) return null;
+  return participantId;
+}
+
+function activeParticipant(row: Data | undefined, orgId: string) {
+  return !!row && row.schemaVersion === 2 && row.status === "active" && (row.orgId == null || row.orgId === orgId);
+}
+
 async function householdOnTeams(tx: Transaction, orgId: string, teamIds: string[], uid: string) {
   const db = getFirestore();
   const [guardians, linked] = await Promise.all([
@@ -115,20 +128,23 @@ async function householdOnTeams(tx: Transaction, orgId: string, teamIds: string[
   }
   const participantIds = new Set<string>();
   for (const grant of guardians.docs) {
-    const row = grant.data();
-    if (row.permissions?.viewSchedule === true && typeof row.participantId === "string")
-      participantIds.add(row.participantId);
+    const participantId = guardianParticipantId(orgId, grant.ref.path, grant.data());
+    if (participantId) participantIds.add(participantId);
   }
   for (const participant of linked.docs) {
     const row = participant.data();
     if (
-      row.status === "active" &&
-      (row.orgId == null || row.orgId === orgId) &&
-      participant.ref.path.startsWith(`organizations/${orgId}/participants/`)
+      activeParticipant(row, orgId) &&
+      participant.ref.path === `organizations/${orgId}/participants/${participant.id}`
     )
       participantIds.add(participant.id);
   }
-  for (const participantId of participantIds) {
+  const candidates = [...participantIds];
+  const participantRows = candidates.length
+    ? await tx.getAll(...candidates.map((participantId) => db.doc(`organizations/${orgId}/participants/${participantId}`)))
+    : [];
+  const activeIds = new Set(participantRows.filter((doc) => activeParticipant(doc.data(), orgId)).map((doc) => doc.id));
+  for (const participantId of activeIds) {
     for (const teamId of teamIds) {
       const roster = (
         await tx.get(db.doc(`teams/${teamId}/roster/${participantId}`))
@@ -231,15 +247,25 @@ async function orgHouseholdRead(tx: Transaction, orgId: string, uid: string) {
   const db = getFirestore();
   const [guardians, linked] = await Promise.all([
     tx.get(
-      db.collectionGroup("guardians").where("orgId", "==", orgId).where("userId", "==", uid).where("status", "==", "active").limit(1),
+      db.collectionGroup("guardians").where("orgId", "==", orgId).where("userId", "==", uid).where("status", "==", "active").limit(11),
     ),
     tx.get(db.collectionGroup("participants").where("linkedUserId", "==", uid).limit(21)),
   ]);
-  if (guardians.docs.some((doc) => doc.data().permissions?.viewSchedule === true)) return true;
+  if (guardians.size > 10 || linked.size > 20) {
+    throw new HttpsError("resource-exhausted", "This household has too many active relationships.");
+  }
+  const participantIds = guardians.docs.flatMap((doc) => {
+    const participantId = guardianParticipantId(orgId, doc.ref.path, doc.data());
+    return participantId ? [participantId] : [];
+  });
+  const rows = participantIds.length
+    ? await tx.getAll(...participantIds.map((participantId) => db.doc(`organizations/${orgId}/participants/${participantId}`)))
+    : [];
+  if (rows.some((doc) => activeParticipant(doc.data(), orgId))) return true;
   return linked.docs.some(
     (doc) =>
-      doc.data().status === "active" &&
-      doc.ref.path.startsWith(`organizations/${orgId}/participants/`),
+      activeParticipant(doc.data(), orgId) &&
+      doc.ref.path === `organizations/${orgId}/participants/${doc.id}`,
   );
 }
 
@@ -354,7 +380,7 @@ export const setConversationPin = command("setConversationPin", (data) => {
   if (payload.pinned && !current.includes(payload.messageId) && current.length >= 3) {
     throw new HttpsError("resource-exhausted", "Unpin a message before pinning another.");
   }
-  tx.set(ref, { pinnedMessageIds: next, updatedAt: Timestamp.now() }, { merge: true });
+  tx.set(ref, { pinnedMessageIds: next, revision: (row?.revision ?? 0) + 1, updatedAt: Timestamp.now() }, { merge: true });
   return { pinnedIds: next };
 });
 
@@ -376,8 +402,9 @@ export const moderateConversationMessage = command("moderateConversationMessage"
     moderationReason: payload.reason,
     moderatedBy: uid,
     moderatedAt: Timestamp.now(),
+    revision: (message.data()?.revision ?? 0) + 1,
   });
-  tx.set(ref, { pinnedMessageIds: pinned, updatedAt: Timestamp.now() }, { merge: true });
+  tx.set(ref, { pinnedMessageIds: pinned, revision: (row?.revision ?? 0) + 1, updatedAt: Timestamp.now() }, { merge: true });
   return { id: payload.messageId, tombstoned: true as const };
 });
 

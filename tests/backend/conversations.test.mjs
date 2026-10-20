@@ -87,13 +87,20 @@ test('staff notes stay out of household channels, notifications, and guardian re
 
 test('coaches can pin, guardians cannot, and staff can tombstone a message', async () => {
   const first = await call('talk-coach', 'postConversationMessage', { requestId: 'pin-one', ...team, text: 'Bring water' });
+  const beforePin = (await db.collection('organizations/talk-org/conversations').get()).docs[0].data().revision ?? 0;
   const pin = await call('talk-coach', 'setConversationPin', { requestId: 'pin', ...team, messageId: first.id, pinned: true });
   assert.deepEqual(pin.pinnedIds, [first.id]);
+  const pinnedDoc = (await db.collection('organizations/talk-org/conversations').get()).docs[0];
+  assert.equal(pinnedDoc.data().revision, beforePin + 1);
   const guardianPin = await fail('talk-guardian', 'setConversationPin', { requestId: 'guardian-pin', ...team, messageId: first.id, pinned: true });
   assert.equal(guardianPin.code, 'functions/permission-denied');
   const coachModerate = await fail('talk-coach', 'moderateConversationMessage', { requestId: 'coach-moderate', ...team, messageId: first.id, reason: 'cleanup' });
   assert.equal(coachModerate.code, 'functions/permission-denied');
+  const beforeModerate = pinnedDoc.data().revision;
   await call('talk-staff', 'moderateConversationMessage', { requestId: 'staff-moderate', ...team, messageId: first.id, reason: 'cleanup' });
+  const moderated = await pinnedDoc.ref.collection('messages').doc(first.id).get();
+  assert.equal(moderated.data().revision, 1);
+  assert.equal((await pinnedDoc.ref.get()).data().revision, beforeModerate + 1);
   const page = await call('talk-self', 'listConversationMessages', { ...team, pageSize: 25 });
   const hidden = page.items.find(row => row.id === first.id);
   assert.equal(hidden.tombstoned, true);
@@ -111,4 +118,31 @@ test('a removed staff member cannot post and an unpublished event stays hidden f
   assert.equal(hidden.code, 'functions/permission-denied');
   const staff = await call('talk-staff', 'listConversationMessages', { orgId: 'talk-org', scopeType: 'event', scopeId: 'talk-staged', pageSize: 5 });
   assert.equal(staff.items.length, 0);
+});
+
+test('archived participants, foreign guardian paths, and mis-scoped admin grants do not open channels', async () => {
+  await db.doc('organizations/talk-org/participants/talk-child').update({ status: 'archived' });
+  const archived = await fail('talk-guardian', 'listConversationMessages', team);
+  assert.equal(archived.code, 'functions/permission-denied');
+  await db.doc('organizations/talk-org/participants/talk-child').update({ status: 'active' });
+  await db.doc('organizations/other-org/participants/talk-child/guardians/talk-outsider').set({ ...meta, orgId: 'talk-org', participantId: 'talk-child', userId: 'talk-outsider', permissions: { viewSchedule: true } });
+  const forged = await fail('talk-outsider', 'listConversationMessages', team);
+  assert.equal(forged.code, 'functions/permission-denied');
+  await db.doc('organizations/other-org/participants/talk-child/guardians/talk-outsider').delete();
+  await db.doc('organizations/talk-org/members/talk-outsider').set({ ...meta, orgId: 'other-org', userId: 'talk-outsider', roles: ['orgAdmin'], programIds: [] });
+  const admin = await fail('talk-outsider', 'listStaffNotes', team);
+  assert.equal(admin.code, 'functions/permission-denied');
+  const post = await fail('talk-outsider', 'postConversationMessage', { requestId: 'forged-admin', ...team, text: 'Wrong organization' });
+  assert.equal(post.code, 'functions/permission-denied');
+  await db.doc('organizations/talk-org/members/talk-outsider').delete();
+  await db.doc('organizations/talk-org/participants/talk-a').set({ ...meta, orgId: 'talk-org', displayName: 'Profile only' });
+  await db.doc('organizations/talk-org/participants/talk-a/guardians/talk-outsider').set({ ...meta, orgId: 'talk-org', participantId: 'talk-a', userId: 'talk-outsider', permissions: { viewProfile: true } });
+  await db.doc('organizations/talk-org/participants/talk-z').set({ ...meta, orgId: 'talk-org', displayName: 'Schedule' });
+  await db.doc('organizations/talk-org/participants/talk-z/guardians/talk-outsider').set({ ...meta, orgId: 'talk-org', participantId: 'talk-z', userId: 'talk-outsider', permissions: { viewSchedule: true } });
+  const announcements = await call('talk-outsider', 'listConversationMessages', { orgId: 'talk-org', scopeType: 'organization', scopeId: 'talk-org', pageSize: 5 });
+  assert.equal(announcements.mode, 'adult');
+  await db.doc('organizations/talk-org/participants/talk-z').update({ status: 'archived' });
+  const archivedSchedule = await fail('talk-outsider', 'listConversationMessages', { orgId: 'talk-org', scopeType: 'organization', scopeId: 'talk-org' });
+  assert.equal(archivedSchedule.code, 'functions/permission-denied');
+  await db.doc('organizations/talk-org/participants/talk-z').update({ status: 'active' });
 });
