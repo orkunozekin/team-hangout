@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { before, after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -302,4 +303,110 @@ test('search denies a revoked audience and continues truthfully past 1000 candid
   assert.equal(second.partial, false);
   const mismatched = await fail('talk-admin', 'searchConversationMessages', { ...team, text: 'calendarword', cursor: first.nextCursor });
   assert.equal(mismatched.code, 'functions/invalid-argument');
+  assert.equal(first.nextCursor.length <= 128, true);
+  const previousKey = 'demo-search-cursor-previous-key-v1-do-not-use-live';
+  const binding = ['talk-admin', conversationId, 'bulkword', '', ''].join('\u001e');
+  const resigned = resignSearchCursor(first.nextCursor, 1, previousKey, binding);
+  const withPreviousKey = await call('talk-admin', 'searchConversationMessages', { ...team, text: 'bulkword', cursor: resigned });
+  assert.equal(withPreviousKey.items.some(item => item.id === 'bulk-match'), true);
+  const forged = `${first.nextCursor.slice(0, -1)}${first.nextCursor.endsWith('A') ? 'B' : 'A'}`;
+  const tampered = await fail('talk-admin', 'searchConversationMessages', { ...team, text: 'bulkword', cursor: forged });
+  assert.equal(tampered.code, 'functions/invalid-argument');
+  const peppered = resignSearchCursor(first.nextCursor, 1, 'team-hangout-conversation-search-cursor-v1', binding);
+  const publicPepper = await fail('talk-admin', 'searchConversationMessages', { ...team, text: 'bulkword', cursor: peppered });
+  assert.equal(publicPepper.code, 'functions/invalid-argument');
+
+  let exactBatch = db.batch();
+  let exactWrites = 0;
+  const commitExact = async () => { if (exactWrites) { await exactBatch.commit(); exactBatch = db.batch(); exactWrites = 0; } };
+  for (let index = 0; index < 1000; index += 1) {
+    const id = `cap-${String(index).padStart(4, '0')}`;
+    exactBatch.set(db.doc(`organizations/talk-org/messageSearch/${id}`), {
+      schemaVersion: 2, orgId: 'talk-org', conversationId, tokens: ['exactcapword'], revision: 4,
+      createdAt: Timestamp.fromMillis(Date.parse('2031-01-01T00:00:00.000Z') + (1000 - index) * 1000), sequence: 900000 + index,
+    });
+    exactWrites += 1;
+    if (exactWrites === 400) await commitExact();
+  }
+  await commitExact();
+  const exact = await call('talk-admin', 'searchConversationMessages', { ...team, text: 'exactcapword' });
+  assert.equal(exact.partial, false);
+  assert.equal(exact.nextCursor, null);
 });
+
+test('an exact page does not invent an empty continuation', async () => {
+  const { fingerprint } = require('./lib/operations/requests.js');
+  const conversationId = fingerprint({ kind: 'conversation', orgId: 'talk-org', scopeType: 'team', scopeId: 'talk-team', channel: 'household' });
+  const batch = db.batch();
+  for (let index = 0; index < 50; index += 1) {
+    const id = `fifty-${String(index).padStart(2, '0')}`;
+    const createdAt = Timestamp.fromMillis(Date.parse('2027-06-01T00:00:00.000Z') + index * 1000);
+    batch.set(db.doc(`organizations/talk-org/conversations/${conversationId}/messages/${id}`), {
+      schemaVersion: 2, orgId: 'talk-org', conversationId, authorUid: 'talk-staff', sequence: 30000 + index,
+      body: `fiftyword sample ${index}`, tombstoned: false, revision: 0, createdAt,
+    });
+    batch.set(db.doc(`organizations/talk-org/messageSearch/${id}`), {
+      schemaVersion: 2, orgId: 'talk-org', conversationId, tokens: ['fiftyword', 'sample'], revision: 0, createdAt, sequence: 30000 + index,
+    });
+  }
+  await batch.commit();
+  const page = await call('talk-admin', 'searchConversationMessages', { ...team, text: 'fiftyword' });
+  assert.equal(page.items.length, 50);
+  assert.equal(page.partial, false);
+  assert.equal(page.nextCursor, null);
+});
+
+test('search backfills messages that predate the token index', async () => {
+  const { fingerprint } = require('./lib/operations/requests.js');
+  const conversationId = fingerprint({ kind: 'conversation', orgId: 'talk-org', scopeType: 'team', scopeId: 'talk-team', channel: 'household' });
+  const conversationRef = db.doc(`organizations/talk-org/conversations/${conversationId}`);
+  const conversation = await conversationRef.get();
+  const base = conversation.data().sequence;
+  await conversationRef.update({ searchIndexComplete: false, searchIndexCursor: null });
+  const batch = db.batch();
+  const hidden = db.doc(`organizations/talk-org/conversations/${conversationId}/messages/legacy-target`);
+  batch.set(hidden, {
+    schemaVersion: 2, orgId: 'talk-org', conversationId, authorUid: 'talk-staff', sequence: base + 1,
+    body: 'legacyglyph history', tombstoned: false, revision: 3,
+    createdAt: Timestamp.fromMillis(Date.parse('2022-01-01T00:00:00.000Z')),
+  });
+  batch.set(db.doc(`organizations/talk-org/conversations/${conversationId}/messages/legacy-removed`), {
+    schemaVersion: 2, orgId: 'talk-org', conversationId, authorUid: 'talk-staff', sequence: base + 102,
+    body: null, tombstoned: true, revision: 2,
+    createdAt: Timestamp.fromMillis(Date.parse('2022-02-01T00:00:00.000Z')),
+  });
+  batch.set(db.doc('organizations/talk-org/messageSearch/legacy-removed'), {
+    schemaVersion: 2, orgId: 'talk-org', conversationId, tokens: ['legacyglyph'], revision: 2,
+    createdAt: Timestamp.fromMillis(Date.parse('2022-02-01T00:00:00.000Z')), sequence: base + 102,
+  });
+  for (let index = 0; index < 100; index += 1) {
+    const id = `legacy-pad-${String(index).padStart(3, '0')}`;
+    batch.set(db.doc(`organizations/talk-org/conversations/${conversationId}/messages/${id}`), {
+      schemaVersion: 2, orgId: 'talk-org', conversationId, authorUid: 'talk-staff', sequence: base + 2 + index,
+      body: 'ordinary practice note', tombstoned: false, revision: 0,
+      createdAt: Timestamp.fromMillis(Date.parse('2023-01-01T00:00:00.000Z') + index * 1000),
+    });
+  }
+  await batch.commit();
+  const first = await call('talk-admin', 'searchConversationMessages', { ...team, text: 'legacyglyph' });
+  assert.equal(first.items.some(item => item.id === 'legacy-target'), false);
+  assert.equal(first.partial, true);
+  assert.equal(typeof first.nextCursor, 'string');
+  const removed = await db.doc('organizations/talk-org/messageSearch/legacy-removed').get();
+  assert.equal(removed.exists, false);
+  const second = await call('talk-admin', 'searchConversationMessages', { ...team, text: 'legacyglyph', cursor: first.nextCursor });
+  assert.equal(second.items.some(item => item.id === 'legacy-target' && item.body === 'legacyglyph history'), true);
+  assert.equal(second.partial, false);
+  const indexed = await db.doc('organizations/talk-org/messageSearch/legacy-target').get();
+  assert.equal(indexed.exists, true);
+  assert.deepEqual(indexed.data().tokens, ['legacyglyph', 'history']);
+  assert.equal(indexed.data().revision, 3);
+});
+
+function resignSearchCursor(token, keyId, key, binding) {
+  const bytes = Buffer.from(token, 'base64url');
+  const body = Buffer.from(bytes.subarray(0, bytes.length - 16));
+  body.writeUInt8(keyId, 1);
+  const signature = createHmac('sha256', key).update(binding).update(body).digest().subarray(0, 16);
+  return Buffer.concat([body, signature]).toString('base64url');
+}

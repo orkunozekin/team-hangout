@@ -87,6 +87,23 @@ test('shows a removed message without its old text', async () => {
   expect(screen.queryByText('Practice is at the north field')).toBeNull();
 });
 
+test('drops search results when the channel changes', async () => {
+  (api.listConversationMessages as jest.Mock).mockResolvedValue(page);
+  (api.searchConversationMessages as jest.Mock).mockResolvedValue({
+    items: [{ ...page.items[0], body: 'Practice moved to the south field' }], nextCursor: null, partial: false,
+  });
+  const view = await render(<ConversationScreen orgId="org" scopeType="team" scopeId="team" />);
+  expect(await screen.findByText('Practice is at the north field')).toBeTruthy();
+  fireEvent.changeText(screen.getByLabelText('Search words'), 'south');
+  await waitFor(() => expect(screen.getByLabelText('Search words').props.value).toBe('south'));
+  await fireEvent.press(screen.getByText('Search messages'));
+  expect(await screen.findByText('Practice moved to the south field')).toBeTruthy();
+  (api.listConversationMessages as jest.Mock).mockResolvedValue({ ...page, items: [] });
+  view.rerender(<ConversationScreen orgId="org" scopeType="team" scopeId="other-team" />);
+  expect(await screen.findByText('No messages yet.')).toBeTruthy();
+  expect(screen.queryByText('Practice moved to the south field')).toBeNull();
+});
+
 test('keeps the closed-policy banner when the channel has no messages yet', async () => {
   (api.listConversationMessages as jest.Mock).mockResolvedValue({ ...page, items: [] });
   await render(<ConversationScreen orgId="org" scopeType="team" scopeId="team" />);

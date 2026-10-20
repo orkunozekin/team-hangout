@@ -29,6 +29,7 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
     } catch {
       setPage(null);
       setItems([]);
+      setSearch(null);
       setDenied(true);
       setError('This conversation is unavailable.');
     } finally { setLoading(false); }
@@ -45,7 +46,7 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
       setError('Older messages could not be loaded. Try again.');
     } finally { setLoadingOlder(false); }
   }
-  useEffect(() => { void refresh(true); }, [orgId, scopeType, scopeId]);
+  useEffect(() => { setSearch(null); void refresh(true); }, [orgId, scopeType, scopeId]);
   async function send() {
     if (!draft.trim()) return;
     setSaving(true); setError(null);
@@ -75,6 +76,7 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
       const next = await searchConversationMessages({ orgId, scopeType, scopeId, text: query.trim(), ...(cursor ? { cursor } : {}) });
       setSearch(current => cursor && current ? { ...next, items: [...current.items, ...next.items.filter(item => !current.items.some(row => row.id === item.id))] } : next);
     } catch {
+      setSearch(null);
       setError('Search could not be completed.');
     } finally { setSearching(false); }
   }

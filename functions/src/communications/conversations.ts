@@ -1,6 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { DocumentReference, FieldPath, FieldValue, getFirestore, Timestamp, Transaction } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
+import { defineSecret } from "firebase-functions/params";
 import { accountAvailable } from "../accountAccess";
 import { Data, id, invalid, keys, object, text, wire } from "../commandSupport";
 import { command } from "../commandSupport";
@@ -71,35 +72,72 @@ function utcInstant(value: unknown, field: string): Timestamp | null {
   if (!Number.isFinite(millis)) return invalid(`Invalid ${field}.`);
   return Timestamp.fromMillis(millis);
 }
-const SEARCH_CURSOR_KEY = "team-hangout-conversation-search-cursor-v1";
+const searchCursorSecret = defineSecret("CONVERSATION_SEARCH_CURSOR_KEY");
+const DEMO_CURSOR_KEYRING = JSON.stringify({
+  active: 2,
+  keys: {
+    "1": "demo-search-cursor-previous-key-v1-do-not-use-live",
+    "2": "demo-search-cursor-current-key-v2-do-not-use-live",
+  },
+});
+function emulatorDemo() {
+  return process.env.FUNCTIONS_EMULATOR === "true" && process.env.GCLOUD_PROJECT === "demo-team-hangout";
+}
+function cursorKeyring(): { active: number; keys: Map<number, string> } {
+  let parsed: { active?: unknown; keys?: unknown };
+  try { parsed = JSON.parse(emulatorDemo() ? DEMO_CURSOR_KEYRING : searchCursorSecret.value()) as { active?: unknown; keys?: unknown }; }
+  catch { throw new HttpsError("failed-precondition", "Search cursor signing is not configured."); }
+  if (!parsed || typeof parsed.keys !== "object" || parsed.keys == null) {
+    throw new HttpsError("failed-precondition", "Search cursor signing is not configured.");
+  }
+  const keys = new Map<number, string>();
+  for (const [version, key] of Object.entries(parsed.keys as Record<string, unknown>)) {
+    const id = Number(version);
+    if (!Number.isInteger(id) || id < 1 || id > 255 || typeof key !== "string" || key.length < 32) {
+      throw new HttpsError("failed-precondition", "Search cursor signing is not configured.");
+    }
+    keys.set(id, key);
+  }
+  if (typeof parsed.active !== "number" || !keys.has(parsed.active)) {
+    throw new HttpsError("failed-precondition", "Search cursor signing is not configured.");
+  }
+  return { active: parsed.active, keys };
+}
 function searchBinding(uid: string, conversationId: string, tokens: string[], from: string, to: string) {
   return [uid, conversationId, tokens.join("\u001f"), from, to].join("\u001e");
 }
-function signSearchCursor(createdAt: Timestamp, messageId: string, binding: string) {
+function signSearchCursor(createdAt: Timestamp, messageId: string, binding: string, restart = false) {
+  const ring = cursorKeyring();
+  const key = ring.keys.get(ring.active);
+  if (typeof key !== "string") throw new HttpsError("failed-precondition", "Search cursor signing is not configured.");
   const idBytes = Buffer.from(messageId, "utf8");
-  if (idBytes.length < 1 || idBytes.length > 128 || createdAt.seconds < 0 || createdAt.seconds > 0xffffffff) invalid("Invalid cursor.");
-  const body = Buffer.alloc(10 + idBytes.length);
-  body.writeUInt8(1, 0);
-  body.writeUInt32BE(createdAt.seconds, 1);
-  body.writeUInt32BE(createdAt.nanoseconds, 5);
-  body.writeUInt8(idBytes.length, 9);
-  idBytes.copy(body, 10);
-  const signature = createHmac("sha256", SEARCH_CURSOR_KEY).update(binding).update(body).digest().subarray(0, 16);
+  if (idBytes.length < 1 || idBytes.length > 64 || createdAt.seconds < 0 || createdAt.seconds > 0xffffffff) invalid("Invalid cursor.");
+  const body = Buffer.alloc(12 + idBytes.length);
+  body.writeUInt8(2, 0);
+  body.writeUInt8(ring.active, 1);
+  body.writeUInt8(restart ? 1 : 0, 2);
+  body.writeUInt32BE(createdAt.seconds, 3);
+  body.writeUInt32BE(createdAt.nanoseconds, 7);
+  body.writeUInt8(idBytes.length, 11);
+  idBytes.copy(body, 12);
+  const signature = createHmac("sha256", key).update(binding).update(body).digest().subarray(0, 16);
   return Buffer.concat([body, signature]).toString("base64url");
 }
 function readSearchCursor(token: string, binding: string) {
-  if (!/^[A-Za-z0-9_-]{16,400}$/.test(token)) invalid("Invalid cursor.");
+  if (!/^[A-Za-z0-9_-]{16,128}$/.test(token)) invalid("Invalid cursor.");
   const bytes = Buffer.from(token, "base64url");
-  if (bytes.length < 27 || bytes[0] !== 1) invalid("Invalid cursor.");
+  if (bytes.length < 29 || bytes[0] !== 2) invalid("Invalid cursor.");
   const signature = bytes.subarray(bytes.length - 16);
   const body = bytes.subarray(0, bytes.length - 16);
-  const expected = createHmac("sha256", SEARCH_CURSOR_KEY).update(binding).update(body).digest().subarray(0, 16);
+  const key = cursorKeyring().keys.get(body[1] ?? 0);
+  if (typeof key !== "string") return invalid("Invalid cursor.");
+  const expected = createHmac("sha256", key).update(binding).update(body).digest().subarray(0, 16);
   if (signature.length !== expected.length || !timingSafeEqual(signature, expected)) invalid("Invalid cursor.");
-  const idLength = body.readUInt8(9);
-  if (body.length !== 10 + idLength) invalid("Invalid cursor.");
-  const messageId = body.subarray(10).toString("utf8");
+  const idLength = body.readUInt8(11);
+  if (body.length !== 12 + idLength) invalid("Invalid cursor.");
+  const messageId = body.subarray(12).toString("utf8");
   if (!/^[A-Za-z0-9_-]+$/.test(messageId)) invalid("Invalid cursor.");
-  return { createdAt: new Timestamp(body.readUInt32BE(1), body.readUInt32BE(5)), messageId };
+  return { createdAt: new Timestamp(body.readUInt32BE(3), body.readUInt32BE(7)), messageId, restart: body[2] === 1 };
 }
 function reactionSummaries(counts: unknown, mine: Set<string>) {
   const map = counts && typeof counts === "object" ? counts as Record<string, unknown> : {};
@@ -658,6 +696,47 @@ export const listStaffNotes = readCommand((data) => {
 const SEARCH_BATCH = 200;
 const SEARCH_CAP = 1000;
 const SEARCH_PAGE = 50;
+const BACKFILL_BATCH = 100;
+
+async function backfillSearchIndex(uid: string, orgId: string, scope: ScopeType, scopeId: string, conversationId: string) {
+  const db = getFirestore();
+  const conversationRef = db.doc(`organizations/${orgId}/conversations/${conversationId}`);
+  const conversation = await conversationRef.get();
+  if (conversation.get("searchIndexComplete") === true) return true;
+  const stored = conversation.get("searchIndexCursor");
+  const messages = db.collection(`organizations/${orgId}/conversations/${conversationId}/messages`);
+  let query = messages.orderBy("sequence", "desc").orderBy(FieldPath.documentId(), "desc").limit(BACKFILL_BATCH + 1);
+  if (stored && typeof stored === "object" && typeof stored.sequence === "number" && typeof stored.messageId === "string") {
+    query = query.startAfter(stored.sequence, stored.messageId);
+  }
+  const snap = await query.get();
+  const page = snap.docs.slice(0, BACKFILL_BATCH);
+  const batch = db.batch();
+  for (const doc of page) {
+    const row = doc.data();
+    const ref = searchReference(orgId, doc.id);
+    const createdAt = row.createdAt;
+    const tokens = textTokens(typeof row.body === "string" ? row.body : "").slice(0, 200);
+    if (row.tombstoned === true || !tokens.length || !(createdAt instanceof Timestamp) || typeof row.sequence !== "number") {
+      batch.delete(ref);
+      continue;
+    }
+    batch.set(ref, {
+      schemaVersion: 2, orgId, conversationId, tokens, revision: row.revision ?? 0, createdAt, sequence: row.sequence,
+    });
+  }
+  const complete = snap.size <= BACKFILL_BATCH;
+  const last = page[page.length - 1];
+  if (conversation.exists || page.length) {
+    batch.set(conversationRef, {
+      searchIndexComplete: complete,
+      ...(last ? { searchIndexCursor: { sequence: last.get("sequence"), messageId: last.id } } : {}),
+    }, { merge: true });
+  }
+  await liveRead(uid, orgId, scope, scopeId);
+  if (conversation.exists || page.length) await batch.commit();
+  return complete;
+}
 
 function currentTextMatches(index: Data, message: Data | undefined, tokens: string[], conversationId: string) {
   if (!message || message.tombstoned === true || typeof message.body !== "string") return false;
@@ -668,7 +747,7 @@ function currentTextMatches(index: Data, message: Data | undefined, tokens: stri
   return tokens.every((token) => indexed.includes(token) && current.includes(token));
 }
 
-export const searchConversationMessages = onCall(async (request) => {
+export const searchConversationMessages = onCall(emulatorDemo() ? {} : { secrets: [searchCursorSecret] }, async (request) => {
   const uid = request.auth?.uid;
   if (!uid) throw new HttpsError("unauthenticated", "Sign in to continue.");
   const data = object(request.data);
@@ -685,20 +764,25 @@ export const searchConversationMessages = onCall(async (request) => {
   const toKey = to ? to.toDate().toISOString() : "";
   let decision = await liveRead(uid, scope.orgId, scope.scopeType, scope.scopeId);
   const binding = searchBinding(uid, decision.conversationId, tokens, fromKey, toKey);
-  let position = data.cursor == null ? null : readSearchCursor(id(data.cursor, "cursor"), binding);
+  const decoded = data.cursor == null ? null : readSearchCursor(id(data.cursor, "cursor"), binding);
+  let position = decoded == null || decoded.restart ? null : { createdAt: decoded.createdAt, messageId: decoded.messageId };
+  const indexComplete = await backfillSearchIndex(uid, scope.orgId, scope.scopeType, scope.scopeId, decision.conversationId);
   const db = getFirestore();
   const collection = db.collection(`organizations/${scope.orgId}/messageSearch`);
+  const candidates = (limit: number, after: { createdAt: Timestamp; messageId: string } | null) => {
+    let query = collection.where("conversationId", "==", decision.conversationId).where("tokens", "array-contains", tokens[0]);
+    if (from) query = query.where("createdAt", ">=", from);
+    if (to) query = query.where("createdAt", "<=", to);
+    query = query.orderBy("createdAt", "desc").orderBy(FieldPath.documentId(), "desc").limit(limit);
+    if (after) query = query.startAfter(after.createdAt, after.messageId);
+    return query;
+  };
   let scanned = 0;
   let exhausted = false;
   const matches: { createdAt: Timestamp; messageId: string; message: Data }[] = [];
   while (matches.length < SEARCH_PAGE && scanned < SEARCH_CAP) {
     const take = Math.min(SEARCH_BATCH, SEARCH_CAP - scanned);
-    let query = collection.where("conversationId", "==", decision.conversationId).where("tokens", "array-contains", tokens[0]);
-    if (from) query = query.where("createdAt", ">=", from);
-    if (to) query = query.where("createdAt", "<=", to);
-    query = query.orderBy("createdAt", "desc").orderBy(FieldPath.documentId(), "desc").limit(take);
-    if (position) query = query.startAfter(position.createdAt, position.messageId);
-    const snap = await query.get();
+    const snap = await candidates(take, position).get();
     const batchExhausted = snap.size < take;
     if (snap.empty) { exhausted = true; break; }
     const messages = await db.getAll(...snap.docs.map((doc) => db.doc(`organizations/${scope.orgId}/conversations/${decision.conversationId}/messages/${doc.id}`)));
@@ -716,7 +800,13 @@ export const searchConversationMessages = onCall(async (request) => {
         break;
       }
     }
-    if (stoppedEarly || matches.length >= SEARCH_PAGE || scanned >= SEARCH_CAP) { exhausted = false; break; }
+    if (stoppedEarly) { exhausted = false; break; }
+    if (matches.length >= SEARCH_PAGE || scanned >= SEARCH_CAP) {
+      if (!position || batchExhausted) { exhausted = true; break; }
+      const probe = await candidates(1, position).get();
+      exhausted = probe.empty;
+      break;
+    }
     if (batchExhausted) { exhausted = true; break; }
     decision = await liveRead(uid, scope.orgId, scope.scopeType, scope.scopeId);
   }
@@ -739,10 +829,13 @@ export const searchConversationMessages = onCall(async (request) => {
       mine.set(messageId, codes);
     });
   }
-  const more = !exhausted && position != null;
+  const resume = !exhausted && position != null;
+  const backfillRemains = !indexComplete;
+  const more = resume || backfillRemains;
+  const restart = position == null;
   return wire({
     items: matches.map((match) => projectMessage({ id: match.messageId, data: () => match.message }, pinned, uid, mine.get(match.messageId) ?? new Set())),
-    nextCursor: more && position ? signSearchCursor(position.createdAt, position.messageId, binding) : null,
-    partial: scanned >= SEARCH_CAP && more,
+    nextCursor: more ? signSearchCursor(position?.createdAt ?? new Timestamp(0, 0), position?.messageId ?? "restart", binding, restart) : null,
+    partial: (scanned >= SEARCH_CAP && resume) || backfillRemains,
   });
 });

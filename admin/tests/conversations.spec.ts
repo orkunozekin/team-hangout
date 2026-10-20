@@ -112,6 +112,7 @@ test("staff can edit, remove, react, and search without finding a staff note", a
   await expect(edited.getByRole("button", { name: "React with 👍 1" })).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("textbox", { name: "Staff note" }).fill("Guardian phone is private");
   await page.getByRole("button", { name: "Save staff note" }).click();
+  await expect(page.getByRole("region", { name: "Staff notes" }).getByRole("listitem").filter({ hasText: "Guardian phone is private" })).toBeVisible();
   await page.getByRole("textbox", { name: "Search words" }).fill("south");
   await page.getByRole("button", { name: "Search messages" }).click();
   const results = page.getByRole("region", { name: "Search messages" });
@@ -122,4 +123,29 @@ test("staff can edit, remove, react, and search without finding a staff note", a
   await page.getByRole("textbox", { name: "Search words" }).fill("orange");
   await page.getByRole("button", { name: "Search messages" }).click();
   await expect(results.getByText("No matching messages.")).toBeVisible();
+});
+test("search results clear when the scope changes or access is revoked", async ({ page }) => {
+  await page.goto(`/organizations/${orgId}/conversations`);
+  await page.getByLabel("Email address").fill(`${owner}@example.test`);
+  await page.getByLabel("Password", { exact: true }).fill("SyntheticPassword123!");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.getByLabel("Scope id").fill("browser-search-team");
+  await page.getByRole("button", { name: "Open channel" }).click();
+  await expect(page.getByRole("region", { name: "Household channel" }).getByText("Practice moved to the south field")).toBeVisible();
+  await page.getByRole("textbox", { name: "Search words" }).fill("south");
+  await page.getByRole("button", { name: "Search messages" }).click();
+  const results = page.getByRole("region", { name: "Search messages" });
+  await expect(results.getByText("Practice moved to the south field")).toBeVisible();
+  await page.getByLabel("Scope id").fill("browser-talk-team");
+  await expect(results.getByText("Practice moved to the south field")).toHaveCount(0);
+  await page.getByLabel("Scope id").fill("browser-search-team");
+  await page.getByRole("button", { name: "Open channel" }).click();
+  await expect(page.getByRole("region", { name: "Household channel" }).getByText("Practice moved to the south field")).toBeVisible();
+  await page.getByRole("textbox", { name: "Search words" }).fill("south");
+  await page.getByRole("button", { name: "Search messages" }).click();
+  await expect(results.getByText("Practice moved to the south field")).toBeVisible();
+  await getFirestore(app).doc(`organizations/${orgId}/members/${owner}`).update({ status: "revoked" });
+  await page.getByRole("button", { name: "Open channel" }).click();
+  await expect(page.getByRole("alert")).toContainText("Access unavailable.");
+  await expect(results.getByText("Practice moved to the south field")).toHaveCount(0);
 });

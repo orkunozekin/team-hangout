@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { CONVERSATION_REACTIONS, type ConversationMessage, type ConversationPage, type ConversationScopeType, type ConversationSearchPage, type StaffNote } from "../../shared/conversations";
 import type { BrowserServices } from "./firebase";
 import { message } from "./errors";
@@ -23,7 +23,14 @@ export function Conversations({ services, orgId }: { services: BrowserServices; 
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const searchGeneration = useRef(0);
+  const clearSearch = useCallback(() => {
+    searchGeneration.current += 1;
+    setSearch(null);
+    setSearched(false);
+  }, []);
   const load = useCallback(async () => {
+    clearSearch();
     if (!scopeId.trim()) return;
     setLoading(true);
     setError("");
@@ -44,11 +51,13 @@ export function Conversations({ services, orgId }: { services: BrowserServices; 
       setNotes([]);
       setMessageCursor(null);
       setNoteCursor(null);
+      setSearch(null);
+      setSearched(false);
       setError(message(caught));
     } finally {
       setLoading(false);
     }
-  }, [orgId, scopeId, scopeType, services]);
+  }, [clearSearch, orgId, scopeId, scopeType, services]);
   async function older(kind: "messages" | "notes") {
     const cursor = kind === "messages" ? messageCursor : noteCursor;
     if (!cursor || !scopeId.trim()) return;
@@ -128,14 +137,19 @@ export function Conversations({ services, orgId }: { services: BrowserServices; 
   async function find(event?: FormEvent, cursor?: string | null) {
     event?.preventDefault();
     if (!scopeId.trim() || !query.trim()) return;
+    const generation = searchGeneration.current;
     setError("");
     try {
       const next = await services.call("searchConversationMessages", {
         orgId, scopeType, scopeId: scopeId.trim(), text: query.trim(), ...(cursor ? { cursor } : {}),
       });
+      if (generation !== searchGeneration.current) return;
       setSearch(cursor && search ? { ...next, items: [...search.items, ...next.items.filter((item) => !search.items.some((row) => row.id === item.id))] } : next);
       setSearched(true);
     } catch (caught) {
+      if (generation !== searchGeneration.current) return;
+      setSearch(null);
+      setSearched(false);
       setError(message(caught));
     }
   }
@@ -145,7 +159,7 @@ export function Conversations({ services, orgId }: { services: BrowserServices; 
     <p>Household channels and staff notes are separate. A note is never posted into the channel.</p>
     <form className="panel" onSubmit={(event) => { event.preventDefault(); void load(); }}>
       <label>Scope
-        <select value={scopeType} onChange={(event) => setScopeType(event.target.value as ConversationScopeType)}>
+        <select value={scopeType} onChange={(event) => { setScopeType(event.target.value as ConversationScopeType); clearSearch(); }}>
           <option value="organization">Organization announcement</option>
           <option value="division">Division announcement</option>
           <option value="team">Team channel</option>
@@ -153,7 +167,7 @@ export function Conversations({ services, orgId }: { services: BrowserServices; 
         </select>
       </label>
       <label>Scope id
-        <input value={scopeId} onChange={(event) => setScopeId(event.target.value)} placeholder={scopeType === "organization" ? orgId : "team or event id"} />
+        <input value={scopeId} onChange={(event) => { setScopeId(event.target.value); clearSearch(); }} placeholder={scopeType === "organization" ? orgId : "team or event id"} />
       </label>
       <button type="submit">Open channel</button>
     </form>
