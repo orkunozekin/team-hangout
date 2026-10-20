@@ -28,6 +28,7 @@ export const OPERATIONS_SUITES = [
   'tests/backend/organizations.test.mjs',
   'tests/backend/commands.test.mjs',
   'tests/backend/deletion.test.mjs',
+  'tests/backend/pilot.test.mjs',
   'tests/backend/functions.test.mjs',
 ];
 

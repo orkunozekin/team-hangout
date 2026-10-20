@@ -94,3 +94,14 @@ These choices are locked for the server reminder and staff diagnostics step. The
 | Cleanup | `pending`, `uploading`, `quarantined`, `canonicalizing`, and `rejected` rows older than 24 hours are purged. Object listing saves a page token so a later run continues through the prefix. Ready rows are kept. Account deletion still does not anonymize `ownerUid`. A tombstone does not delete bytes. |
 | Canonical bytes | Stripped bytes are written to object `/2` only after the row is `canonicalizing`. A replay of the upload grant cannot replace that object. Recovery compares the canonical hash and length, including after the original grant expires. PDF metadata is blanked in place so xref offsets stay valid. PDF names are hex-decoded, and Flate, ASCII85, and ASCII hex streams are decoded before the active-content check. An external scanner cannot return `INTEGRITY` or `ACCESS_REVOKED`. Changing channel clears unsent files. |
 | Flag | `features.attachments` stays off for new organizations. Both conversation and attachment flags must be true. |
+
+## Phase 2 P2.20 pilot decisions
+
+| Topic | Decision |
+| --- | --- |
+| Pilot gate | Phase 2 code is complete. It is not pilot-ready. This step does not deploy, create secrets, or start Phase 3. |
+| Attachments | Seed a multi-team pilot only after `ATTACHMENT_UPLOAD_KEY` exists. Leave `features.attachments` off until the scanner kill switch, external outage, grant expiry, and purge drills pass. |
+| Rollback | `applyPilotRollback` turns scheduler, attendance, location assistance, conversations, attachments, RSVP reminders, and the three notification channel flags off. It keeps `organizationV2`, `adminWorkspace`, and `households`. In-flight publications become `quarantined` in pages of 20 and are not resumed when the scheduler flag is turned back on. |
+| Deletion audit | Account deletion counts `attachments.ownerUid` onto the job and leaves the bytes. It does not anonymize `ownerUid` or message `authorUid`. Retention stays an owner policy. |
+| Dashboard | Org admins read counts, flags, stuck publications, rejection codes, and scanner mode. The page omits names, tokens, owner ids, and file names. |
+| Memory | Finalize and download hold up to 10 MiB in a 512 MiB function. A real 10 MiB transfer is a staging drill, not an emulator claim. |

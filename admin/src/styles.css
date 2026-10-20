@@ -756,3 +756,7 @@ button { overflow-wrap: anywhere; }
 .diagnostics-card h3 { margin: 0 0 6px; font-size: 1.05rem; }
 .diagnostics-card p { margin: 0 0 6px; }
 .diagnostics button { min-height: 44px; }
+.pilot-flags { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 20px; }
+.pilot-flag { border: 1px solid #d5e2dc; border-radius: 999px; padding: 8px 12px; background: white; }
+.pilot-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.pilot-actions label { display: flex; gap: 8px; align-items: center; min-height: 44px; }
