@@ -56,6 +56,6 @@ export { getEventAttendance, recordEventAttendance, getAttendanceHistory } from 
 export { getParticipantCheckIn, checkInParticipant, setEventCheckInPolicy } from "./operations/checkIn";
 export { listNotifications, markNotificationRead, acknowledgeCriticalUpdate, registerPushDevice, revokePushDevice, resolveNotificationTarget } from './notifications/commands';
 export { listDeliveryDiagnostics } from './notifications/diagnostics';
-export { postConversationMessage, listConversationMessages, setConversationPin, moderateConversationMessage, postStaffNote, listStaffNotes } from './communications/conversations';
+export { postConversationMessage, listConversationMessages, setConversationPin, moderateConversationMessage, editConversationMessage, reactToConversationMessage, searchConversationMessages, postStaffNote, listStaffNotes } from './communications/conversations';
 export { resumeNotificationInbox } from './notifications/worker';
 export { resumeRsvpReminders } from './notifications/reminders';

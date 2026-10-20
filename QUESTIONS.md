@@ -60,3 +60,14 @@ These choices are locked for the server reminder and staff diagnostics step. The
 | Moderation | Program staff and org admins can tombstone a message and remove its text. Coaches can pin up to three messages. Guardians cannot pin or moderate. |
 | Flag | `features.conversations` must be true. It is not enabled by this change. |
 | Native entry | A household calendar opens organization and division announcements only for a team that lists a participant, plus that team's channel and each loaded event channel. A coach-only team and the Team tab open the team channel. Event detail opens the published event channel. Offline copies hide these actions. |
+
+## Phase 2 P2.17 correction and search decisions
+
+| Topic | Decision |
+|-------|----------|
+| Pages | Newest-first sequence pages stay at 25 by default and accept 1 through 50. The cursor names the sequence and message id and is rejected when that pair is not in the channel. |
+| Edits | Only the author can replace text, with the current message revision and a new request id. The edit audit stores actor, revision, and time, not the previous text. |
+| Tombstones | Moderation still removes the text, keeps the sequence, deletes search tokens, and writes the same redacted audit. |
+| Reactions | Seven emoji. A second tap removes the caller's reaction. Youth posting must be open before a guardian or player can react. Staff and coaches can react before that approval. |
+| Search | Exact words of at least two letters or numbers, at most five query words and 200 indexed words. The private index is scanned 200 at a time, capped at 1,000 candidates, and returns `partial` with a signed cursor when history remains. Staff notes stay out of search, push, and email. |
+| Flag | `features.conversations` is still not enabled by this change. Direct messages stay rejected. Account deletion still does not anonymize authors. Attachments stay a later step. |

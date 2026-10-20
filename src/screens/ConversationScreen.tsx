@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { listConversationMessages, postConversationMessage } from '../firebase/conversations';
-import type { ConversationMessage, ConversationPage, ConversationScopeType } from '../../shared/conversations';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { editConversationMessage, listConversationMessages, postConversationMessage, reactToConversationMessage, searchConversationMessages } from '../firebase/conversations';
+import { CONVERSATION_REACTIONS, type ConversationMessage, type ConversationPage, type ConversationScopeType, type ConversationSearchPage } from '../../shared/conversations';
 import { EmptyState, PrimaryButton, Screen, SecondaryButton, Subtitle, Title } from '../components/ui';
 import { colors, radius, spacing, type } from '../theme/theme';
 
@@ -14,6 +14,10 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
   const [loading, setLoading] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState<ConversationMessage | null>(null);
+  const [query, setQuery] = useState('');
+  const [search, setSearch] = useState<ConversationSearchPage | null>(null);
+  const [searching, setSearching] = useState(false);
   async function refresh(initial = false) {
     if (initial) { setLoading(true); setPage(null); setItems([]); setDenied(false); }
     setError(null);
@@ -46,12 +50,33 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
     if (!draft.trim()) return;
     setSaving(true); setError(null);
     try {
-      await postConversationMessage({ orgId, scopeType, scopeId, text: draft.trim() });
+      if (editing) await editConversationMessage({ orgId, scopeType, scopeId, messageId: editing.id, text: draft.trim(), expectedRevision: editing.revision ?? 0 });
+      else await postConversationMessage({ orgId, scopeType, scopeId, text: draft.trim() });
       setDraft('');
+      setEditing(null);
       await refresh();
     } catch {
-      setError('This message was not sent. Youth channels stay closed until the organization approves posting, and removed members cannot post.');
+      setError(editing ? 'This edit was not saved. Reload the conversation and try again.' : 'This message was not sent. Youth channels stay closed until the organization approves posting, and removed members cannot post.');
     } finally { setSaving(false); }
+  }
+  async function react(item: ConversationMessage, emoji: string) {
+    setError(null);
+    try {
+      await reactToConversationMessage({ orgId, scopeType, scopeId, messageId: item.id, emoji, expectedRevision: item.revision ?? 0 });
+      await refresh();
+    } catch {
+      setError('That reaction was not saved.');
+    }
+  }
+  async function find(cursor?: string) {
+    if (!query.trim()) return;
+    setSearching(true); setError(null);
+    try {
+      const next = await searchConversationMessages({ orgId, scopeType, scopeId, text: query.trim(), ...(cursor ? { cursor } : {}) });
+      setSearch(current => cursor && current ? { ...next, items: [...current.items, ...next.items.filter(item => !current.items.some(row => row.id === item.id))] } : next);
+    } catch {
+      setError('Search could not be completed.');
+    } finally { setSearching(false); }
   }
   const youthClosed = page?.mode === 'youth' && page.youthPosting === 'closed';
   const title = scopeType === 'event' ? 'Event conversation' : scopeType === 'team' ? 'Team conversation' : scopeType === 'division' ? 'Division announcements' : 'Organization announcements';
@@ -63,11 +88,25 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       {!items.length ? <EmptyState message="No messages yet." /> : items.map(item => <View key={item.id} style={styles.card}>
         <Text style={styles.body}>{item.tombstoned ? 'Message removed by a moderator' : item.body}</Text>
+        {item.editedAt ? <Text style={styles.pin}>Edited</Text> : null}
         {item.pinned ? <Text style={styles.pin}>Pinned</Text> : null}
+        {item.tombstoned ? null : <View style={styles.reactions}>{CONVERSATION_REACTIONS.map(choice => {
+          const reaction = item.reactions?.find(row => row.emoji === choice.emoji);
+          return <Pressable key={choice.code} accessibilityRole="button" accessibilityLabel={`React with ${choice.emoji}`} accessibilityState={{ selected: reaction?.mine === true }} onPress={() => void react(item, choice.emoji)}><Text style={styles.pin}>{choice.emoji} {reaction?.count ?? 0}</Text></Pressable>;
+        })}</View>}
+        {item.mine && !item.tombstoned ? <SecondaryButton label="Edit message" onPress={() => { setEditing(item); setDraft(item.body ?? ''); }} /> : null}
       </View>)}
       {page?.nextCursor ? <SecondaryButton label={loadingOlder ? 'Loading older messages' : 'Load older messages'} disabled={loadingOlder} onPress={() => void older()} /> : null}
-      <TextInput accessibilityLabel="Message" value={draft} onChangeText={setDraft} style={styles.input} />
-      <PrimaryButton label="Send message" loading={saving} onPress={() => void send()} />
+      <TextInput accessibilityLabel={editing ? 'Replacement text' : 'Message'} value={draft} onChangeText={setDraft} style={styles.input} />
+      <PrimaryButton label={editing ? 'Save edit' : 'Send message'} loading={saving} onPress={() => void send()} />
+      {editing ? <SecondaryButton label="Cancel edit" onPress={() => { setEditing(null); setDraft(''); }} /> : null}
+      <Text style={styles.pin}>Search this channel. Staff notes are not included.</Text>
+      <TextInput accessibilityLabel="Search words" value={query} onChangeText={setQuery} style={styles.input} />
+      <SecondaryButton label={searching ? 'Searching messages' : 'Search messages'} disabled={searching} onPress={() => void find()} />
+      {search?.partial ? <Text style={styles.banner}>More matches may remain. Continue the search.</Text> : null}
+      {search && !search.items.length ? <EmptyState message="No matching messages." /> : null}
+      {search?.items.map(item => <View key={item.id} style={styles.card}><Text style={styles.body}>{item.body}</Text></View>)}
+      {search?.nextCursor ? <SecondaryButton label="Continue search" onPress={() => void find(search.nextCursor ?? undefined)} /> : null}
     </View>}
   </ScrollView></Screen>;
 }
@@ -79,5 +118,6 @@ const styles = StyleSheet.create({
   card: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md, gap: spacing.sm },
   body: { ...type.body, color: colors.text },
   pin: { ...type.caption, color: colors.primary },
+  reactions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   input: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, padding: spacing.sm, color: colors.text },
 });

@@ -146,3 +146,160 @@ test('archived participants, foreign guardian paths, and mis-scoped admin grants
   assert.equal(archivedSchedule.code, 'functions/permission-denied');
   await db.doc('organizations/talk-org/participants/talk-z').update({ status: 'active' });
 });
+
+test('message pages follow the server sequence and reject a cursor from another message', async () => {
+  const first = await call('talk-coach', 'postConversationMessage', { requestId: 'seq-one', ...team, text: 'Sequence alpha' });
+  const second = await call('talk-coach', 'postConversationMessage', { requestId: 'seq-two', ...team, text: 'Sequence beta' });
+  const third = await call('talk-coach', 'postConversationMessage', { requestId: 'seq-three', ...team, text: 'Sequence gamma' });
+  const page = await call('talk-self', 'listConversationMessages', { ...team, pageSize: 2 });
+  assert.deepEqual(page.items.map(row => row.id), [third.id, second.id]);
+  assert.equal(page.items[0].sequence > page.items[1].sequence, true);
+  assert.equal(page.nextCursor, `s${second.sequence}_${second.id}`);
+  const older = await call('talk-self', 'listConversationMessages', { ...team, pageSize: 2, cursor: page.nextCursor });
+  assert.equal(older.items[0].id, first.id);
+  assert.equal(older.items.some(row => row.id === third.id), false);
+  const tampered = await fail('talk-self', 'listConversationMessages', { ...team, pageSize: 2, cursor: `s${first.sequence + 9}_${second.id}` });
+  assert.equal(tampered.code, 'functions/invalid-argument');
+  const foreign = await fail('talk-self', 'listConversationMessages', { ...team, pageSize: 2, cursor: `s${first.sequence}_not-this-message` });
+  assert.equal(foreign.code, 'functions/invalid-argument');
+});
+
+test('authors can edit their own text, old words leave search, and audits stay redacted', async () => {
+  const posted = await call('talk-guardian', 'postConversationMessage', { requestId: 'edit-source', ...team, text: 'Zephyrlane practice is early' });
+  const listed = await call('talk-guardian', 'listConversationMessages', { ...team, pageSize: 10 });
+  const current = listed.items.find(row => row.id === posted.id);
+  assert.equal(current.revision, 0);
+  assert.equal(current.mine, true);
+  const stranger = await fail('talk-coach', 'editConversationMessage', { requestId: 'coach-edit', ...team, messageId: posted.id, text: 'Coach rewrite', expectedRevision: 0 });
+  assert.equal(stranger.code, 'functions/permission-denied');
+  const edited = await call('talk-guardian', 'editConversationMessage', { requestId: 'guardian-edit', ...team, messageId: posted.id, text: 'Zephyrlane practice moved', expectedRevision: 0 });
+  assert.equal(edited.revision, 1);
+  const replay = await call('talk-guardian', 'editConversationMessage', { requestId: 'guardian-edit', ...team, messageId: posted.id, text: 'Zephyrlane practice moved', expectedRevision: 0 });
+  assert.equal(replay.revision, 1);
+  const reused = await fail('talk-guardian', 'editConversationMessage', { requestId: 'guardian-edit', ...team, messageId: posted.id, text: 'A different sentence', expectedRevision: 1 });
+  assert.equal(reused.code, 'functions/already-exists');
+  const stale = await fail('talk-guardian', 'editConversationMessage', { requestId: 'guardian-edit-stale', ...team, messageId: posted.id, text: 'Zephyrlane practice moved again', expectedRevision: 0 });
+  assert.equal(stale.details?.domainCode, 'STALE_REVISION');
+  const page = await call('talk-self', 'listConversationMessages', { ...team, pageSize: 25 });
+  const row = page.items.find(item => item.id === posted.id);
+  assert.equal(row.body, 'Zephyrlane practice moved');
+  assert.equal(typeof row.editedAt, 'string');
+  assert.equal(JSON.stringify(page).includes('early'), false);
+  const found = await call('talk-guardian', 'searchConversationMessages', { ...team, text: 'moved' });
+  assert.equal(found.partial, false);
+  assert.equal(found.items.some(item => item.id === posted.id && item.body === 'Zephyrlane practice moved'), true);
+  const staleSearch = await call('talk-guardian', 'searchConversationMessages', { ...team, text: 'early' });
+  assert.equal(staleSearch.items.some(item => item.id === posted.id), false);
+  const { fingerprint } = require('./lib/operations/requests.js');
+  const conversationId = fingerprint({ kind: 'conversation', orgId: 'talk-org', scopeType: 'team', scopeId: 'talk-team', channel: 'household' });
+  const audit = await db.collection(`organizations/talk-org/conversations/${conversationId}/messages/${posted.id}/edits`).get();
+  assert.equal(audit.size, 1);
+  assert.equal(JSON.stringify(audit.docs[0].data()).includes('early'), false);
+  const indexed = await db.doc(`organizations/talk-org/messageSearch/${posted.id}`).get();
+  assert.deepEqual(indexed.data().tokens.includes('early'), false);
+  assert.equal(indexed.data().tokens.includes('moved'), true);
+  assert.equal(indexed.data().revision, 1);
+  const direct = await fail('talk-guardian', 'editConversationMessage', { requestId: 'direct-edit', orgId: 'talk-org', scopeType: 'direct', scopeId: 'talk-coach', messageId: posted.id, text: 'private', expectedRevision: 1 });
+  assert.equal(direct.details?.domainCode, 'YOUTH_POLICY');
+});
+
+test('staff tombstones remove searchable text and staff notes never enter search or delivery', async () => {
+  const posted = await call('talk-staff', 'postConversationMessage', { requestId: 'tombstone-search', ...team, text: 'Quicksilver snack reminder' });
+  const before = await call('talk-guardian', 'searchConversationMessages', { ...team, text: 'quicksilver' });
+  assert.equal(before.items.some(item => item.id === posted.id), true);
+  await call('talk-staff', 'moderateConversationMessage', { requestId: 'tombstone-search-hide', ...team, messageId: posted.id, reason: 'cleanup' });
+  const after = await call('talk-self', 'searchConversationMessages', { ...team, text: 'quicksilver' });
+  assert.equal(after.items.some(item => item.id === posted.id), false);
+  assert.equal((await db.doc(`organizations/talk-org/messageSearch/${posted.id}`).get()).exists, false);
+  const page = await call('talk-self', 'listConversationMessages', { ...team, pageSize: 25 });
+  const hidden = page.items.find(item => item.id === posted.id);
+  assert.equal(hidden.tombstoned, true);
+  assert.equal(hidden.sequence > 0, true);
+  assert.equal(JSON.stringify(page).includes('Quicksilver'), false);
+  const note = await call('talk-staff', 'postStaffNote', { requestId: 'search-note', ...team, text: 'Orchid passphrase stays private' });
+  assert.ok(note.id);
+  const searched = await call('talk-admin', 'searchConversationMessages', { ...team, text: 'orchid' });
+  assert.equal(JSON.stringify(searched).includes('Orchid'), false);
+  assert.equal(JSON.stringify(searched).includes('passphrase'), false);
+  const indexed = await db.collection('organizations/talk-org/messageSearch').get();
+  assert.equal(indexed.docs.some(doc => JSON.stringify(doc.data()).includes('orchid')), false);
+  assert.equal((await db.collection('users/talk-guardian/notifications').get()).size, 0);
+  assert.equal((await db.collection('organizations/talk-org/outbox').get()).size, 0);
+});
+
+test('reactions toggle for people who can post and follow the message revision', async () => {
+  const posted = await call('talk-coach', 'postConversationMessage', { requestId: 'react-source', ...team, text: 'Reaction lantern check' });
+  await db.doc('organizations/talk-org').update({ 'policies.youthChannels': 'closed' });
+  const closed = await fail('talk-guardian', 'reactToConversationMessage', { requestId: 'guardian-react-closed', ...team, messageId: posted.id, emoji: '👍', expectedRevision: 0 });
+  assert.equal(closed.details?.domainCode, 'YOUTH_POLICY');
+  await db.doc('organizations/talk-org').update({ 'policies.youthChannels': 'approved' });
+  const added = await call('talk-guardian', 'reactToConversationMessage', { requestId: 'guardian-react', ...team, messageId: posted.id, emoji: '👍', expectedRevision: 0 });
+  assert.equal(added.active, true);
+  assert.equal(added.count, 1);
+  const replay = await call('talk-guardian', 'reactToConversationMessage', { requestId: 'guardian-react', ...team, messageId: posted.id, emoji: '👍', expectedRevision: 0 });
+  assert.deepEqual(replay, added);
+  const coach = await call('talk-coach', 'reactToConversationMessage', { requestId: 'coach-react', ...team, messageId: posted.id, emoji: '👍', expectedRevision: 0 });
+  assert.equal(coach.count, 2);
+  const page = await call('talk-guardian', 'listConversationMessages', { ...team, pageSize: 10 });
+  const row = page.items.find(item => item.id === posted.id);
+  assert.equal(row.reactions.find(item => item.emoji === '👍').count, 2);
+  assert.equal(row.reactions.find(item => item.emoji === '👍').mine, true);
+  const removed = await call('talk-guardian', 'reactToConversationMessage', { requestId: 'guardian-react-off', ...team, messageId: posted.id, emoji: '👍', expectedRevision: 0 });
+  assert.equal(removed.active, false);
+  const invalidEmoji = await fail('talk-coach', 'reactToConversationMessage', { requestId: 'rocket', ...team, messageId: posted.id, emoji: '🚀', expectedRevision: 0 });
+  assert.equal(invalidEmoji.code, 'functions/invalid-argument');
+  await call('talk-staff', 'moderateConversationMessage', { requestId: 'react-hide', ...team, messageId: posted.id, reason: 'done' });
+  const hidden = await fail('talk-coach', 'reactToConversationMessage', { requestId: 'react-hidden', ...team, messageId: posted.id, emoji: '👍', expectedRevision: 1 });
+  assert.equal(hidden.code, 'functions/failed-precondition');
+});
+
+test('search denies a revoked audience and continues truthfully past 1000 candidates', async () => {
+  const posted = await call('talk-staff', 'postConversationMessage', { requestId: 'range-source', ...team, text: 'Calendarword evening plan' });
+  const outside = await call('talk-guardian', 'searchConversationMessages', { ...team, text: 'calendarword', from: '2099-01-01T00:00:00.000Z', to: '2099-01-02T00:00:00.000Z' });
+  assert.equal(outside.items.length, 0);
+  assert.equal(outside.partial, false);
+  const inside = await call('talk-guardian', 'searchConversationMessages', { ...team, text: 'calendarword', from: '2020-01-01T00:00:00.000Z', to: '2099-01-02T00:00:00.000Z' });
+  assert.equal(inside.items.some(item => item.id === posted.id), true);
+  const tooMany = await fail('talk-guardian', 'searchConversationMessages', { ...team, text: 'one two three four five six' });
+  assert.equal(tooMany.code, 'functions/invalid-argument');
+  await db.doc('organizations/talk-org/participants/talk-child/guardians/talk-guardian').update({ status: 'revoked' });
+  const revoked = await fail('talk-guardian', 'searchConversationMessages', { ...team, text: 'calendarword' });
+  assert.equal(revoked.code, 'functions/permission-denied');
+  assert.equal(revoked.data, undefined);
+  await db.doc('organizations/talk-org/participants/talk-child/guardians/talk-guardian').update({ status: 'active' });
+
+  const { fingerprint } = require('./lib/operations/requests.js');
+  const conversationId = fingerprint({ kind: 'conversation', orgId: 'talk-org', scopeType: 'team', scopeId: 'talk-team', channel: 'household' });
+  let batch = db.batch();
+  let writes = 0;
+  const commit = async () => { if (writes) { await batch.commit(); batch = db.batch(); writes = 0; } };
+  for (let index = 0; index < 1000; index += 1) {
+    const id = `bulk-${String(index).padStart(4, '0')}`;
+    batch.set(db.doc(`organizations/talk-org/messageSearch/${id}`), {
+      schemaVersion: 2, orgId: 'talk-org', conversationId, tokens: ['bulkword'], revision: 4,
+      createdAt: Timestamp.fromMillis(Date.parse('2030-01-01T00:00:00.000Z') + (1000 - index) * 1000), sequence: 5000 + index,
+    });
+    writes += 1;
+    if (writes === 400) await commit();
+  }
+  const hidden = db.doc(`organizations/talk-org/conversations/${conversationId}/messages/bulk-match`);
+  batch.set(hidden, {
+    schemaVersion: 2, orgId: 'talk-org', conversationId, authorUid: 'talk-staff', sequence: 9, body: 'bulkword hidden past the cap', tombstoned: false, revision: 0,
+    createdAt: Timestamp.fromMillis(Date.parse('2024-01-01T00:00:00.000Z')),
+  });
+  batch.set(db.doc('organizations/talk-org/messageSearch/bulk-match'), {
+    schemaVersion: 2, orgId: 'talk-org', conversationId, tokens: ['bulkword'], revision: 0,
+    createdAt: Timestamp.fromMillis(Date.parse('2024-01-01T00:00:00.000Z')), sequence: 9,
+  });
+  writes += 2;
+  await commit();
+  const first = await call('talk-admin', 'searchConversationMessages', { ...team, text: 'bulkword' });
+  assert.equal(first.partial, true);
+  assert.equal(first.items.some(item => item.id === 'bulk-match'), false);
+  assert.equal(typeof first.nextCursor, 'string');
+  const second = await call('talk-admin', 'searchConversationMessages', { ...team, text: 'bulkword', cursor: first.nextCursor });
+  assert.equal(second.items.some(item => item.id === 'bulk-match' && item.body === 'bulkword hidden past the cap'), true);
+  assert.equal(second.partial, false);
+  const mismatched = await fail('talk-admin', 'searchConversationMessages', { ...team, text: 'calendarword', cursor: first.nextCursor });
+  assert.equal(mismatched.code, 'functions/invalid-argument');
+});

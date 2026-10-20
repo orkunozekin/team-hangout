@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import type { ConversationPage, ConversationScopeType, StaffNote } from "../../shared/conversations";
+import { CONVERSATION_REACTIONS, type ConversationMessage, type ConversationPage, type ConversationScopeType, type ConversationSearchPage, type StaffNote } from "../../shared/conversations";
 import type { BrowserServices } from "./firebase";
 import { message } from "./errors";
 
@@ -15,6 +15,12 @@ export function Conversations({ services, orgId }: { services: BrowserServices; 
   const [noteCursor, setNoteCursor] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState("");
   const [note, setNote] = useState("");
+  const [editing, setEditing] = useState<ConversationMessage | null>(null);
+  const [replacement, setReplacement] = useState("");
+  const [removal, setRemoval] = useState<{ id: string; reason: string } | null>(null);
+  const [query, setQuery] = useState("");
+  const [search, setSearch] = useState<ConversationSearchPage | null>(null);
+  const [searched, setSearched] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const load = useCallback(async () => {
@@ -78,6 +84,61 @@ export function Conversations({ services, orgId }: { services: BrowserServices; 
       setError(message(caught));
     }
   }
+  async function saveEdit(event: FormEvent) {
+    event.preventDefault();
+    if (!editing || !scopeId.trim()) return;
+    setError("");
+    try {
+      await services.call("editConversationMessage", {
+        requestId: requestId(), orgId, scopeType, scopeId: scopeId.trim(), messageId: editing.id, text: replacement.trim(), expectedRevision: editing.revision ?? 0,
+      });
+      setEditing(null);
+      setReplacement("");
+      await load();
+    } catch (caught) {
+      setError(message(caught));
+    }
+  }
+  async function remove(event: FormEvent) {
+    event.preventDefault();
+    if (!removal || !scopeId.trim()) return;
+    setError("");
+    try {
+      await services.call("moderateConversationMessage", {
+        requestId: requestId(), orgId, scopeType, scopeId: scopeId.trim(), messageId: removal.id, reason: removal.reason.trim(),
+      });
+      setRemoval(null);
+      await load();
+    } catch (caught) {
+      setError(message(caught));
+    }
+  }
+  async function react(item: ConversationMessage, emoji: string) {
+    if (!scopeId.trim()) return;
+    setError("");
+    try {
+      await services.call("reactToConversationMessage", {
+        requestId: requestId(), orgId, scopeType, scopeId: scopeId.trim(), messageId: item.id, emoji, expectedRevision: item.revision ?? 0,
+      });
+      await load();
+    } catch (caught) {
+      setError(message(caught));
+    }
+  }
+  async function find(event?: FormEvent, cursor?: string | null) {
+    event?.preventDefault();
+    if (!scopeId.trim() || !query.trim()) return;
+    setError("");
+    try {
+      const next = await services.call("searchConversationMessages", {
+        orgId, scopeType, scopeId: scopeId.trim(), text: query.trim(), ...(cursor ? { cursor } : {}),
+      });
+      setSearch(cursor && search ? { ...next, items: [...search.items, ...next.items.filter((item) => !search.items.some((row) => row.id === item.id))] } : next);
+      setSearched(true);
+    } catch (caught) {
+      setError(message(caught));
+    }
+  }
   const youthClosed = channel?.mode === "youth" && channel.youthPosting === "closed";
   return <section className="conversations">
     <div className="page-heading"><div><p className="eyebrow">Organization</p><h1>Conversations and staff notes</h1></div></div>
@@ -102,7 +163,29 @@ export function Conversations({ services, orgId }: { services: BrowserServices; 
     <div className="conversation-columns">
       <section aria-labelledby="household-channel">
         <h2 id="household-channel">Household channel</h2>
-        <ul>{messages.map((item) => <li key={item.id}>{item.tombstoned ? "Message removed by a moderator" : item.body}{item.pinned ? " · Pinned" : ""}</li>)}</ul>
+        <ul>{messages.map((item) => <li key={item.id}>
+          <p>{item.tombstoned ? "Message removed by a moderator" : item.body}{item.pinned ? " · Pinned" : ""}{item.editedAt ? " · Edited" : ""}</p>
+          {item.tombstoned ? null : <div>
+            {CONVERSATION_REACTIONS.map((choice) => {
+              const reaction = item.reactions?.find((row) => row.emoji === choice.emoji);
+              return <button key={choice.code} type="button" aria-pressed={reaction?.mine === true} onClick={() => void react(item, choice.emoji)}>React with {choice.emoji} {reaction?.count ?? 0}</button>;
+            })}
+            {item.mine ? <button type="button" onClick={() => { setEditing(item); setReplacement(item.body ?? ""); }}>Edit message</button> : null}
+            <button type="button" onClick={() => setRemoval({ id: item.id, reason: "" })}>Remove message</button>
+          </div>}
+          {editing?.id === item.id ? <form onSubmit={(event) => void saveEdit(event)}>
+            <label>Replacement text
+              <textarea value={replacement} onChange={(event) => setReplacement(event.target.value)} />
+            </label>
+            <button type="submit">Save edit</button>
+          </form> : null}
+          {removal?.id === item.id ? <form onSubmit={(event) => void remove(event)}>
+            <label>Removal reason
+              <input value={removal.reason} onChange={(event) => setRemoval({ id: item.id, reason: event.target.value })} />
+            </label>
+            <button type="submit">Confirm removal</button>
+          </form> : null}
+        </li>)}</ul>
         {!messages.length && !error ? <p>No household messages.</p> : null}
         {messageCursor ? <button type="button" onClick={() => void older("messages")}>Load older messages</button> : null}
         <form onSubmit={(event) => void post(event, "announcement")}>
@@ -111,6 +194,20 @@ export function Conversations({ services, orgId }: { services: BrowserServices; 
           </label>
           <button type="submit">Post announcement</button>
         </form>
+        <form onSubmit={(event) => void find(event)}>
+          <h2 id="message-search">Search messages</h2>
+          <p>Search covers this household channel only. Staff notes are not included.</p>
+          <label>Search words
+            <input value={query} onChange={(event) => setQuery(event.target.value)} />
+          </label>
+          <button type="submit">Search messages</button>
+        </form>
+        <section aria-labelledby="message-search">
+          {search?.partial ? <p>More matches may remain. Continue the search.</p> : null}
+          <ul>{search?.items.map((item) => <li key={item.id}>{item.body}{item.editedAt ? " · Edited" : ""}</li>)}</ul>
+          {searched && search && !search.items.length ? <p>No matching messages.</p> : null}
+          {search?.nextCursor ? <button type="button" onClick={() => void find(undefined, search.nextCursor)}>Continue search</button> : null}
+        </section>
       </section>
       <section aria-labelledby="staff-notes">
         <h2 id="staff-notes">Staff notes</h2>

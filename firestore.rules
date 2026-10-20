@@ -121,7 +121,16 @@ service cloud.firestore {
       allow read, write: if false;
       match /messages/{messageId} {
         allow read, write: if false;
+        match /reactions/{reactionId} {
+          allow read, write: if false;
+        }
+        match /edits/{editId} {
+          allow read, write: if false;
+        }
       }
+    }
+    match /organizations/{orgId}/messageSearch/{messageId} {
+      allow read, write: if false;
     }
     match /organizations/{orgId}/staffNotes/{scopeKey} {
       allow read, write: if false;
