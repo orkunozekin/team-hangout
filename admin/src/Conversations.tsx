@@ -23,6 +23,8 @@ export function Conversations({ services, orgId }: { services: BrowserServices; 
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [transport, setTransport] = useState("");
+  const fileInput = useRef<HTMLInputElement>(null);
   const searchGeneration = useRef(0);
   const clearSearch = useCallback(() => {
     searchGeneration.current += 1;
@@ -153,7 +155,51 @@ export function Conversations({ services, orgId }: { services: BrowserServices; 
       setError(message(caught));
     }
   }
+  async function uploadFile(event: FormEvent) {
+    event.preventDefault();
+    const file = fileInput.current?.files?.[0];
+    if (!file || !scopeId.trim()) return;
+    setError("");
+    setTransport("");
+    try {
+      const grant = await services.call("createAttachmentUpload", {
+        requestId: requestId(), orgId, scopeType, scopeId: scopeId.trim(), fileName: file.name, declaredBytes: file.size,
+      });
+      const put = await fetch(grant.uploadUrl, {
+        method: "PUT",
+        headers: { Authorization: `Attachment ${grant.token}`, "Content-Type": "application/octet-stream" },
+        body: file,
+      });
+      if (!put.ok) {
+        setError(put.status === 410 ? "This upload expired. Choose the file again." : put.status === 413 ? "This file does not match the reserved upload." : "This file was not uploaded.");
+        return;
+      }
+      const done = await services.call("finalizeAttachment", {
+        requestId: requestId(), orgId, scopeType, scopeId: scopeId.trim(), attachmentId: grant.id,
+      });
+      const idToken = await services.auth.currentUser?.getIdToken();
+      const downloaded = await fetch(grant.uploadUrl, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${idToken ?? ""}`,
+          "X-Org-Id": orgId,
+          "X-Scope-Type": scopeType,
+          "X-Scope-Id": scopeId.trim(),
+          "X-Attachment-Id": grant.id,
+        },
+      });
+      const saved = new Uint8Array(await downloaded.arrayBuffer());
+      const source = new Uint8Array(await file.arrayBuffer());
+      const matched = downloaded.ok && saved.length === source.length && saved.every((byte, index) => byte === source[index]);
+      setTransport(done.state === "ready" && matched
+        ? `Ready · ${file.name} · ${done.detectedType} · ${done.byteLength} bytes. Download matched the uploaded file.`
+        : "This file was rejected.");
+    } catch (caught) {
+      setError(message(caught));
+    }
+  }
   const youthClosed = channel?.mode === "youth" && channel.youthPosting === "closed";
+  const attachmentsOpen = channel?.attachments === "enabled" && channel.canPost;
   return <section className="conversations">
     <div className="page-heading"><div><p className="eyebrow">Organization</p><h1>Conversations and staff notes</h1></div></div>
     <p>Household channels and staff notes are separate. A note is never posted into the channel.</p>
@@ -202,6 +248,15 @@ export function Conversations({ services, orgId }: { services: BrowserServices; 
         </li>)}</ul>
         {!messages.length && !error ? <p>No household messages.</p> : null}
         {messageCursor ? <button type="button" onClick={() => void older("messages")}>Load older messages</button> : null}
+        {attachmentsOpen ? <form onSubmit={(event) => void uploadFile(event)}>
+          <h2 id="attachment-transport">Development attachment</h2>
+          <p>JPEG, PNG, and PDF files up to 10 MB. The file is not part of the message, search, or staff notes.</p>
+          <label>Attachment file
+            <input ref={fileInput} type="file" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" />
+          </label>
+          <button type="submit">Upload attachment</button>
+          {transport ? <p role="status">{transport}</p> : null}
+        </form> : null}
         <form onSubmit={(event) => void post(event, "announcement")}>
           <label>Announcement
             <textarea value={announcement} onChange={(event) => setAnnouncement(event.target.value)} />

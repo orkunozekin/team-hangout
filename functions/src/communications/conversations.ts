@@ -25,7 +25,9 @@ type Decision = {
   programId: string | null;
   mode: "youth" | "adult";
   conversationId: string;
+  attachments: boolean;
 };
+export type ConversationDecision = Decision;
 
 function scopeType(value: unknown): ScopeType {
   if (value === "direct") {
@@ -346,6 +348,7 @@ async function authorize(
       programId: null,
       mode: "adult",
       conversationId,
+      attachments: organization.features?.attachments === true,
     };
   }
   if (scope === "division") {
@@ -369,6 +372,7 @@ async function authorize(
       programId,
       mode: "adult" as const,
       conversationId,
+      attachments: organization.features?.attachments === true,
     };
   }
   let programId: string | null = null;
@@ -401,7 +405,18 @@ async function authorize(
     programId,
     mode: "youth" as const,
     conversationId,
+    attachments: organization.features?.attachments === true,
   };
+}
+
+export async function authorizeConversation(
+  tx: Transaction,
+  orgId: string,
+  scope: ScopeType,
+  scopeId: string,
+  uid: string,
+): Promise<Decision> {
+  return authorize(tx, orgId, scope, scopeId, uid);
 }
 
 async function orgHouseholdRead(tx: Transaction, orgId: string, uid: string) {
@@ -519,6 +534,8 @@ export const listConversationMessages = readCommand((data) => {
     pinnedIds: [...pinned],
     items: page.map((doc) => projectMessage(doc, pinned, uid, mine.get(doc.id) ?? new Set())),
     nextCursor: rows.size > page.length && page.length ? sequenceCursor(page[page.length - 1].data().sequence, page[page.length - 1].id) : null,
+    attachments: decision.attachments ? "enabled" : "disabled",
+    canPost: decision.post,
   };
 });
 

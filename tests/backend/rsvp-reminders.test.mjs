@@ -13,7 +13,8 @@ const { fingerprint } = require('./lib/operations/requests.js');
 requireEmulators();
 let admin, db; const apps = {};
 const call = async (uid, name, data = {}) => (await httpsCallable(getFunctions(apps[uid]), name)(data)).data;
-const now = Date.parse('2026-10-20T12:00:00.000Z');
+// Expansion rechecks eligibility with the live clock, so this instant has to stay ahead of that window.
+const now = Date.now();
 const HOUR = 60 * 60 * 1000;
 const meta = { schemaVersion: 2, revision: 1, status: 'active', createdAt: Timestamp.now(), updatedAt: Timestamp.now() };
 const reminders = require('./lib/notifications/reminders.js');

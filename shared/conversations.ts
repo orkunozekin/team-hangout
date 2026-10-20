@@ -46,6 +46,8 @@ export type ConversationPage = {
   pinnedIds: string[];
   items: ConversationMessage[];
   nextCursor: string | null;
+  attachments: "enabled" | "disabled";
+  canPost: boolean;
 };
 
 export type StaffNote = {

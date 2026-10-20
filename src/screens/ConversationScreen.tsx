@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { createAttachmentUpload, finalizeAttachment } from '../firebase/attachments';
 import { editConversationMessage, listConversationMessages, postConversationMessage, reactToConversationMessage, searchConversationMessages } from '../firebase/conversations';
+import { pickConversationAttachment, uploadConversationFile } from '../lib/attachmentTransport';
 import { CONVERSATION_REACTIONS, type ConversationMessage, type ConversationPage, type ConversationScopeType, type ConversationSearchPage } from '../../shared/conversations';
 import { EmptyState, PrimaryButton, Screen, SecondaryButton, Subtitle, Title } from '../components/ui';
 import { colors, radius, spacing, type } from '../theme/theme';
@@ -18,6 +20,8 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState<ConversationSearchPage | null>(null);
   const [searching, setSearching] = useState(false);
+  const [transport, setTransport] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
   const searchToken = useRef(0);
   async function refresh(initial = false) {
     if (initial) { setLoading(true); setPage(null); setItems([]); setDenied(false); }
@@ -49,7 +53,7 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
       setError('Older messages could not be loaded. Try again.');
     } finally { setLoadingOlder(false); }
   }
-  useEffect(() => { searchToken.current += 1; setSearch(null); setSearching(false); void refresh(true); }, [orgId, scopeType, scopeId]);
+  useEffect(() => { searchToken.current += 1; setSearch(null); setSearching(false); setTransport(null); void refresh(true); }, [orgId, scopeType, scopeId]);
   async function send() {
     if (!draft.trim()) return;
     setSaving(true); setError(null);
@@ -89,6 +93,19 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
       if (token === searchToken.current) setSearching(false);
     }
   }
+  async function chooseFile() {
+    setUploading(true); setError(null);
+    try {
+      const picked = await pickConversationAttachment();
+      if (!picked) return;
+      const grant = await createAttachmentUpload({ orgId, scopeType, scopeId, fileName: picked.name, declaredBytes: picked.size });
+      await uploadConversationFile(picked.file, grant);
+      const done = await finalizeAttachment({ orgId, scopeType, scopeId, attachmentId: grant.id });
+      setTransport(done.state === 'ready' ? `Ready · ${picked.name} · ${done.detectedType} · ${done.byteLength} bytes` : 'This file was rejected.');
+    } catch (caught) {
+      setTransport(caught instanceof Error && caught.message ? caught.message : 'This file was not uploaded.');
+    } finally { setUploading(false); }
+  }
   const youthClosed = page?.mode === 'youth' && page.youthPosting === 'closed';
   const title = scopeType === 'event' ? 'Event conversation' : scopeType === 'team' ? 'Team conversation' : scopeType === 'division' ? 'Division announcements' : 'Organization announcements';
   return <Screen><ScrollView contentContainerStyle={styles.list}>
@@ -108,6 +125,8 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
         {item.mine && !item.tombstoned ? <SecondaryButton label="Edit message" onPress={() => { setEditing(item); setDraft(item.body ?? ''); }} /> : null}
       </View>)}
       {page?.nextCursor ? <SecondaryButton label={loadingOlder ? 'Loading older messages' : 'Load older messages'} disabled={loadingOlder} onPress={() => void older()} /> : null}
+      {page?.attachments === 'enabled' && page.canPost ? <SecondaryButton label={uploading ? 'Uploading file' : 'Choose a JPEG, PNG, or PDF'} disabled={uploading} onPress={() => void chooseFile()} /> : null}
+      {transport ? <Text accessibilityRole="text">{transport}</Text> : null}
       <TextInput accessibilityLabel={editing ? 'Replacement text' : 'Message'} value={draft} onChangeText={setDraft} style={styles.input} />
       <PrimaryButton label={editing ? 'Save edit' : 'Send message'} loading={saving} onPress={() => void send()} />
       {editing ? <SecondaryButton label="Cancel edit" onPress={() => { setEditing(null); setDraft(''); }} /> : null}

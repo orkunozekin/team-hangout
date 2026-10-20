@@ -46,6 +46,7 @@ test("staff can post a household announcement and a separate staff note", async 
   const notes = page.getByRole("region", { name: "Staff notes" });
   await expect(notes.getByText("Guardian phone is private")).toBeVisible();
   await expect(page.getByRole("region", { name: "Household channel" }).getByText("Guardian phone is private")).toHaveCount(0);
+  await expect(page.getByLabel("Attachment file")).toHaveCount(0);
   await capture(page, "conversations-and-staff-notes");
 });
 test("older household messages and staff notes stay reachable", async ({ page }) => {

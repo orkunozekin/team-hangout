@@ -2,12 +2,16 @@ import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import ConversationScreen from '../ConversationScreen';
 import * as api from '../../firebase/conversations';
+import * as attachments from '../../firebase/attachments';
+import * as transport from '../../lib/attachmentTransport';
 
 jest.mock('firebase/firestore', () => ({ collection: jest.fn(), doc: jest.fn(() => ({ id: 'request-id' })) }));
 jest.mock('firebase/functions', () => ({ httpsCallable: jest.fn() }));
 jest.mock('../../firebase/config', () => ({ db: {}, functions: {} }));
 jest.mock('../../firebase/commands', () => ({ runCommand: jest.fn() }));
 jest.mock('../../firebase/conversations');
+jest.mock('../../firebase/attachments', () => ({ createAttachmentUpload: jest.fn(), finalizeAttachment: jest.fn() }));
+jest.mock('../../lib/attachmentTransport', () => ({ pickConversationAttachment: jest.fn(), uploadConversationFile: jest.fn() }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 afterEach(cleanup);
 
@@ -23,6 +27,7 @@ test('shows the group channel and the closed youth-posting policy', async () => 
   expect(screen.getByText('Pinned')).toBeTruthy();
   expect(screen.getByText(/Youth posting is closed/)).toBeTruthy();
   expect(screen.queryByText('Guardian phone is private')).toBeNull();
+  expect(screen.queryByText('Choose a JPEG, PNG, or PDF')).toBeNull();
 });
 
 test('names an event channel without treating it as a team conversation', async () => {
@@ -120,6 +125,23 @@ test('ignores a search that completes after the channel changes', async () => {
   resolveSearch({ items: [{ ...page.items[0], body: 'Practice moved to the south field' }], nextCursor: null, partial: false });
   await expect(screen.findByText('Practice moved to the south field', {}, { timeout: 400 })).rejects.toThrow();
   expect(screen.getByText('No messages yet.')).toBeTruthy();
+});
+
+test('uploads a picked file only when the attachment spike is enabled for a poster', async () => {
+  const file = { uri: 'file:///cache/photo.jpg', size: 128 };
+  (api.listConversationMessages as jest.Mock).mockResolvedValue({ ...page, attachments: 'enabled', canPost: true, youthPosting: 'open' });
+  (transport.pickConversationAttachment as jest.Mock).mockResolvedValue({ file, name: 'photo.jpg', size: 128 });
+  (attachments.createAttachmentUpload as jest.Mock).mockResolvedValue({ id: 'file-1', uploadUrl: 'https://example.test/upload', token: 'grant', expiresAt: '2099-01-01T00:00:00.000Z', maxBytes: 128, state: 'pending' });
+  (transport.uploadConversationFile as jest.Mock).mockResolvedValue(undefined);
+  (attachments.finalizeAttachment as jest.Mock).mockResolvedValue({ id: 'file-1', state: 'ready', detectedType: 'image/jpeg', byteLength: 128, sha256: 'abc', fileName: 'photo.jpg', scan: { scanner: 'fake', verdict: 'clean' }, rejectionCode: null });
+  await render(<ConversationScreen orgId="org" scopeType="team" scopeId="team" />);
+  await fireEvent.press(await screen.findByText('Choose a JPEG, PNG, or PDF'));
+  expect(await screen.findByText('Ready · photo.jpg · image/jpeg · 128 bytes')).toBeTruthy();
+  expect(attachments.createAttachmentUpload).toHaveBeenCalledWith({ orgId: 'org', scopeType: 'team', scopeId: 'team', fileName: 'photo.jpg', declaredBytes: 128 });
+  expect(transport.uploadConversationFile).toHaveBeenCalledWith(file, expect.objectContaining({ token: 'grant' }));
+  (transport.pickConversationAttachment as jest.Mock).mockRejectedValueOnce(new Error('This file is larger than 10 MB.'));
+  await fireEvent.press(screen.getByText('Choose a JPEG, PNG, or PDF'));
+  expect(await screen.findByText('This file is larger than 10 MB.')).toBeTruthy();
 });
 
 test('keeps the closed-policy banner when the channel has no messages yet', async () => {
