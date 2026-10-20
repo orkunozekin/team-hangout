@@ -2,6 +2,7 @@ import { FieldPath, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { command, Data, id, invalid, keys } from '../commandSupport';
 import { readCommand } from '../participants/policy';
+import { criticalUpdateRef } from './issues';
 import { authorizeNotificationRows, hasNotificationAccess, notificationAccessSourceKeys } from './worker';
 
 const MAX_PAGE_ACCESS_SOURCES = 100;
@@ -19,7 +20,8 @@ export const listNotifications = readCommand(data => { keys(data, ['pageSize', '
   if (!Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 50) throw new HttpsError('invalid-argument', 'pageSize must be 1 through 50.');
   return { pageSize, cursor: data.cursor == null ? null : id(data.cursor, 'cursor') }; }, async (tx, data, uid) => {
   let query = getFirestore().collection(`users/${uid}/notifications`).orderBy('createdAt', 'desc').orderBy(FieldPath.documentId(), 'desc').limit(data.pageSize + 1);
-  if (data.cursor) { const cursor = await tx.get(getFirestore().doc(`users/${uid}/notifications/${data.cursor}`)); if (!cursor.exists) throw new HttpsError('invalid-argument', 'Invalid cursor.'); query = query.startAfter(cursor); }
+  const cursor = data.cursor ? await tx.get(getFirestore().doc(`users/${uid}/notifications/${data.cursor}`)) : null;
+  if (data.cursor) { if (!cursor?.exists) throw new HttpsError('invalid-argument', 'Invalid cursor.'); query = query.startAfter(cursor!); }
   const rows = await tx.get(query), items: Data[] = [];
   const pageDocs: FirebaseFirestore.QueryDocumentSnapshot[] = [], sourceKeys = new Set<string>();
   for (const doc of rows.docs.slice(0, data.pageSize)) {
@@ -30,15 +32,26 @@ export const listNotifications = readCommand(data => { keys(data, ['pageSize', '
     added.forEach(key => sourceKeys.add(key)); pageDocs.push(doc);
   }
   const access = await authorizeNotificationRows(tx, uid, pageDocs.map(doc => ({ orgId: doc.data().orgId, accessSources: doc.data().accessSources })));
-  const revoked: FirebaseFirestore.DocumentReference[] = [];
+  const revoked: FirebaseFirestore.QueryDocumentSnapshot[] = [];
   const boundary = rows.size > pageDocs.length ? pageDocs[pageDocs.length - 1] : null;
   for (const [index, doc] of pageDocs.entries()) {
     const row = doc.data();
-    if (!access[index]) { if (doc.id !== boundary?.id) revoked.push(doc.ref); continue; }
+    if (!access[index]) { if (doc.id !== boundary?.id) revoked.push(doc); continue; }
     items.push({ id: doc.id, title: row.title, body: row.body, critical: row.critical, sourceType: row.sourceType, sourceId: row.sourceId,
       sourceRevision: row.sourceRevision, createdAt: row.createdAt, readAt: row.readAt, acknowledgedAt: row.acknowledgedAt, deliveryStatus: row.deliveryStatus });
   }
-  revoked.forEach(ref => tx.delete(ref));
+  const cursorRow = cursor?.data();
+  const cursorAllowed = cursorRow
+    ? (await authorizeNotificationRows(tx, uid, [{ orgId: cursorRow.orgId, accessSources: cursorRow.accessSources }]))[0]
+    : true;
+  revoked.forEach(doc => {
+    tx.delete(doc.ref);
+    if (typeof doc.data().orgId === 'string') tx.delete(criticalUpdateRef(doc.data().orgId, doc.id));
+  });
+  if (cursor?.exists && !cursorAllowed) {
+    tx.delete(cursor.ref);
+    if (typeof cursorRow?.orgId === 'string') tx.delete(criticalUpdateRef(cursorRow.orgId, cursor.id));
+  }
   return { items, unreadCount: items.filter(row => row.readAt == null).length, nextCursor: boundary?.id ?? null };
 });
 
@@ -105,6 +118,10 @@ export const markNotificationRead = command('markNotificationRead', normalizeMut
 });
 export const acknowledgeCriticalUpdate = command('acknowledgeCriticalUpdate', normalizeMutation, async (tx, data, uid, _actor, replay) => {
   const { ref, row } = await load(tx, uid, data.notificationId); if (row.sourceRevision !== data.sourceRevision) stale(); if (row.critical !== true) throw new HttpsError('failed-precondition', 'Only critical updates require acknowledgement.'); if (replay) return replay;
+  const criticalRef = typeof row.orgId === 'string' ? criticalUpdateRef(row.orgId, ref.id) : null;
+  const critical = criticalRef ? await tx.get(criticalRef) : null;
   const acknowledgedAt = row.acknowledgedAt ?? Timestamp.now(), readAt = row.readAt ?? acknowledgedAt;
-  tx.update(ref, { readAt, acknowledgedAt, updatedAt: Timestamp.now() }); return { id: ref.id, readAt, acknowledgedAt };
+  tx.update(ref, { readAt, acknowledgedAt, updatedAt: Timestamp.now() });
+  if (critical?.exists) tx.update(criticalRef!, { readAt, acknowledgedAt, updatedAt: Timestamp.now() });
+  return { id: ref.id, readAt, acknowledgedAt };
 });

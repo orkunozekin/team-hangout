@@ -17,8 +17,8 @@ function metadata(projectId) {
 test('staging discovery bounds every export and never loads the email provider worker', () => {
   const result = metadata('team-hangout-staging');
   assert.equal(result.mailLoaded, false);
-  for (const name of ['previewRecurrenceDraft', 'saveRecurrenceDraft', 'getRecurrenceDraft', 'generateScheduleDraft', 'saveScheduleDraft', 'validateScheduleDraft', 'getScheduleDraft', 'publishScheduleDraft', 'previewFacilityClosure', 'applyFacilityClosure', 'getFacilityClosureOperation', 'advanceFacilityClosure', 'previewEventMakeup', 'confirmEventMakeup', 'getEventAvailability', 'respondToEvent', 'setEventRsvpDeadline', 'getParticipantCheckIn', 'checkInParticipant', 'setEventCheckInPolicy', 'listNotifications', 'markNotificationRead', 'acknowledgeCriticalUpdate', 'registerPushDevice', 'revokePushDevice', 'resolveNotificationTarget', 'resumeNotificationInbox']) assert.ok(result.endpoints.some(e => e.name === name));
-  assert.equal(result.endpoints.length, 105);
+  for (const name of ['previewRecurrenceDraft', 'saveRecurrenceDraft', 'getRecurrenceDraft', 'generateScheduleDraft', 'saveScheduleDraft', 'validateScheduleDraft', 'getScheduleDraft', 'publishScheduleDraft', 'previewFacilityClosure', 'applyFacilityClosure', 'getFacilityClosureOperation', 'advanceFacilityClosure', 'previewEventMakeup', 'confirmEventMakeup', 'getEventAvailability', 'respondToEvent', 'setEventRsvpDeadline', 'getParticipantCheckIn', 'checkInParticipant', 'setEventCheckInPolicy', 'listNotifications', 'markNotificationRead', 'acknowledgeCriticalUpdate', 'registerPushDevice', 'revokePushDevice', 'resolveNotificationTarget', 'resumeNotificationInbox', 'listDeliveryDiagnostics', 'resumeRsvpReminders']) assert.ok(result.endpoints.some(e => e.name === name));
+  assert.equal(result.endpoints.length, 107);
   assert.equal(result.endpoints.some(e => e.name === 'resumeEssentialEmail'), false);
   for (const endpoint of result.endpoints) {
     assert.equal(endpoint.max, 2, endpoint.name);
@@ -31,7 +31,7 @@ test('other project discovery keeps the email worker and existing scaling defaul
   for (const project of ['demo-team-hangout', 'non-staging-project']) {
     const result = metadata(project);
     assert.equal(result.mailLoaded, true);
-    assert.equal(result.endpoints.length, 106);
+    assert.equal(result.endpoints.length, 108);
     assert.ok(result.endpoints.some(e => e.name === 'resumeEssentialEmail'));
     const agenda = result.endpoints.find(e => e.name === 'listHouseholdAgenda');
     assert.equal(agenda.max, null);

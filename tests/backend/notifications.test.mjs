@@ -329,11 +329,14 @@ test('a revoked row at the page boundary leaves a usable cursor for older notifi
   await older.set({ ...meta, id: older.id, orgId: 'notify-org', recipientUid: 'notify-self', title: 'Older', body: 'Visible', critical: false,
     sourceType: 'event', sourceId: 'event-older', sourceRevision: 1, createdAt: Timestamp.fromMillis(9_999_999_998_000), readAt: null, acknowledgedAt: null,
     deliveryStatus: 'queued', accessSources: [{ kind: 'household', teamId: 'notify-team', participantId: 'notify-child' }] });
+  await db.doc('organizations/notify-org/criticalUpdates/cursor-revoked').set({ ...meta, orgId: 'notify-org', recipientUid: 'notify-self', title: 'Revoked', acknowledgedAt: null });
   const first = await call('notify-self', 'listNotifications', { pageSize: 1 });
   assert.deepEqual(first.items, []); assert.equal(first.nextCursor, revoked.id); assert.equal((await revoked.get()).exists, true);
   const second = await call('notify-self', 'listNotifications', { pageSize: 1, cursor: first.nextCursor });
   assert.equal(second.items[0].id, older.id);
-  await Promise.all([revoked.delete(), older.delete()]);
+  assert.equal((await revoked.get()).exists, false);
+  assert.equal((await db.doc('organizations/notify-org/criticalUpdates/cursor-revoked').get()).exists, false);
+  await older.delete();
 });
 
 test('inbox pages stop at a bounded union of access sources without skipping older rows', async () => {
@@ -349,5 +352,5 @@ test('inbox pages stop at a bounded union of access sources without skipping old
   assert.deepEqual(first.items, []); assert.equal(first.nextCursor, refs[1].id);
   const second = await call('notify-outsider', 'listNotifications', { pageSize: 50, cursor: first.nextCursor });
   assert.deepEqual(second.items, []); assert.equal(second.nextCursor, null);
-  await Promise.all(refs.map(ref => ref.delete()));
+  for (const ref of refs) assert.equal((await ref.get()).exists, false);
 });

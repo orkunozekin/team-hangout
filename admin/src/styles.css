@@ -745,3 +745,10 @@ button { overflow-wrap: anywhere; }
 
 .closures label:has(input[type="checkbox"]) { display: flex; flex-direction: row; align-items: center; gap: 12px; min-height: 44px; }
 .closures input[type="checkbox"] { width: 20px; height: 20px; flex: 0 0 20px; }
+
+.diagnostics .page-heading { flex-wrap: wrap; align-items: flex-start; }
+.diagnostics-list { display: grid; gap: 12px; margin: 12px 0 28px; }
+.diagnostics-card { border: 1px solid #d5e2dc; border-radius: 12px; padding: 14px 16px; background: white; }
+.diagnostics-card h3 { margin: 0 0 6px; font-size: 1.05rem; }
+.diagnostics-card p { margin: 0 0 6px; }
+.diagnostics button { min-height: 44px; }

@@ -7,6 +7,8 @@ import { fingerprint } from '../operations/requests';
 import { accountAvailable } from '../accountAccess';
 import { essentialEmailApiKey } from '../email/transport';
 import { expoPushProvider, expoReceiptProvider, notificationEmailProvider, ProviderResult, ReceiptProvider } from './providers';
+import { recheckExplicitRecipients } from './audience';
+import { criticalUpdateRef, recordCriticalUpdate, recordDeliveryIssue } from './issues';
 
 const LEASE_MS = 60_000;
 const MAX_ATTEMPTS = 5;
@@ -26,7 +28,7 @@ function safeCopy(intent: Data) {
   const labels: Record<string, string> = {
     'event:edit': 'Event updated', 'event:postpone': 'Event postponed', 'event:cancel': 'Event cancelled',
     'event:reschedule': 'Schedule changed', 'event:complete': 'Event completed', eventPostponed: 'Event postponed',
-    facilityClosure: 'Facility closed', schedulePublished: 'Schedule published',
+    facilityClosure: 'Facility closed', schedulePublished: 'Schedule published', rsvpReminder: 'RSVP reminder',
   };
   return { title: labels[intent.templateKey] ?? 'Team update', body: 'Open Team Hangout for current details.' };
 }
@@ -39,6 +41,11 @@ function add(map: Map<string, AccessSource[]>, uid: unknown, source: AccessSourc
 }
 
 async function resolveRecipients(tx: Transaction, intent: Data) {
+  if (intent.audience?.mode === 'explicit') {
+    const recipients = new Map<string, AccessSource[]>();
+    for (const recipient of await recheckExplicitRecipients(tx, intent)) recipients.set(recipient.uid, recipient.accessSources);
+    return recipients;
+  }
   const db = getFirestore(); const recipients = new Map<string, AccessSource[]>();
   let teamIds = intent.audience?.teamIds ?? intent.audienceScope?.teamIds ?? [];
   if ((!Array.isArray(teamIds) || !teamIds.length) && intent.sourceType === 'closure' && intent.operationId) {
@@ -204,14 +211,18 @@ export async function expandNotificationIntent(orgId: string, intentId: string) 
         planned.push({ channel: 'email', recipientEmail: email.toLowerCase(), deliveryId: fingerprint({ orgId, intentId, uid, channel: 'email' }) });
       }
       plannedDeliveryCount += planned.length;
-      if (recipients.size + plannedDeliveryCount + 1 > 450) throw new Error('NOTIFICATION_DELIVERY_FANOUT_TOO_LARGE');
+      if (recipients.size + plannedDeliveryCount + (intent.critical === true ? index + 1 : 0) + 1 > 450) throw new Error('NOTIFICATION_DELIVERY_FANOUT_TOO_LARGE');
       tx.set(db.doc(`users/${uid}/notifications/${notificationId}`), { schemaVersion: 2, id: notificationId, orgId, intentId, recipientUid: uid,
         sourceType: intent.sourceType, sourceId: intent.sourceId, sourceRevision: intent.sourceRevision, templateKey: intent.templateKey,
         critical: intent.critical === true, ...copy, accessSources, deliveryIds: planned.map(row => row.deliveryId), deliveryStatus: planned.length ? 'queued' : 'inAppOnly', readAt: null, acknowledgedAt: null,
-        createdAt: intent.createdAt ?? now, updatedAt: now });
+        programId: intent.programId ?? null, createdAt: intent.createdAt ?? now, updatedAt: now });
+      if (intent.critical === true) recordCriticalUpdate(tx, orgId, notificationId, { recipientUid: uid, title: copy.title,
+        sourceType: intent.sourceType, sourceId: intent.sourceId, sourceRevision: intent.sourceRevision, templateKey: intent.templateKey,
+        programId: intent.programId ?? null, createdAt: intent.createdAt ?? now });
       for (const delivery of planned) tx.set(db.doc(`notificationDeliveries/${delivery.deliveryId}`), { schemaVersion: 2, id: delivery.deliveryId,
         orgId, intentId, notificationId, recipientUid: uid, ...copy, ...delivery, status: 'queued', attemptCount: 0, nextAttemptAt: now,
-        accessSources, sourceRevision: intent.sourceRevision, emailFallbackEligible: features.notificationEmailFallback === true && typeof email === 'string',
+        accessSources, sourceRevision: intent.sourceRevision, sourceType: intent.sourceType, sourceId: intent.sourceId, templateKey: intent.templateKey,
+        programId: intent.programId ?? null, emailFallbackEligible: features.notificationEmailFallback === true && typeof email === 'string',
         ...(typeof email === 'string' ? { recipientEmail: email.toLowerCase() } : {}), lease: null, leaseUntil: null,
         providerMessageId: null, failureCode: null, createdAt: now, updatedAt: now });
     }
@@ -231,6 +242,7 @@ async function finish(deliveryId: string, lease: string, status: string, patch: 
     const row = (await tx.get(ref)).data(); if (!row || row.status !== 'sending' || row.lease !== lease) return;
     const notification = await tx.get(db.doc(`users/${row.recipientUid}/notifications/${row.notificationId}`));
     tx.update(ref, { status, ...patch, lease: null, leaseUntil: null, updatedAt: Timestamp.now() });
+    if (status === 'permanentFailure' || status === 'unknownOutcome') recordDeliveryIssue(tx, { ...row, id: row.id ?? deliveryId }, status, patch.failureCode ?? null);
     if (notification.exists) {
       const current = notification.data()?.deliveryStatus;
       const success = ['providerAccepted', 'providerReceiptOk'].includes(current);
@@ -271,6 +283,7 @@ async function finishPermanentWithCleanup(deliveryId: string, expectedStatus: 's
     tx.update(ref, { status: 'permanentFailure', failureCode, nextAttemptAt: null, nextReceiptAt: null,
       lease: null, leaseUntil: null, receiptLease: null, receiptLeaseUntil: null,
       ...(expectedStatus === 'providerAccepted' ? { receiptCheckedAt: now } : {}), updatedAt: now });
+    recordDeliveryIssue(tx, { ...row, id: row.id ?? deliveryId }, 'permanentFailure', failureCode);
     if (fallbackRef && fallbackId && !fallback?.exists) tx.create(fallbackRef, { ...row, id: fallbackId, deliveryId: fallbackId,
       channel: 'email', status: 'queued', attemptCount: 0, nextAttemptAt: now, nextReceiptAt: null,
       endpointId: null, endpointToken: null, endpointTokenFingerprint: null, providerMessageId: null, failureCode: null,
@@ -312,6 +325,7 @@ export async function processNotificationDelivery(orgId: string, deliveryId: str
     if (row.status === 'sending' && row.leaseUntil?.toMillis() <= now) {
       const notification = await tx.get(db.doc(`users/${row.recipientUid}/notifications/${row.notificationId}`));
       tx.update(ref, { status: 'unknownOutcome', failureCode: 'LEASE_EXPIRED', lease: null, leaseUntil: null, updatedAt: Timestamp.now() });
+      recordDeliveryIssue(tx, { ...row, id: row.id ?? deliveryId }, 'unknownOutcome', 'LEASE_EXPIRED');
       if (notification.exists) {
         const current = notification.data()?.deliveryStatus;
         tx.update(notification.ref, { [`deliveryStatuses.${row.channel ?? 'fake'}`]: 'unknownOutcome',
@@ -363,7 +377,9 @@ export async function processNotificationDelivery(orgId: string, deliveryId: str
   if (!authorized) {
     await db.runTransaction(async tx => { const current = (await tx.get(ref)).data(); if (current?.status !== 'sending' || current.lease !== lease) return;
       tx.update(ref, { status: 'permanentFailure', failureCode: 'ACCESS_REVOKED', lease: null, leaseUntil: null, updatedAt: Timestamp.now() });
-      tx.delete(db.doc(`users/${row.recipientUid}/notifications/${row.notificationId}`)); });
+      tx.delete(db.doc(`users/${row.recipientUid}/notifications/${row.notificationId}`));
+      recordDeliveryIssue(tx, { ...row, id: row.id ?? deliveryId }, 'permanentFailure', 'ACCESS_REVOKED');
+      if (typeof row.orgId === 'string' && typeof row.notificationId === 'string') tx.delete(criticalUpdateRef(row.orgId, row.notificationId)); });
     return 'revoked';
   }
   if (!gate.channelAvailable) {
@@ -433,6 +449,7 @@ export async function processPushReceipt(deliveryId: string, provider: ReceiptPr
       failureCode: 'RECEIPT_RETRY_LIMIT', receiptLease: null, receiptLeaseUntil: null, updatedAt: Timestamp.now() }
       : { receiptAttempts: attempts, nextReceiptAt: Timestamp.fromMillis(now + Math.min(3_600_000, 60_000 * 2 ** attempts)),
         failureCode: result.errorCode ?? 'RECEIPT_RETRY', receiptLease: null, receiptLeaseUntil: null, updatedAt: Timestamp.now() });
+    if (attempts >= 5) recordDeliveryIssue(tx, { ...current, id: current.id ?? deliveryId }, 'unknownOutcome', 'RECEIPT_RETRY_LIMIT');
     return true;
   });
   return !applied ? 'skipped' : attempts >= 5 ? 'unknownOutcome' : 'retryableFailure';

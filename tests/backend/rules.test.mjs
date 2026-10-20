@@ -73,6 +73,10 @@ test('client mutations cannot change authority or references, including for coac
     await assertFails(deleteDoc(doc(db, 'inviteCodes/AAAAAAAA')));
     await assertFails(getDocs(collection(db, 'inviteCodes')));
     await assertFails(getDocs(collection(db, 'commandRequests')));
+    await assertFails(getDoc(doc(db, 'organizations/org-a/rsvpReminders/event-a')));
+    await assertFails(getDoc(doc(db, 'organizations/org-a/deliveryIssues/issue-a')));
+    await assertFails(getDoc(doc(db, 'organizations/org-a/criticalUpdates/update-a')));
+    await assertFails(setDoc(doc(db, 'organizations/org-a/rsvpReminders/event-a'), { state: 'scheduled' }));
   }
 });
 test('profile field allowlists preserve server-owned authority and immutable identity', async () => {

@@ -113,5 +113,18 @@ service cloud.firestore {
       // Update Team Hangout: event writes now require revisioned callable commands.
       allow create, update, delete: if false;
     }
+
+    match /organizations/{orgId}/rsvpReminders/{reminderId} {
+      allow read, write: if false;
+    }
+    match /organizations/{orgId}/deliveryIssues/{issueId} {
+      allow read, write: if false;
+    }
+    match /organizations/{orgId}/criticalUpdates/{updateId} {
+      allow read, write: if false;
+    }
+    match /rsvpReminderScans/{scanId} {
+      allow read, write: if false;
+    }
   }
 }

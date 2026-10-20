@@ -11,6 +11,7 @@ import { checkRevision, denied, eventScope, hierarchy, staffScope, requireProgra
 import { storageFields, teamIds, v2Fields, validateStoredEvent, eventAudit } from '../organizations/events';
 import { readCommand, page } from '../participants/policy';
 import { readAgenda } from '../calendar/agenda';
+import { stageReminder } from '../notifications/reminders';
 
 
 // Reuse the existing live staff/coach/participant/guardian reader; navigation pointers grant nothing.
@@ -189,6 +190,9 @@ export async function lifecycleMutation(tx: Transaction, data: Data, uid: string
   validateStoredEvent({ ...event, publicationOperationId: null }, scope);
   if (replay) return replay;
   checkRevision(event, data.expectedRevision);
+  const [storedReminder, organization] = await tx.getAll(
+    db.doc(`organizations/${event.orgId}/rsvpReminders/${ref.id}`), db.doc(`organizations/${event.orgId}`));
+  const remindersEnabled = organization.data()?.features?.rsvpReminders === true && organization.data()?.status === 'active';
   if (!(await publishedEvent(tx, event))) throw new HttpsError('failed-precondition', 'Only committed published events can be changed.');
   if (event.status === 'completed' || event.status === 'cancelled'
     || (['postpone', 'complete'].includes(data.action) && event.status !== 'scheduled')) {
@@ -230,6 +234,7 @@ export async function lifecycleMutation(tx: Transaction, data: Data, uid: string
   tx.create(db.doc(`organizations/${event.orgId}/outbox/${fingerprint({ eventId: ref.id, revision: nextRevision, kind: data.action })}`), {
     schemaVersion: 2, orgId: event.orgId, sourceType: 'event', sourceId: ref.id, sourceRevision: nextRevision,
     templateKey: `event:${data.action}`, state: 'pending', critical: data.action !== 'edit', audience: { teamIds: event.teamIds },
-    createdAt: now, updatedAt: now, auditCorrelationId: `${ref.id}:${nextRevision}` });
+    programId: event.programId ?? null, createdAt: now, updatedAt: now, auditCorrelationId: `${ref.id}:${nextRevision}` });
+  stageReminder(tx, ref.id, { ...event, ...changes, revision: nextRevision }, storedReminder.data(), remindersEnabled, now.toMillis(), true);
   return { id: ref.id, revision: nextRevision };
 }
