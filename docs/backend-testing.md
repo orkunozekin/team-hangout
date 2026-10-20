@@ -111,3 +111,7 @@ Family detail history now allowlists schedule metadata and omits all freeform re
 ## RSVP reminders (P2.15)
 
 `tests/backend/rsvp-reminder-plan.test.mjs` is pure and does not need emulators. `tests/backend/rsvp-reminders.test.mjs` runs inside `yarn test:backend` and `yarn test:operations`. It covers a moved deadline, reschedule reconfirmation, a response before expansion, deduplicated guardians, disabled or unpublished or cancelled events, a queued reminder that must not expand after cancel, a moved deadline, flag off, or unpublish, a near deadline on an event outside the start horizon, email bounce, an expired push token, read versus acknowledgement, program-staff scope, removal of a critical projection that has no delivery, and account deletion of diagnostic rows. Direct client reads and writes of reminder jobs, delivery issues, and critical projections stay denied in `rules.test.mjs`. See `docs/rsvp-reminders.md`. No production flag or deployment is part of this step.
+
+## Conversations (P2.16)
+
+`tests/backend/conversations.test.mjs` runs inside `yarn test:backend` and `yarn test:operations`. It covers a closed youth channel, an approved policy, direct-message rejection, a revoked guardian, a removed roster member, a removed staff member, an unpublished event, staff-note isolation from the household channel and outbox, coach pinning, and staff tombstones. `rules.test.mjs` denies client reads and writes of conversations and staff notes. See `docs/conversations.md`.

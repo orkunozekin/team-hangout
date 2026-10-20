@@ -2,6 +2,16 @@
 
 Living list of flows that still need a real iOS simulator or Android device. This Linux cloud VM has no Mac, no iOS simulator, and no Android emulator. Update this file in the PR for each Phase 2 step.
 
+## P2.16 Scoped announcements and conversations
+
+- **PR:** on `codex/p2-16-conversations`
+- **Screen / flow:** Admin web workspace, Conversations and staff notes at `/organizations/{orgId}/conversations`. A team channel shows a youth-posting banner, a household announcement, and a separate staff note. Native `ConversationScreen` lists the same household channel and shows an unavailable state when the callable denies access.
+- **Reproduce:** Use the demo project `demo-team-hangout` and the admin emulator build. Organization `browser-conversations` (Cedar Conversations) has `features.conversations` and no youth policy. Sign in as `browser-conversations-owner@example.test` / `SyntheticPassword123!`. Open `/organizations/browser-conversations/conversations`, choose Team channel, enter scope id `browser-talk-team`, and open the channel. Post `Practice is at the north field`, then save the staff note `Guardian phone is private`.
+- **Expected:** The banner says youth posting is closed. The announcement appears only under Household channel. The private note appears only under Staff notes.
+- **Unverified platforms:** iOS and Android. No simulator or device was available. A later device pass should open `ConversationScreen` as a guardian before and after policy approval, and again after the guardian or roster row is revoked.
+- **Verified here:** Node 22. Playwright Chromium captured one 1440px desktop screenshot. `conversations.test.mjs` 5/5 and `ConversationScreen-test.tsx` 3/3. The screenshot was inspected: the banner, announcement, and staff note are in the sections described above.
+- **Risks:** The web capture is a staff session. It does not prove a guardian's native composer or a denied native screen on a device. The conversations flag stays off until an organization enables it.
+
 ## P2.15 Server RSVP reminders and staff diagnostics
 
 - **PR:** [#39](https://github.com/orkunozekin/team-hangout/pull/39) on `codex/p2-15-rsvp-reminders`

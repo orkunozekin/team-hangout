@@ -117,6 +117,18 @@ service cloud.firestore {
     match /organizations/{orgId}/rsvpReminders/{reminderId} {
       allow read, write: if false;
     }
+    match /organizations/{orgId}/conversations/{conversationId} {
+      allow read, write: if false;
+      match /messages/{messageId} {
+        allow read, write: if false;
+      }
+    }
+    match /organizations/{orgId}/staffNotes/{scopeKey} {
+      allow read, write: if false;
+      match /entries/{noteId} {
+        allow read, write: if false;
+      }
+    }
     match /organizations/{orgId}/deliveryIssues/{issueId} {
       allow read, write: if false;
     }
