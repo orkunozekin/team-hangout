@@ -58,6 +58,8 @@ export function mapTeamDoc(
     id,
     schemaVersion: typeof data.schemaVersion === 'number' ? data.schemaVersion : undefined,
     timeZone: typeof data.timeZone === 'string' ? data.timeZone : undefined,
+    ...(typeof data.orgId === 'string' ? { orgId: data.orgId } : {}),
+    ...(typeof data.divisionId === 'string' ? { divisionId: data.divisionId } : {}),
     name: String(data.name ?? ''),
     sport: data.sport == null ? null : String(data.sport),
     inviteCode: String(data.inviteCode ?? ''),

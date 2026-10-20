@@ -197,6 +197,7 @@ test('canonical adapter renders the event timezone, both team labels and lifecyc
   const event = mapEventDoc('shared-match', { schemaVersion: 2, revision: 1, orgId: 'org', programId: 'program', seasonId: 'season', divisionId: 'division', teamId: 'a', teamIds: ['a'], createdBy: 'actor', updatedBy: 'actor', createdAt: '2026-10-01T00:00:00.000Z', updatedAt: '2026-10-01T00:00:00.000Z', title: 'Match', type: 'match', publicationState: 'published', publicationOperationId: null, deletedAt: null, startsAt: '2026-10-20T23:00:00.000Z', endsAt: '2026-10-21T00:00:00.000Z', timeZone: 'America/Chicago', status: 'postponed', scheduleVersion: 2, teams: [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }] });
   expect(event.time).toBe('18:00'); expect(event.date.toISOString().slice(0, 10)).toBe('2026-10-20');
   expect(event.status).toBe('postponed'); expect(event.teams).toHaveLength(2);
+  expect(event.orgId).toBe('org');
 });
 
 describe('canonical callable readers and writers', () => {

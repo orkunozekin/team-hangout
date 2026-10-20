@@ -56,14 +56,16 @@ import {
   spacing,
   type,
 } from '../theme/theme';
+import { teamConversationTargets, type ConversationRoute } from '../lib/conversationNavigation';
 
 type Props = {
   teamId: string;
   membership: TeamMember;
   appRole?: AppRole;
+  onConversation?: (target: ConversationRoute) => void;
 };
 
-export default function TeamScreen({ teamId, membership, appRole }: Props) {
+export default function TeamScreen({ teamId, membership, appRole, onConversation }: Props) {
   const [team, setTeam] = useState<Team | null>(null);
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -183,6 +185,9 @@ export default function TeamScreen({ teamId, membership, appRole }: Props) {
       ) : team.schemaVersion === 2 ? (
         <View style={styles.list}>
           <Text>Your organization manages this team's roster.</Text>
+          {onConversation ? teamConversationTargets(team).map(target => (
+            <SecondaryButton key={`${target.scopeType}:${target.scopeId}`} label={target.label} onPress={() => onConversation({ orgId: target.orgId, scopeType: target.scopeType, scopeId: target.scopeId })} />
+          )) : null}
           <SecondaryButton label="Refresh team" onPress={onRefresh} disabled={refreshing} />
         </View>
       ) : (

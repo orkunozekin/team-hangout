@@ -20,6 +20,8 @@ export interface AppUser {
 export interface Team {
   schemaVersion?: number;
   timeZone?: string;
+  orgId?: string;
+  divisionId?: string;
   id: string;
   name: string;
   sport: string | null;
@@ -52,6 +54,7 @@ export interface EventLocation {
 
 export interface TeamEvent {
   schemaVersion?: number;
+  orgId?: string;
   startsAt?: string;
   endsAt?: string;
   timeZone?: string;

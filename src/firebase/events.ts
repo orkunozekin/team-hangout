@@ -61,7 +61,8 @@ export function mapEventDoc(
     const parts = new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(startsAt));
     const part = (name: string) => parts.find(value => value.type === name)!.value;
     return { ...mapEventDoc(id, { ...data, schemaVersion: undefined, date: `${part('year')}-${part('month')}-${part('day')}T12:00:00.000Z`, time: `${part('hour')}:${part('minute')}` }),
-      schemaVersion: 2, startsAt, endsAt: new Date(canonical.endsAt).toISOString(), timeZone: zone,
+      schemaVersion: 2, ...(typeof data.orgId === 'string' ? { orgId: data.orgId } : {}),
+      startsAt, endsAt: new Date(canonical.endsAt).toISOString(), timeZone: zone,
       status: data.status as TeamEvent['status'], scheduleVersion: Number(data.scheduleVersion ?? 1),
       teams: data.teams as TeamEvent['teams'], canManage: data.canManage === true,
       history: data.history as TeamEvent['history'], historyHasMore: data.historyHasMore === true };

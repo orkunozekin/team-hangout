@@ -12,7 +12,8 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
   const [denied, setDenied] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  async function refresh() {
+  async function refresh(initial = false) {
+    if (initial) { setLoading(true); setPage(null); setDenied(false); }
     setError(null);
     try {
       setPage(await listConversationMessages({ orgId, scopeType, scopeId }));
@@ -23,7 +24,7 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
       setError('This conversation is unavailable.');
     } finally { setLoading(false); }
   }
-  useEffect(() => { void refresh(); }, [orgId, scopeType, scopeId]);
+  useEffect(() => { void refresh(true); }, [orgId, scopeType, scopeId]);
   async function send() {
     if (!draft.trim()) return;
     setSaving(true); setError(null);
@@ -36,8 +37,9 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
     } finally { setSaving(false); }
   }
   const youthClosed = page?.mode === 'youth' && page.youthPosting === 'closed';
+  const title = scopeType === 'event' ? 'Event conversation' : scopeType === 'team' ? 'Team conversation' : scopeType === 'division' ? 'Division announcements' : 'Organization announcements';
   return <Screen><ScrollView contentContainerStyle={styles.list}>
-    <Title>Team conversation</Title>
+    <Title>{title}</Title>
     <Subtitle>{page?.mode === 'youth' ? 'Group channel for guardians, players, and staff' : 'Announcement'}</Subtitle>
     {youthClosed ? <Text accessibilityRole="text" style={styles.banner}>Youth posting is closed until an administrator approves the organization policy.</Text> : null}
     {loading ? <ActivityIndicator color={colors.primary} /> : denied ? <EmptyState message="This conversation is unavailable." /> : <View style={styles.items}>

@@ -242,8 +242,10 @@ test('family event and team responses exclude private notes, audit identities an
     assert.ok(page.items.some(row => row.id === event.id));
     for (const row of page.items) for (const key of ['notes', 'createdBy', 'updatedBy']) assert.equal(Object.hasOwn(row, key), false);
     const team = await call(uid, 'getNativeTeam', { teamId: 'p202-b' });
-    assert.deepEqual(Object.keys(team).sort(), ['id', 'schemaVersion', 'name', 'sport', 'timeZone'].sort());
+    assert.deepEqual(Object.keys(team).sort(), ['id', 'name', 'orgId', 'schemaVersion', 'sport', 'timeZone']);
     assert.equal(team.name, 'Comets'); assert.equal(team.timeZone, 'America/Chicago');
+    assert.equal(team.orgId, 'p202-org');
+    assert.equal(Object.hasOwn(team, 'externalId'), false); assert.equal(Object.hasOwn(team, 'createdBy'), false); assert.equal(Object.hasOwn(team, 'divisionId'), false);
   }
   for (const uid of ['p202-admin', 'p202-a-coach', 'p202-b-coach']) {
     const loaded = await call(uid, 'getCanonicalEvent', { eventId: event.id });

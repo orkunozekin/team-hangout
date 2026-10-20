@@ -73,7 +73,7 @@ export const getNativeTeam = readCommand(data => {
   const organization = (await tx.get(getFirestore().doc(`organizations/${team.orgId}`))).data();
   const timeZone = text(organization?.timeZone, 'organization time zone', 100);
   try { new Intl.DateTimeFormat('en', { timeZone }); } catch { invalid('Organization time zone needs administrator correction.'); }
-  return { id: data.teamId, schemaVersion: 2, name: team.name, sport: team.sport ?? null, timeZone };
+  return { id: data.teamId, schemaVersion: 2, name: team.name, sport: team.sport ?? null, timeZone, orgId: id(team.orgId, 'stored orgId') };
 });
 export const listEventTeamChoices = readCommand(data => {
   keys(data, ['teamId', 'pageSize', 'cursor']); return { teamId: id(data.teamId, 'teamId'), ...page(data) };

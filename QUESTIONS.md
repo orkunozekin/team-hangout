@@ -59,3 +59,4 @@ These choices are locked for the server reminder and staff diagnostics step. The
 | Staff notes | Notes live under `staffNotes`, not in the household channel. Only org admins and program staff for that scope can read or write them. Coaches, guardians, notifications, and the outbox do not receive the note text. |
 | Moderation | Program staff and org admins can tombstone a message and remove its text. Coaches can pin up to three messages. Guardians cannot pin or moderate. |
 | Flag | `features.conversations` must be true. It is not enabled by this change. |
+| Native entry | A household calendar opens organization and division announcements only for a team that lists a participant, plus that team's channel and each loaded event channel. A coach-only team and the Team tab open the team channel. Event detail opens the published event channel. Offline copies hide these actions. |

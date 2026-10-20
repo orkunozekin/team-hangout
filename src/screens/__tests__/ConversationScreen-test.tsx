@@ -24,6 +24,13 @@ test('shows the group channel and the closed youth-posting policy', async () => 
   expect(screen.queryByText('Guardian phone is private')).toBeNull();
 });
 
+test('names an event channel without treating it as a team conversation', async () => {
+  (api.listConversationMessages as jest.Mock).mockResolvedValue({ ...page, mode: 'youth' });
+  await render(<ConversationScreen orgId="org" scopeType="event" scopeId="event" />);
+  expect(await screen.findByText('Event conversation')).toBeTruthy();
+  expect(screen.queryByText('Team conversation')).toBeNull();
+});
+
 test('shows an unavailable conversation after access is removed', async () => {
   (api.listConversationMessages as jest.Mock).mockRejectedValue(new Error('denied'));
   await render(<ConversationScreen orgId="org" scopeType="team" scopeId="team" />);

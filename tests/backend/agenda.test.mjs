@@ -173,6 +173,8 @@ test("sibling multi-team events deduplicate, filters narrow, and response exclud
     ["Casey", "Jamie"],
   );
   assert.equal(result.items[0].teams.length, 2);
+  assert.equal(result.teams.find((row) => row.id === f.teamId).divisionId, f.parent.divisionId);
+  assert.equal(result.teams.find((row) => row.id === f.teamId).divisionName, "U12");
   assert.equal(JSON.stringify(result).includes("PRIVATE"), false);
   assert.equal(JSON.stringify(result).includes("birthDate"), false);
   const filtered = await call("agenda-parent", {

@@ -62,6 +62,8 @@ import EventDetailScreen from './src/screens/EventDetailScreen';
 import CreateEditEventScreen from './src/screens/CreateEditEventScreen';
 import AdminScreen from './src/screens/AdminScreen';
 import NotificationsScreen from './src/screens/NotificationsScreen';
+import ConversationScreen from './src/screens/ConversationScreen';
+import type { ConversationRoute } from './src/lib/conversationNavigation';
 
 import {
   subscribeToAuthChanges,
@@ -111,6 +113,7 @@ export type AuthStackParamList = {
 export type OnboardingStackParamList = {
   Household: undefined;
   Inbox: undefined;
+  Conversation: ConversationRoute;
   CreateTeam: undefined;
   JoinTeam: { code?: string } | undefined;
   AdminHome: undefined;
@@ -120,6 +123,7 @@ export type RootStackParamList = {
   MainTabs: undefined;
   EventDetail: { eventId: string };
   CreateEditEvent: { eventId?: string };
+  Conversation: ConversationRoute;
 };
 
 export type MainTabParamList = {
@@ -178,10 +182,13 @@ function OnboardingNavigator({
       screenOptions={{ headerShown: false }}
     >
       <OnboardingStack.Screen name="Household">
-        {({ navigation }) => <HouseholdScreen user={user} onTeams={() => navigation.navigate('CreateTeam')} onInbox={() => navigation.navigate('Inbox')} />}
+        {({ navigation }) => <HouseholdScreen user={user} onTeams={() => navigation.navigate('CreateTeam')} onInbox={() => navigation.navigate('Inbox')} onConversation={(target) => navigation.navigate('Conversation', target)} />}
       </OnboardingStack.Screen>
       <OnboardingStack.Screen name="Inbox" options={{ headerShown: true, title: 'Inbox' }}>
         {() => <NotificationsScreen userId={user.uid} pushProjectId={pushProjectId} notice={notice} />}
+      </OnboardingStack.Screen>
+      <OnboardingStack.Screen name="Conversation" options={{ headerShown: true, title: 'Conversation' }}>
+        {({ route }) => <ConversationScreen orgId={route.params.orgId} scopeType={route.params.scopeType} scopeId={route.params.scopeId} />}
       </OnboardingStack.Screen>
       <OnboardingStack.Screen name="CreateTeam" options={{ headerShown: true, title: 'Teams', headerBackTitle: 'Household' }}>
         {({ navigation }) => (
@@ -265,7 +272,7 @@ function MainTabs({
       })}
     >
       <Tab.Screen name="Household">
-        {({ navigation }) => <HouseholdScreen user={user} onTeams={() => navigation.navigate('Team')} />}
+        {({ navigation }) => <HouseholdScreen user={user} onTeams={() => navigation.navigate('Team')} onConversation={(target) => navigation.navigate('Conversation', target)} />}
       </Tab.Screen>
       <Tab.Screen name="Schedule">
         {({ navigation }) => (
@@ -281,11 +288,12 @@ function MainTabs({
         )}
       </Tab.Screen>
       <Tab.Screen name="Team" options={{ title: 'Teams' }}>
-        {() => (
+        {({ navigation }) => (
           <TeamScreen
             teamId={team.id}
             membership={membership}
             appRole={appRole}
+            onConversation={(target) => navigation.navigate('Conversation', target)}
           />
         )}
       </Tab.Screen>
@@ -361,6 +369,9 @@ function AppNavigator({
             route={route}
           />
         )}
+      </RootStack.Screen>
+      <RootStack.Screen name="Conversation" options={{ title: 'Conversation' }}>
+        {({ route }) => <ConversationScreen orgId={route.params.orgId} scopeType={route.params.scopeType} scopeId={route.params.scopeId} />}
       </RootStack.Screen>
       <RootStack.Screen
         name="CreateEditEvent"
