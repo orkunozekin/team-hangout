@@ -28,6 +28,13 @@ export function sha256(bytes: Buffer): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+/** The Admin SDK default bucket. Never invent a legacy appspot name from the project id. */
+export function configuredAttachmentBucket(configured: unknown): string | null {
+  const name = typeof configured === "string" ? configured.replace(/^gs:\/\//, "") : "";
+  if (!/^[a-z0-9][a-z0-9._-]{2,220}$/.test(name) || name.includes("..")) return null;
+  return name;
+}
+
 export function uploadObjectPath(orgId: string, attachmentId: string): string {
   if (!/^[A-Za-z0-9_-]+$/.test(orgId) || !/^[A-Za-z0-9_-]+$/.test(attachmentId)) {
     throw new Error("Invalid attachment path.");

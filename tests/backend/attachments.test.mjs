@@ -9,6 +9,7 @@ const require = createRequire(new URL('../../functions/package.json', import.met
 const { initializeApp: adminApp, deleteApp: deleteAdmin } = require('firebase-admin/app');
 const { getAuth: adminAuth } = require('firebase-admin/auth');
 const { getFirestore, Timestamp } = require('firebase-admin/firestore');
+const { getStorage } = require('firebase-admin/storage');
 const { signUploadGrant, DEMO_ATTACHMENT_UPLOAD_KEY } = require('./lib/communications/attachmentScan.js');
 requireEmulators();
 
@@ -106,6 +107,8 @@ test('staff can transfer a JPEG while youth posting is closed, and a guardian ca
   assert.equal(JSON.stringify(row).includes('SYNTHETIC-JPEG-MARKER'), false);
   const open = await fetch(`http://127.0.0.1:9199/v0/b/demo-team-hangout.appspot.com/o/${encodeURIComponent(row.objectPath)}?alt=media`);
   assert.notEqual(open.status, 200);
+  const objectBytes = await getStorage(admin).bucket(`${projectId}.appspot.com`).file(row.objectPath).download();
+  assert.equal(Buffer.compare(objectBytes[0], jpeg), 0);
   const done = await call('file-staff', 'finalizeAttachment', { requestId: rid(), ...team, attachmentId: grant.id });
   assert.equal(done.state, 'ready');
   assert.equal(done.detectedType, 'image/jpeg');

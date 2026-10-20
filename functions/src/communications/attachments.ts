@@ -17,6 +17,7 @@ import {
   ATTACHMENT_MAX_BYTES,
   DEMO_ATTACHMENT_UPLOAD_KEY,
   attachmentFileName,
+  configuredAttachmentBucket,
   developmentScanner,
   readUploadGrant,
   reviewAttachment,
@@ -91,7 +92,9 @@ function transportUrl(): string {
   return `https://us-central1-${project}.cloudfunctions.net/attachmentTransport`;
 }
 function bucket() {
-  return getStorage().bucket(`${process.env.GCLOUD_PROJECT}.appspot.com`);
+  const name = configuredAttachmentBucket(getStorage().app.options.storageBucket);
+  if (!name) throw new HttpsError("failed-precondition", "Attachment storage is not configured.");
+  return getStorage().bucket(name);
 }
 function attachmentRef(orgId: string, attachmentId: string) {
   return getFirestore().doc(`organizations/${orgId}/attachments/${attachmentId}`);
