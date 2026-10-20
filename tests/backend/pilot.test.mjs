@@ -329,6 +329,54 @@ test('rollback quarantines at most 20 in-flight publications and reports the rem
   assert.equal(retained.docs[0].data().publicationState, 'published');
 });
 
+test('a grant revoked during the sample receives no pilot report', async () => {
+  const until = Date.now() + 2500;
+  await db.doc('platformConfig/pilotListGate').set({ holdUntilMs: until });
+  const pending = fail('p220-admin', 'listPilotOperations', { orgId });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await db.doc(`organizations/${orgId}/members/p220-admin`).update({ status: 'revoked' });
+    const denied = await pending;
+    assert.equal(denied.code, 'functions/permission-denied');
+    assert.equal(JSON.stringify(denied).includes('SCAN_FAILED'), false);
+    assert.equal(JSON.stringify(denied).includes('secret-photo'), false);
+  } finally {
+    await db.doc('platformConfig/pilotListGate').delete().catch(() => {});
+    await db.doc(`organizations/${orgId}/members/p220-admin`).update({ status: 'active' });
+  }
+});
+
+test('rollback keeps the locked publication on the page when its id sorts last', async () => {
+  const batch = db.batch();
+  for (let index = 0; index < 21; index += 1) {
+    batch.set(db.doc(`organizations/${orgId}/scheduleOperations/page-${String(index).padStart(2, '0')}`), {
+      schemaVersion: 2, orgId, draftId: 'p220-draft', state: 'promoting', revision: 1, fencingToken: 1, updatedAt: Timestamp.now(),
+    });
+  }
+  batch.set(db.doc(`organizations/${orgId}/scheduleOperations/zzz-locked`), {
+    schemaVersion: 2, orgId, draftId: 'p220-draft', operationId: 'zzz-locked', state: 'staging', revision: 1, fencingToken: 1,
+    expected: [], updatedAt: Timestamp.now(), actorUid: 'p220-admin',
+  });
+  batch.set(db.doc(`organizations/${orgId}/schedulingLock/current`), {
+    schemaVersion: 2, orgId, operationId: 'zzz-locked', fencingToken: 1, inputRevision: 0, expiresAt: Timestamp.fromMillis(Date.now() + 120000),
+  });
+  await batch.commit();
+  const rollback = await call('p220-admin', 'applyPilotRollback', { requestId: rid(), orgId, confirm: PILOT_ROLLBACK_CONFIRM });
+  assert.equal(rollback.truncated, true);
+  assert.equal(rollback.quarantinedOperationIds.includes('zzz-locked'), true);
+  assert.equal(rollback.quarantinedOperationIds.length, 20);
+  assert.equal((await db.doc(`organizations/${orgId}/scheduleOperations/zzz-locked`).get()).data().state, 'quarantined');
+  assert.equal((await db.doc(`organizations/${orgId}/schedulingLock/current`).get()).data().operationId, 'zzz-locked');
+  await db.doc(`organizations/${orgId}`).update({ 'features.scheduler': true });
+  await db.doc(`organizations/${orgId}/scheduleDrafts/p220-draft`).set({
+    schemaVersion: 2, orgId, state: 'privateDraft', divisionId: scope.divisionId, revision: 1, publicationOperationId: 'zzz-locked',
+  }, { merge: true });
+  const resumed = await fail('p220-admin', 'advanceSchedulePublication', {
+    requestId: rid(), orgId, draftId: 'p220-draft', operationId: 'zzz-locked', expectedRevision: 2, fencingToken: 1, action: 'advance',
+  });
+  assert.equal(resumed.details?.domainCode, 'PUBLICATION_QUARANTINED');
+});
+
 test('attachment samples stay at 100 rows and omit file names', async () => {
   const batch = db.batch();
   for (let index = 0; index < 101; index += 1) {

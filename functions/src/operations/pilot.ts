@@ -95,6 +95,18 @@ export const listPilotOperations = onCall(async (request) => {
   }
   const scannerDoc = await db.doc("platformConfig/attachmentScanner").get();
   const externalUrl = process.env.ATTACHMENT_SCANNER_URL;
+  if (process.env.FUNCTIONS_EMULATOR === "true") {
+    const gate = await db.doc("platformConfig/pilotListGate").get();
+    const until = gate.data()?.holdUntilMs;
+    if (typeof until === "number" && until > Date.now()) {
+      await new Promise((resolve) => setTimeout(resolve, Math.min(until - Date.now(), 5000)));
+    }
+  }
+  await db.runTransaction(async (tx) => {
+    await availableUser(tx, uid);
+    const loaded = await staffScope(tx, orgId, uid);
+    adminScope(loaded);
+  });
   return wire({
     flags,
     youthChannels: scope.youthChannels === "approved" ? "approved" : "closed",
@@ -127,26 +139,43 @@ export const applyPilotRollback = command("applyPilotRollback", (data) => {
   adminScope(scope);
   if (replay) return replay;
   const db = getFirestore();
+  const lock = (await tx.get(db.doc(`organizations/${payload.orgId}/schedulingLock/current`))).data();
+  const lockedId = typeof lock?.operationId === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(lock.operationId)
+    ? lock.operationId
+    : null;
+  const lockedSnap = lockedId
+    ? await tx.get(db.doc(`organizations/${payload.orgId}/scheduleOperations/${lockedId}`))
+    : null;
+  const locked = lockedSnap?.exists && (IN_FLIGHT as readonly string[]).includes(String(lockedSnap.data()?.state))
+    ? lockedSnap
+    : null;
   const snap = await tx.get(
     db.collection(`organizations/${payload.orgId}/scheduleOperations`)
       .where("state", "in", [...IN_FLIGHT])
       .orderBy(FieldPath.documentId())
       .limit(21),
   );
-  const page = snap.docs.slice(0, 20);
+  const page: FirebaseFirestore.DocumentSnapshot[] = [];
+  if (locked) page.push(locked);
+  for (const doc of snap.docs) {
+    if (page.length >= 20) break;
+    if (locked && doc.id === locked.id) continue;
+    page.push(doc);
+  }
+  const chosen = new Set(page.map((doc) => doc.id));
   const now = Timestamp.now();
   const patch: Data = { revision: (scope.organization.revision ?? 0) + 1, updatedAt: now };
   for (const flag of PILOT_WRITER_FLAGS) patch[`features.${flag}`] = false;
   tx.update(db.doc(`organizations/${payload.orgId}`), patch);
   const quarantinedOperationIds: string[] = [];
   for (const doc of page) {
-    tx.update(doc.ref, { state: "quarantined", revision: (doc.data().revision ?? 0) + 1, updatedAt: now });
+    tx.update(doc.ref, { state: "quarantined", revision: ((doc.data()?.revision as number | undefined) ?? 0) + 1, updatedAt: now });
     quarantinedOperationIds.push(doc.id);
   }
   audit(tx, payload.orgId, uid, "pilotRollback", payload.requestId, patch.revision);
   return {
     flagsDisabled: [...PILOT_WRITER_FLAGS],
     quarantinedOperationIds,
-    truncated: snap.size > 20,
+    truncated: snap.docs.some((doc) => !chosen.has(doc.id)),
   };
 });

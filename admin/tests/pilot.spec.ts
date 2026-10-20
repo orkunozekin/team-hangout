@@ -104,3 +104,24 @@ test("an administrator sees stuck work and can stop writers without losing histo
   await expect(page.getByRole("alert")).toBeVisible();
   await expect(page.getByText("SCAN_FAILED")).toHaveCount(0);
 });
+test("a refresh during rollback leaves the action usable", async ({ page }) => {
+  await db.doc(`organizations/${orgId}/members/${owner}`).update({ status: "active" });
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/applyPilotRollback", async (route) => {
+    await gate;
+    await route.continue();
+  });
+  await page.goto(`/organizations/${orgId}/pilot`);
+  await login(page);
+  await expect(page.getByRole("heading", { name: "Pilot operations" })).toBeVisible();
+  await page.getByRole("checkbox", { name: "I understand new phase 2 writes stop and history stays" }).check();
+  const action = page.getByRole("button", { name: "Disable phase 2 writers" });
+  await action.click();
+  await expect(action).toBeDisabled();
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  release();
+  await expect(action).toBeEnabled();
+});

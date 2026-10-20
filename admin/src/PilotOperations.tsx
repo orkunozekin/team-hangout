@@ -84,7 +84,7 @@ export function PilotOperations({
       if (request !== generation.current) return;
       setError(message(reason));
     } finally {
-      if (request === generation.current) setRolling(false);
+      setRolling(false);
     }
   }
   return (

@@ -19,7 +19,7 @@ yarn test:scheduling
 
 Account deletion now records `residualAudit.attachments` with `ownerField: ownerUid`, the count, `anonymized: false`, and `bytesRetained: true`. It does not copy file names into the job and it does not delete objects. Message `authorUid` is also retained. That is an operator policy gate, not a completed anonymization.
 
-The admin page `/organizations/{orgId}/pilot` shows flag state, publications stuck for at least 10 minutes, attachment state counts, rejection codes, and the scanner mode. It does not show owner ids, file names, addresses, or tokens. Each attachment state and the rejection list stop at 100 rows and say when the sample is truncated. Authorization is one small transaction. The count queries run after that so a full sample cannot exceed Firestore's 500-document transaction limit. Disable phase 2 writers is an org-admin action and requires the confirmation `DISABLE_PHASE2_WRITERS`.
+The admin page `/organizations/{orgId}/pilot` shows flag state, publications stuck for at least 10 minutes, attachment state counts, rejection codes, and the scanner mode. It does not show owner ids, file names, addresses, or tokens. Each attachment state and the rejection list stop at 100 rows and say when the sample is truncated. Authorization is one small transaction. The count queries run after that so a full sample cannot exceed Firestore's 500-document transaction limit. The same org-admin grant is checked again after those queries, and a revocation during the sample returns no report. Disable phase 2 writers is an org-admin action and requires the confirmation `DISABLE_PHASE2_WRITERS`.
 
 ## Writer flags and rollback
 
@@ -37,7 +37,7 @@ These organization flags stop new phase 2 writes when set false. `organizationV2
 
 `features.attachments` stays off for organizations created by `createOrganization`. Enable it only after `ATTACHMENT_UPLOAD_KEY` exists and the scanner drill below has passed. Keep it off for the first synthetic organization if that drill is not done.
 
-Rollback quarantines at most 20 `staging`, `promoting`, or `verifying` publications per call and returns `truncated: true` when more remain. Call it again until `truncated` is false. The scheduling lock stays on the quarantined operation so a second publication cannot start quietly. Committed publications and their events are left alone. Idempotency receipts stay. A replay still checks the current org-admin grant, so a revoked admin cannot read the stored result.
+Rollback quarantines at most 20 `staging`, `promoting`, or `verifying` publications per call and returns `truncated: true` when more remain. Call it again until `truncated` is false. The in-flight publication named by `schedulingLock/current` takes a slot on every page, including when its id sorts after the first 20. The scheduling lock stays on the quarantined operation so a second publication cannot start quietly. Committed publications and their events are left alone. Idempotency receipts stay. A replay still checks the current org-admin grant, so a revoked admin cannot read the stored result.
 
 ## Secrets and scanner drills
 
