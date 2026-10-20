@@ -1,6 +1,31 @@
 # Phase 2 native UI QA backlog
 
-Living list of flows that still need a real iOS simulator or Android device. This Linux cloud VM has no Mac, no iOS simulator, and no Android emulator. Update this file in the PR for each Phase 2 step.
+Living list of flows that still need a real iOS simulator, Android device, or staging project. This Linux cloud VM has no Mac, no iOS simulator, and no Android emulator. Phase 2 code is complete through P2.20 and is not pilot-ready.
+
+## Still open across P2.01–P2.20
+
+Do these on synthetic data. Steps that already have a simulator capture still need the physical or provider check named here.
+
+| Step | Still open | Concrete pass |
+| --- | --- | --- |
+| P2.11 | Physical iOS and Android, and a real GPS sample | Rebuild the dev client. Deny location, then allow a foreground fix inside the venue window. Confirm the attendance source is `geoAssisted`, the raw sample is not stored, and a poor or stale fix offers manual check-in. No background location. |
+| P2.12 | Physical device storage and Android | Force-quit offline, confirm the stale banner, sign out, and confirm the snapshot is gone. Confirm a denied live read does not restore a revoked snapshot. |
+| P2.14 | Provider delivery and cold start | Configure the Expo project, APNs, and FCM. Send one sandbox push to a physical iPhone and a physical Android device. Deny permission, then open `teamhangout://notification?id=&revision=` after sign-in. A simulator payload is not provider delivery. |
+| P2.15 | Native inbox after a reminder | Enable `features.rsvpReminders` on a synthetic organization. Open the inbox after a reminder expands, including denied push permission and a cold start. |
+| P2.16 | Native channel entry | From the household calendar, open organization, division, team, and event channels as a guardian before and after `policies.youthChannels` is approved. Revoke the guardian and confirm the unavailable conversation. |
+| P2.17 | Native search, edit, and reactions | On that team channel, edit the guardian's own message, toggle a reaction before and after youth posting is approved, continue a search that reports more matches, and confirm a revoked guardian sees no results. |
+| P2.18–P2.19 | Native picker, transfer, and download | Rebuild so `expo-file-system` and `expo-document-picker` are in the binary. Pick a JPEG with location metadata, a PDF, an HTML file renamed to `photo.jpg`, and a file over 10 MB. Send the ready JPEG. Download it. Revoke the guardian and tombstone the message. Both downloads fail. Leave a quarantined upload for 24 hours and confirm the purge removes it. |
+| P2.20 | Staging only. No new native screen | Confirm the indexes in `docs/phase-2-pilot-runbook.md` are READY. Create `ATTACHMENT_UPLOAD_KEY`. Run the scanner, expiry, purge, and one 10 MiB JPEG plus one 10 MiB PDF drill before enabling `features.attachments`. The web pilot page is covered below and is not a device pass. |
+
+## P2.20 Integrated pilot hardening
+
+- **PR:** this change, on `codex/p2-20-integrated-pilot-hardening-c838`.
+- **Screen / flow:** Admin web Pilot operations at `/organizations/{orgId}/pilot`. An org admin sees feature flags, a publication stuck for 10 minutes, and a rejection code. Disable phase 2 writers keeps history and quarantines that publication. There is no new native screen.
+- **Reproduce:** Use project `demo-team-hangout`. Organization `browser-pilot` (Cedar Pilot) has `features.organizationV2`, `features.adminWorkspace`, and `features.conversations`. Attachments stay off. Sign in as `browser-pilot-owner@example.test` / `SyntheticPassword123!`. Open `/organizations/browser-pilot/pilot`. Confirm `stuck-pub` and `SCAN_FAILED`. Check the history acknowledgement and choose Disable phase 2 writers. Then set the member `status` to `revoked` and dispatch a window focus event.
+- **Expected:** The page shows attachments off, conversations on, then conversations off after rollback, with the sentence that history was kept and one publication was quarantined. `secret-photo.jpg`, `hidden-owner`, and `hidden-operator` never appear. A 390px-wide browser does not scroll sideways. Revocation clears the report and shows an alert.
+- **Unverified platforms:** Staging indexes, Secret Manager, a 10 MiB device or staging transfer, and every native row in the table above. This VM cannot deploy or open a simulator.
+- **Verified here:** Node 22.23.3. `yarn typecheck` passed. Native Jest coverage was 47 suites and 272 tests, with thresholds met. Functions `tsc` passed. The backend CI general suite was 294/294 and schedule publication was 3/3 before the final replay-authorization change. Scheduling tests were 51/51 and the seeded benchmark completed. After that change, `tests/backend/pilot.test.mjs` was 6/6, including the scanner kill switch, external outage, grant expiry, purge resume, household rollback, revoked replay, the 20-publication page, and the 100-row attachment sample. Playwright through the Chrome channel was 58/58. One inspected 1440px desktop screenshot shows Cedar Pilot with attachments off, conversations on, `stuck-pub` at 11 minutes, `SCAN_FAILED`, and the rollback control. SHA-256 `1548f8c2a1ce9c37b0c9d43f95d1d5bc49acdc5b110b37313c0be88bd700bd71`. `yarn --cwd admin build` succeeded. Staging indexes, secrets, and native devices were not run. The first Codex review's grant recheck, locked-publication page, and rollback-button fixes were rechecked with pilot emulator tests 8/8 and Playwright 59/59. The screenshot was not recaptured. The second review's post-rollback refresh and the 25-row stuck list were rechecked with pilot emulator tests 9/9 and the pilot Playwright spec 3/3. The screenshot was not recaptured.
+- **Risks:** The web capture is one org admin. It does not prove native picker, push delivery, or a production index build. `features.attachments` stays off. Account deletion records `ownerUid` and does not anonymize it.
 
 ## P2.19 Quarantined production attachments
 

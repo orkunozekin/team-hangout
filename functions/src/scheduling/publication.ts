@@ -340,6 +340,12 @@ export const advanceSchedulePublication = command(
       );
       return progress({ ...op, state: "aborted", revision: op.revision + 1 });
     }
+    if (op.state === "quarantined") {
+      fail(
+        "PUBLICATION_QUARANTINED",
+        "This publication was quarantined by a pilot rollback and is not resumed automatically.",
+      );
+    }
     if (
       draft.revision !== op.draftRevision ||
       lock?.inputRevision !== op.inputRevision

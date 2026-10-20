@@ -2,6 +2,7 @@ import type { AdminSection } from "../../shared/admin";
 export const sections: AdminSection[] = [
   "conversations",
   "diagnostics",
+  "pilot",
   "closures",
   "drafts",
   "recurrence",
@@ -20,6 +21,7 @@ export const sections: AdminSection[] = [
 export const labels: Record<AdminSection, string> = {
   conversations: "Conversations and staff notes",
   diagnostics: "Delivery diagnostics",
+  pilot: "Pilot operations",
   closures: "Closures and makeups",
   drafts: "League schedule drafts",
   recurrence: "Recurring practice drafts",

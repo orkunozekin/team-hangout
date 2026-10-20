@@ -1,13 +1,13 @@
 # Phase implementation plans and feasibility evidence
 
-Recorded: 2026-10-10. Status: planned, implementation not started. Product scope is approved; **business model selection pending**. These documents elaborate the [product plan](product-plan.md), informed by [anonymized competitive research](../research/competitive-context.md).
+Recorded: 2026-10-10. Updated: 2026-10-20. Product scope is approved; **business model selection pending**. Phase 1 implementation steps are merged. Phase 2 code is complete through P2.20 in this change and is not pilot-ready: staging indexes, secrets, provider credentials, retention policy, and native device checks remain in [the Phase 2 runbook](../phase-2-pilot-runbook.md). Phase 3 and Phase 4 are not started. These documents elaborate the [product plan](product-plan.md), informed by [anonymized competitive research](../research/competitive-context.md).
 
 ## Plans and execution order
 
 | Phase | Dedicated plan | Bounded steps | Depends on |
 | --- | --- | --- | --- |
 | 1 | [Organization, household, and season foundations](../features/phase-1-foundations-feature-plan.md) | 15 | Existing authentication, team and event foundation; authorization hardening first. |
-| 2 | [League and game-day operations](../features/phase-2-league-operations-feature-plan.md) | 20 | Phase 1 tenant, participant, guardian, roster, time, and server mutation contracts. |
+| 2 | [League and game-day operations](../features/phase-2-league-operations-feature-plan.md) | 20, code complete | Phase 1 tenant, participant, guardian, roster, time, and server mutation contracts. Pilot gates remain open. |
 | 3 | [Coaching, competition, and program insight](../features/phase-3-coaching-competition-feature-plan.md) | 14 | Phase 1 identities and roles; Phase 2 events, attendance, facilities, and audited mutations. |
 | 4 | [Registration and financial operations](../features/phase-4-registration-finance-feature-plan.md) | 20 | Phase 1 tenancy and participants; Phase 2 delivery and operations; commercial and payment activation gates. |
 

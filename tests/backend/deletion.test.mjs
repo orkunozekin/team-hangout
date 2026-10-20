@@ -10,7 +10,7 @@ import { doc, getDoc, updateDoc, setDoc, serverTimestamp } from 'firebase/firest
 import { projectId, requireEmulators } from './fixtures.mjs';
 const require = createRequire(new URL('../../functions/package.json', import.meta.url));
 const { initializeApp: initAdmin, deleteApp: deleteAdmin } = require('firebase-admin/app');
-const { getFirestore } = require('firebase-admin/firestore');
+const { getFirestore, Timestamp } = require('firebase-admin/firestore');
 const { getAuth: adminAuth } = require('firebase-admin/auth');
 requireEmulators();
 let admin, db, auth, env, beginDeletion, resumeDeletion;
@@ -146,4 +146,31 @@ test('initial deletion requires recent authentication and cannot choose another 
   await deleteAccount.run({ auth: { uid, token: { auth_time: Math.floor(Date.now()/1000) } }, data: { uid: 'erase-retained' } });
   assert.equal((await db.doc('users/erase-retained').get()).exists, true);
   assert.equal((await db.doc(`accountDeletionJobs/${uid}`).get()).data().status, 'complete');
+});
+test('deletion audits attachment owner fields and leaves the bytes in place', async () => {
+  const uid = 'erase-attachment'; await actor(uid);
+  for (let index = 0; index < 30; index += 1) {
+    await db.doc(`organizations/erase-only-org/attachments/owned-${String(index).padStart(2, '0')}`).set({
+      schemaVersion: 2, orgId: 'erase-only-org', ownerUid: uid, state: 'ready', fileName: `secret-${index}.jpg`,
+      objectPath: `quarantine/erase-only-org/owned-${index}/2`, createdAt: Timestamp.now(),
+    });
+  }
+  await db.doc('organizations/erase-shared-org/attachments/other-owner').set({
+    schemaVersion: 2, orgId: 'erase-shared-org', ownerUid: 'erase-retained', state: 'ready', fileName: 'kept.jpg', createdAt: Timestamp.now(),
+  });
+  await db.doc('organizations/erase-only-org/conversations/talk/messages/kept-message').set({
+    schemaVersion: 2, authorUid: uid, body: 'Retained history', createdAt: Timestamp.now(),
+  });
+  await beginDeletion(uid);
+  const state = await finish(uid);
+  assert.equal(state.residualAudit.attachments.ownerField, 'ownerUid');
+  assert.equal(state.residualAudit.attachments.count, 30);
+  assert.equal(state.residualAudit.attachments.anonymized, false);
+  assert.equal(state.residualAudit.attachments.bytesRetained, true);
+  assert.equal(JSON.stringify(state).includes('secret-0.jpg'), false);
+  const owned = await db.collectionGroup('attachments').where('ownerUid', '==', uid).get();
+  assert.equal(owned.size, 30);
+  assert.equal(owned.docs[0].data().objectPath.includes('quarantine/'), true);
+  assert.equal((await db.doc('organizations/erase-shared-org/attachments/other-owner').get()).data().ownerUid, 'erase-retained');
+  assert.equal((await db.doc('organizations/erase-only-org/conversations/talk/messages/kept-message').get()).data().authorUid, uid);
 });

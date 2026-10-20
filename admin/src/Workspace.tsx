@@ -344,7 +344,7 @@ export function Workspace({
           {sections
             .filter(
               (item) =>
-                context.admin || !["staff", "organization", "invitation"].includes(item),
+                context.admin || !["staff", "organization", "invitation", "pilot"].includes(item),
             )
             .map((item) => (
               <a

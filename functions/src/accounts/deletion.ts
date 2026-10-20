@@ -12,7 +12,7 @@ export const cleanupHooks = [
   ['deliveryIssues', 'recipientUid'], ['criticalUpdates', 'recipientUid'], ['commandRequests', 'uid'],
 ] as const;
 const projections = ['organizationLinks', 'participantLinks', 'teamAccess', 'agenda', 'notifications', 'notificationEndpoints', 'deviceTokens'];
-const stages = ['teamMembers', 'members', 'guardians', 'participants', ...cleanupHooks.map(([name]) => name), ...projections.map(name => `user:${name}`), 'auth'];
+const stages = ['teamMembers', 'members', 'guardians', 'participants', ...cleanupHooks.map(([name]) => name), ...projections.map(name => `user:${name}`), 'attachmentAudit', 'auth'];
 const jobRef = (uid: string) => getFirestore().doc(`accountDeletionJobs/${uid}`);
 
 /** Server-only entry. Starting a job is atomic with loss of all app authority. */
@@ -36,6 +36,7 @@ function queryFor(stage: string, uid: string): Query {
   if (stage === 'guardians') return db.collectionGroup('guardians').where('userId', '==', uid);
   if (stage === 'participants') return db.collectionGroup('participants').where('linkedUserId', '==', uid);
   if (stage.startsWith('user:')) return db.collection(`users/${uid}/${stage.slice(5)}`);
+  if (stage === 'attachmentAudit') return db.collectionGroup('attachments').where('ownerUid', '==', uid);
   if (stage === 'teamMembers') return db.collection(stage).where('userId', '==', uid);
   const hook = cleanupHooks.find(([name]) => name === stage)!;
   const grouped = stage === 'invitations' || stage === 'deliveryIssues' || stage === 'criticalUpdates';
@@ -114,6 +115,19 @@ async function cleanupPage(uid: string) {
     let query = queryFor(stage, uid).orderBy(FieldPath.documentId()).limit(PAGE_SIZE);
     if (state.cursor) query = query.startAfter(db.doc(state.cursor));
     const page = await tx.get(query);
+    if (stage === 'attachmentAudit') {
+      const done = page.size < PAGE_SIZE;
+      const count = (state.residualAttachments ?? 0) + page.size;
+      tx.update(job.ref, {
+        stage: done ? state.stage + 1 : state.stage,
+        cursor: done ? null : page.docs[page.docs.length - 1].ref.path,
+        pages: state.pages + 1,
+        residualAttachments: count,
+        ...(done ? { residualAudit: { attachments: { ownerField: 'ownerUid', count, anonymized: false, bytesRetained: true } } } : {}),
+        updatedAt: Timestamp.now(), lastError: null,
+      });
+      return true;
+    }
     const removals: (() => void)[] = [];
     for (const doc of page.docs) {
       const remove = await prepareRemoval(tx, uid, stage, doc);
