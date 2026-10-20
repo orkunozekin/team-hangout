@@ -20,7 +20,8 @@ export const listNotifications = readCommand(data => { keys(data, ['pageSize', '
   if (!Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 50) throw new HttpsError('invalid-argument', 'pageSize must be 1 through 50.');
   return { pageSize, cursor: data.cursor == null ? null : id(data.cursor, 'cursor') }; }, async (tx, data, uid) => {
   let query = getFirestore().collection(`users/${uid}/notifications`).orderBy('createdAt', 'desc').orderBy(FieldPath.documentId(), 'desc').limit(data.pageSize + 1);
-  if (data.cursor) { const cursor = await tx.get(getFirestore().doc(`users/${uid}/notifications/${data.cursor}`)); if (!cursor.exists) throw new HttpsError('invalid-argument', 'Invalid cursor.'); query = query.startAfter(cursor); }
+  const cursor = data.cursor ? await tx.get(getFirestore().doc(`users/${uid}/notifications/${data.cursor}`)) : null;
+  if (data.cursor) { if (!cursor?.exists) throw new HttpsError('invalid-argument', 'Invalid cursor.'); query = query.startAfter(cursor!); }
   const rows = await tx.get(query), items: Data[] = [];
   const pageDocs: FirebaseFirestore.QueryDocumentSnapshot[] = [], sourceKeys = new Set<string>();
   for (const doc of rows.docs.slice(0, data.pageSize)) {
@@ -39,10 +40,18 @@ export const listNotifications = readCommand(data => { keys(data, ['pageSize', '
     items.push({ id: doc.id, title: row.title, body: row.body, critical: row.critical, sourceType: row.sourceType, sourceId: row.sourceId,
       sourceRevision: row.sourceRevision, createdAt: row.createdAt, readAt: row.readAt, acknowledgedAt: row.acknowledgedAt, deliveryStatus: row.deliveryStatus });
   }
+  const cursorRow = cursor?.data();
+  const cursorAllowed = cursorRow
+    ? (await authorizeNotificationRows(tx, uid, [{ orgId: cursorRow.orgId, accessSources: cursorRow.accessSources }]))[0]
+    : true;
   revoked.forEach(doc => {
     tx.delete(doc.ref);
     if (typeof doc.data().orgId === 'string') tx.delete(criticalUpdateRef(doc.data().orgId, doc.id));
   });
+  if (cursor?.exists && !cursorAllowed) {
+    tx.delete(cursor.ref);
+    if (typeof cursorRow?.orgId === 'string') tx.delete(criticalUpdateRef(cursorRow.orgId, cursor.id));
+  }
   return { items, unreadCount: items.filter(row => row.readAt == null).length, nextCursor: boundary?.id ?? null };
 });
 

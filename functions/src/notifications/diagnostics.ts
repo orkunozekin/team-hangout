@@ -16,26 +16,55 @@ function acknowledgementQuery(orgId: string, programIds: string[] | null) {
     : collection.where("acknowledgedAt", "==", null);
   return scoped.orderBy("createdAt", "desc");
 }
-async function readPage(
+function programGroups(programIds: string[] | null): (string[] | null)[] {
+  if (!programIds) return [null];
+  const groups: (string[] | null)[] = [];
+  for (let index = 0; index < programIds.length; index += 10)
+    groups.push(programIds.slice(index, index + 10));
+  return groups;
+}
+function instantMillis(value: { toMillis?: () => number } | null | undefined) {
+  const millis = value?.toMillis?.();
+  return typeof millis === "number" && Number.isFinite(millis) ? millis : 0;
+}
+/** Firestore `in` filters accept 10 values. Staff may hold 20 programs, so pages merge those chunks. */
+async function readMergedPage(
   tx: FirebaseFirestore.Transaction,
-  query: Query,
+  queryFor: (programIds: string[] | null) => Query,
+  programIds: string[] | null,
   orgId: string,
   collection: "deliveryIssues" | "criticalUpdates",
   cursor: string | null,
   pageSize: number,
+  rank: (row: Data) => { toMillis?: () => number } | null | undefined,
   map: (row: Data, id: string) => Data,
 ) {
+  let snapshot: FirebaseFirestore.DocumentSnapshot | null = null;
   if (cursor) {
-    const snapshot = await tx.get(
+    snapshot = await tx.get(
       getFirestore().doc(`organizations/${orgId}/${collection}/${cursor}`),
     );
     if (!snapshot.exists) invalid("Invalid cursor.");
-    query = query.startAfter(snapshot);
   }
-  const rows = await tx.get(query.limit(pageSize + 1));
+  const ranked: { id: string; millis: number; item: Data }[] = [];
+  for (const group of programGroups(programIds)) {
+    let query = queryFor(group);
+    if (snapshot) query = query.startAfter(snapshot);
+    const rows = await tx.get(query.limit(pageSize + 1));
+    for (const doc of rows.docs)
+      ranked.push({
+        id: doc.id,
+        millis: instantMillis(rank(doc.data())),
+        item: map(doc.data(), doc.id),
+      });
+  }
+  ranked.sort(
+    (a, b) => b.millis - a.millis || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0),
+  );
+  const page = ranked.slice(0, pageSize);
   return {
-    items: rows.docs.slice(0, pageSize).map((doc) => map(doc.data(), doc.id)),
-    nextCursor: rows.size > pageSize ? rows.docs[pageSize - 1].id : null,
+    items: page.map((row) => row.item),
+    nextCursor: ranked.length > pageSize ? (page[page.length - 1]?.id ?? null) : null,
   };
 }
 
@@ -64,7 +93,7 @@ export const listDeliveryDiagnostics = readCommand(
     )
       denied();
     const programIds = scope.admin ? null : (scope.programIds as string[]);
-    if (programIds && programIds.length > 10) {
+    if (programIds && programIds.length > 20) {
       throw new HttpsError(
         "resource-exhausted",
         "Select a narrower program scope for delivery diagnostics.",
@@ -76,13 +105,15 @@ export const listDeliveryDiagnostics = readCommand(
         unacknowledged: { items: [], nextCursor: null },
       };
     }
-    const failures = await readPage(
+    const failures = await readMergedPage(
       tx,
-      failureQuery(data.orgId, programIds),
+      (group) => failureQuery(data.orgId, group),
+      programIds,
       data.orgId,
       "deliveryIssues",
       data.failureCursor,
       data.pageSize,
+      (row) => row.updatedAt,
       (row, issueId) => ({
         id: issueId,
         channel: row.channel ?? "unknown",
@@ -94,13 +125,15 @@ export const listDeliveryDiagnostics = readCommand(
         updatedAt: row.updatedAt ?? null,
       }),
     );
-    const unacknowledged = await readPage(
+    const unacknowledged = await readMergedPage(
       tx,
-      acknowledgementQuery(data.orgId, programIds),
+      (group) => acknowledgementQuery(data.orgId, group),
+      programIds,
       data.orgId,
       "criticalUpdates",
       data.acknowledgementCursor,
       data.pageSize,
+      (row) => row.createdAt,
       (row, updateId) => ({
         id: updateId,
         title: row.title ?? "Team update",

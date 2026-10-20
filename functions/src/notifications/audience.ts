@@ -89,7 +89,7 @@ export async function collectReminderRecipients(
   )
     throw new Error("NOTIFICATION_AUDIENCE_STALE");
   const map = new Map<string, ReminderRecipient>();
-  const seen = new Set<string>();
+  const prepared = new Map<string, { linkedUserId: unknown; guardianIds: string[] } | null>();
   let rosterCount = 0;
   const scheduleVersion = event.scheduleVersion ?? 1;
   for (const teamId of teamIds) {
@@ -106,22 +106,34 @@ export async function collectReminderRecipients(
         (row.teamId != null && row.teamId !== teamId)
       )
         throw new Error("NOTIFICATION_AUDIENCE_STALE");
-      if (seen.has(enrollment.id)) continue;
-      seen.add(enrollment.id);
-      const participant = (
-        await tx.get(db.doc(`organizations/${event.orgId}/participants/${enrollment.id}`))
-      ).data();
-      if (!participant || participant.status !== "active" || (participant.orgId != null && participant.orgId !== event.orgId))
-        continue;
-      const availability = (
-        await tx.get(db.doc(`events/${eventId}/availability/${enrollment.id}`))
-      ).data();
-      if (isCurrentResponse(availability, scheduleVersion)) continue;
       const source: HouseholdSource = {
         kind: "household",
         teamId,
         participantId: enrollment.id,
       };
+      if (prepared.has(enrollment.id)) {
+        const prior = prepared.get(enrollment.id);
+        if (prior) {
+          addRecipient(map, prior.linkedUserId, source);
+          for (const guardianId of prior.guardianIds) addRecipient(map, guardianId, source);
+        }
+        continue;
+      }
+      const participant = (
+        await tx.get(db.doc(`organizations/${event.orgId}/participants/${enrollment.id}`))
+      ).data();
+      if (!participant || participant.status !== "active" || (participant.orgId != null && participant.orgId !== event.orgId)) {
+        prepared.set(enrollment.id, null);
+        continue;
+      }
+      const availability = (
+        await tx.get(db.doc(`events/${eventId}/availability/${enrollment.id}`))
+      ).data();
+      if (isCurrentResponse(availability, scheduleVersion)) {
+        prepared.set(enrollment.id, null);
+        continue;
+      }
+      const guardianIds: string[] = [];
       addRecipient(map, participant.linkedUserId, source);
       const guardians = await tx.get(
         db
@@ -139,8 +151,10 @@ export async function collectReminderRecipients(
           grant.permissions?.respond !== true
         )
           continue;
+        guardianIds.push(guardian.id);
         addRecipient(map, guardian.id, source);
       }
+      prepared.set(enrollment.id, { linkedUserId: participant.linkedUserId, guardianIds });
     }
   }
   return recipientsOf(map);

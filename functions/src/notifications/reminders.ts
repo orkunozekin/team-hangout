@@ -104,9 +104,26 @@ export async function syncRsvpReminder(orgId: string, eventId: string, nowMs: nu
   });
 }
 
+async function runReminderTransaction<T>(
+  work: (tx: Transaction) => Promise<T>,
+): Promise<T> {
+  const db = getFirestore();
+  let last: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await db.runTransaction(work);
+    } catch (error) {
+      last = error;
+      const message = error instanceof Error ? error.message : "";
+      if (attempt === 2 || !message.includes("Transaction is invalid or closed")) throw error;
+    }
+  }
+  throw last;
+}
+
 export async function dispatchRsvpReminder(orgId: string, eventId: string, nowMs: number) {
   const db = getFirestore();
-  return db.runTransaction(async (tx) => {
+  return runReminderTransaction(async (tx) => {
     const event = (await tx.get(db.doc(`events/${eventId}`))).data();
     if (!event || event.orgId !== orgId || event.schemaVersion !== 2)
       return { result: "missing" as const };

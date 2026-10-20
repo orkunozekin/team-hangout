@@ -281,6 +281,31 @@ test('losing access removes a critical projection that has no delivery', async (
   await db.doc('organizations/remind-org').update({ 'features.notificationInboxFake': true, 'features.notificationPush': false });
 });
 
+test('two team enrollments both remain reminder sources after one roster removal', async () => {
+  await db.doc('teams/remind-team-b').set({ ...meta, orgId: 'remind-org', programId: 'remind-program', seasonId: 'remind-season', divisionId: 'remind-division', name: 'Hawks' });
+  await db.doc('teams/remind-team-b/roster/remind-child').set({ ...meta, orgId: 'remind-org', participantId: 'remind-child' });
+  const id = 'two-team-event';
+  await db.doc(`events/${id}`).set(event(id, { deadlineMs: now + 6 * HOUR }));
+  await db.doc(`events/${id}`).update({ teamIds: ['remind-team', 'remind-team-b'] });
+  await reminders.dispatchRsvpReminder('remind-org', id, now);
+  const intent = (await intentsFor(id)).docs[0];
+  const self = intent.data().audience.recipients.find(row => row.uid === 'remind-self');
+  assert.deepEqual(self.accessSources.map(row => row.teamId).sort(), ['remind-team', 'remind-team-b']);
+  await db.doc('teams/remind-team/roster/remind-child').update({ status: 'removed' });
+  await worker.expandNotificationIntent('remind-org', intent.id);
+  assert.equal((await db.collection('users/remind-self/notifications').where('sourceId', '==', id).get()).size, 1);
+  await db.doc('teams/remind-team/roster/remind-child').update({ status: 'active' });
+});
+
+test('program staff with eleven programs can see every assigned failure', async () => {
+  const ids = Array.from({ length: 11 }, (_, index) => `remind-scope-${index}`);
+  await db.doc('organizations/remind-org/members/remind-staff').update({ programIds: ids });
+  await db.doc('organizations/remind-org/deliveryIssues/wide-scope').set({ ...meta, orgId: 'remind-org', channel: 'email', status: 'permanentFailure', failureCode: 'WIDE_SCOPE', templateKey: 'rsvpReminder', programId: ids[10], updatedAt: Timestamp.fromMillis(now) });
+  const open = await call('remind-staff', 'listDeliveryDiagnostics', { orgId: 'remind-org', pageSize: 50 });
+  assert.equal(open.failures.items.some(row => row.failureCode === 'WIDE_SCOPE'), true);
+  await db.doc('organizations/remind-org/members/remind-staff').update({ programIds: ['other-program'] });
+});
+
 test('account deletion removes reminder diagnostic rows for that person only', async () => {
   await db.doc('organizations/remind-org/deliveryIssues/delete-self').set({ ...meta, orgId: 'remind-org', recipientUid: 'remind-self', channel: 'email', status: 'permanentFailure', failureCode: 'EMAIL_BOUNCED' });
   await db.doc('organizations/remind-org/criticalUpdates/delete-self').set({ ...meta, orgId: 'remind-org', recipientUid: 'remind-self', title: 'Schedule changed', acknowledgedAt: null });
