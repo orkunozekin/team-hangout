@@ -16,6 +16,7 @@ import {
   ATTACHMENT_LIMIT,
   ATTACHMENT_MAX_BYTES,
   DEMO_ATTACHMENT_UPLOAD_KEY,
+  attachmentCorsOrigin,
   attachmentFileName,
   configuredAttachmentBucket,
   developmentScanner,
@@ -23,6 +24,7 @@ import {
   reviewAttachment,
   sha256,
   signUploadGrant,
+  storageReadFailure,
   uploadObjectPath,
   type AttachmentReview,
   type UploadGrant,
@@ -213,10 +215,9 @@ function end(res: Response, status: number, message: string) {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.status(status).type("text/plain; charset=utf-8").end(message);
 }
-function applyDevCors(req: Request, res: Response) {
-  if (process.env.FUNCTIONS_EMULATOR !== "true") return;
-  const origin = req.header("origin");
-  if (!origin || !/^http:\/\/(127\.0\.0\.1|localhost):\d{1,5}$/.test(origin)) return;
+function applyCors(req: Request, res: Response) {
+  const origin = attachmentCorsOrigin(req.header("origin"), process.env.FUNCTIONS_EMULATOR === "true");
+  if (!origin) return;
   res.setHeader("Access-Control-Allow-Origin", origin);
   res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Methods", "GET, PUT, OPTIONS");
@@ -383,7 +384,7 @@ async function downloadAttachment(req: Request, res: Response) {
 }
 
 export const attachmentTransport = onRequest(httpOptions, async (req, res) => {
-  applyDevCors(req, res);
+  applyCors(req, res);
   if (req.method === "OPTIONS") {
     res.status(204).end();
     return;
@@ -447,7 +448,10 @@ export const finalizeAttachment = onCall(callableOptions, async (request) => {
       expiresAtMs: row.expiresAt.toMillis() as number,
     };
   });
-  if (opened.kind === "replay") return opened.result;
+  if (opened.kind === "replay") {
+    await deleteRejectedBytes(payload.orgId, payload.attachmentId);
+    return opened.result;
+  }
   let review: AttachmentReview | null = null;
   if (opened.kind === "review") {
     if (opened.expiresAtMs <= Date.now()) {
@@ -455,8 +459,7 @@ export const finalizeAttachment = onCall(callableOptions, async (request) => {
         fileName: opened.fileName, declaredBytes: opened.declaredBytes, bytes: Buffer.alloc(0), expiresAtMs: opened.expiresAtMs, nowMs: Date.now(), scanner: developmentScanner,
       });
     } else {
-      const downloaded = await bucket().file(opened.path).download().then((parts) => parts[0]).catch(() => Buffer.alloc(0));
-      const bytes = Buffer.from(downloaded);
+      const bytes = await readQuarantine(opened.path);
       if (sha256(bytes) !== opened.sha256) {
         review = { state: "rejected", code: "INTEGRITY", detectedType: null, sha256: sha256(bytes), byteLength: bytes.length, scan: scanRejected("INTEGRITY") };
       } else {
@@ -501,8 +504,27 @@ export const finalizeAttachment = onCall(callableOptions, async (request) => {
     tx.create(receipt, { uid, operation: "finalizeAttachment", fingerprint: payloadFingerprint, result, createdAt: now });
     return result;
   });
-  if (opened.kind === "review" && review?.state === "rejected") {
-    await bucket().file(opened.path).delete({ ignoreNotFound: true });
-  }
+  if (committed?.state === "rejected") await deleteRejectedBytes(payload.orgId, payload.attachmentId);
   return committed;
 });
+
+async function readQuarantine(path: string): Promise<Buffer> {
+  try {
+    const downloaded = await bucket().file(path).download();
+    return Buffer.from(downloaded[0]);
+  } catch (error) {
+    if (storageReadFailure(error) === "missing") return Buffer.alloc(0);
+    throw new HttpsError("unavailable", "Attachment storage could not be read. Try again.");
+  }
+}
+
+async function deleteRejectedBytes(orgId: string, attachmentId: string) {
+  const row = (await attachmentRef(orgId, attachmentId).get()).data();
+  if (!row || row.state !== "rejected" || typeof row.objectPath !== "string") return;
+  try {
+    await bucket().file(row.objectPath).delete({ ignoreNotFound: true });
+  } catch (error) {
+    if (storageReadFailure(error) === "missing") return;
+    throw new HttpsError("unavailable", "Rejected attachment bytes could not be deleted. Try again.");
+  }
+}

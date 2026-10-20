@@ -149,14 +149,41 @@ test('PNG and PDF transfers round-trip and a lied JPEG signature is rejected', a
   }
   const grant = await call('file-staff', 'createAttachmentUpload', { requestId: rid(), ...team, fileName: 'photo.jpg', declaredBytes: html.length });
   assert.equal((await putBytes(grant.token, html)).status, 200);
-  const rejected = await call('file-staff', 'finalizeAttachment', { requestId: rid(), ...team, attachmentId: grant.id });
+  const requestId = rid();
+  const rejected = await call('file-staff', 'finalizeAttachment', { requestId, ...team, attachmentId: grant.id });
   assert.equal(rejected.state, 'rejected');
   assert.equal(rejected.rejectionCode, 'UNSAFE_CONTENT');
   assert.equal((await download('file-staff', grant.id)).status, 404);
   const row = (await db.doc(`organizations/file-org/attachments/${grant.id}`).get()).data();
   assert.equal(row.state, 'rejected');
-  const object = await fetch(`http://127.0.0.1:9199/v0/b/demo-team-hangout.appspot.com/o/${encodeURIComponent(row.objectPath)}?alt=media`);
-  assert.notEqual(object.status, 200);
+  const storedFile = getStorage(admin).bucket(`${projectId}.appspot.com`).file(row.objectPath);
+  assert.equal((await storedFile.exists())[0], false);
+  await storedFile.save(html);
+  const replay = await call('file-staff', 'finalizeAttachment', { requestId, ...team, attachmentId: grant.id });
+  assert.equal(replay.state, 'rejected');
+  assert.equal(replay.rejectionCode, 'UNSAFE_CONTENT');
+  assert.equal((await storedFile.exists())[0], false);
+});
+
+test('preflight allows the deployed admin origins and emulator loopback, and a missing object is an integrity failure', async () => {
+  const evil = await fetch(transport, { method: 'OPTIONS', headers: { Origin: 'https://evil.example', 'Access-Control-Request-Method': 'PUT' } });
+  assert.equal(evil.status, 204);
+  assert.equal(evil.headers.get('access-control-allow-origin'), null);
+  const local = await fetch(transport, { method: 'OPTIONS', headers: { Origin: 'http://127.0.0.1:4177', 'Access-Control-Request-Method': 'GET' } });
+  assert.equal(local.headers.get('access-control-allow-origin'), 'http://127.0.0.1:4177');
+  assert.equal(local.headers.get('access-control-allow-credentials'), null);
+  const staging = await fetch(transport, { method: 'OPTIONS', headers: { Origin: 'https://team-hangout-staging.web.app', 'Access-Control-Request-Method': 'PUT' } });
+  assert.equal(staging.headers.get('access-control-allow-origin'), 'https://team-hangout-staging.web.app');
+  const production = await fetch(transport, { method: 'OPTIONS', headers: { Origin: 'https://team-hangout-ddf27.firebaseapp.com', 'Access-Control-Request-Method': 'GET' } });
+  assert.equal(production.headers.get('access-control-allow-origin'), 'https://team-hangout-ddf27.firebaseapp.com');
+  const grant = await call('file-staff', 'createAttachmentUpload', { requestId: rid(), ...team, fileName: 'photo.jpg', declaredBytes: jpeg.length });
+  assert.equal((await putBytes(grant.token, jpeg)).status, 200);
+  const row = (await db.doc(`organizations/file-org/attachments/${grant.id}`).get()).data();
+  await getStorage(admin).bucket(`${projectId}.appspot.com`).file(row.objectPath).delete();
+  const missing = await call('file-staff', 'finalizeAttachment', { requestId: rid(), ...team, attachmentId: grant.id });
+  assert.equal(missing.state, 'rejected');
+  assert.equal(missing.rejectionCode, 'INTEGRITY');
+  assert.equal((await db.doc(`organizations/file-org/attachments/${grant.id}`).get()).data().state, 'rejected');
 });
 
 test('oversized and expired uploads are rejected before they can be downloaded', async () => {

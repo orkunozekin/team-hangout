@@ -35,6 +35,28 @@ export function configuredAttachmentBucket(configured: unknown): string | null {
   return name;
 }
 
+const APPROVED_ADMIN_ORIGINS = new Set([
+  "https://team-hangout-staging.web.app",
+  "https://team-hangout-staging.firebaseapp.com",
+  "https://team-hangout-ddf27.web.app",
+  "https://team-hangout-ddf27.firebaseapp.com",
+]);
+
+/** Echo only an approved admin origin, plus loopback while the emulator is running. */
+export function attachmentCorsOrigin(origin: unknown, emulator: boolean): string | null {
+  if (typeof origin !== "string" || origin.length === 0 || origin.length > 200) return null;
+  if (APPROVED_ADMIN_ORIGINS.has(origin)) return origin;
+  if (emulator && /^http:\/\/(127\.0\.0\.1|localhost):\d{1,5}$/.test(origin)) return origin;
+  return null;
+}
+
+/** A missing object is a durable integrity failure. Timeouts and other storage errors stay retryable. */
+export function storageReadFailure(error: unknown): "missing" | "retry" {
+  const code = error && typeof error === "object" && "code" in error ? (error as { code?: unknown }).code : undefined;
+  if (code === 404 || code === "404" || code === "ENOENT") return "missing";
+  return "retry";
+}
+
 export function uploadObjectPath(orgId: string, attachmentId: string): string {
   if (!/^[A-Za-z0-9_-]+$/.test(orgId) || !/^[A-Za-z0-9_-]+$/.test(attachmentId)) {
     throw new Error("Invalid attachment path.");
