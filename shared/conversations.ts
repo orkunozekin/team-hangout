@@ -19,6 +19,13 @@ export type ConversationReaction = {
   mine: boolean;
 };
 
+export type ConversationAttachment = {
+  id: string;
+  fileName: string;
+  detectedType: "image/jpeg" | "image/png" | "application/pdf" | string;
+  byteLength: number;
+};
+
 export type ConversationMessage = {
   id: string;
   sequence: number;
@@ -31,6 +38,7 @@ export type ConversationMessage = {
   revision?: number;
   mine?: boolean;
   reactions?: ConversationReaction[];
+  attachments?: ConversationAttachment[];
 };
 
 export type ConversationSearchPage = {
@@ -65,6 +73,7 @@ export type ConversationCommands = {
       scopeType: ConversationScopeType;
       scopeId: string;
       text: string;
+      attachmentIds?: string[];
     };
     output: { id: string; sequence: number };
   };

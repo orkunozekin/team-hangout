@@ -21,8 +21,10 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
   const [search, setSearch] = useState<ConversationSearchPage | null>(null);
   const [searching, setSearching] = useState(false);
   const [transport, setTransport] = useState<string | null>(null);
+  const [held, setHeld] = useState<{ key: string; attachmentId?: string; state: 'scanning' | 'rejected' | 'ready' }[]>([]);
   const [uploading, setUploading] = useState(false);
   const searchToken = useRef(0);
+  const uploadGeneration = useRef(0);
   async function refresh(initial = false) {
     if (initial) { setLoading(true); setPage(null); setItems([]); setDenied(false); }
     setError(null);
@@ -53,13 +55,18 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
       setError('Older messages could not be loaded. Try again.');
     } finally { setLoadingOlder(false); }
   }
-  useEffect(() => { searchToken.current += 1; setSearch(null); setSearching(false); setTransport(null); void refresh(true); }, [orgId, scopeType, scopeId]);
+  useEffect(() => { searchToken.current += 1; uploadGeneration.current += 1; setSearch(null); setSearching(false); setTransport(null); setHeld([]); void refresh(true); }, [orgId, scopeType, scopeId]);
   async function send() {
     if (!draft.trim()) return;
     setSaving(true); setError(null);
     try {
       if (editing) await editConversationMessage({ orgId, scopeType, scopeId, messageId: editing.id, text: draft.trim(), expectedRevision: editing.revision ?? 0 });
-      else await postConversationMessage({ orgId, scopeType, scopeId, text: draft.trim() });
+      else {
+        const attachmentIds = held.filter(item => item.state === 'ready' && item.attachmentId).slice(0, 3).map(item => item.attachmentId!);
+        await postConversationMessage({ orgId, scopeType, scopeId, text: draft.trim(), ...(attachmentIds.length ? { attachmentIds } : {}) });
+        setHeld(current => current.filter(item => !attachmentIds.includes(item.attachmentId ?? '')));
+        setTransport(null);
+      }
       setDraft('');
       setEditing(null);
       await refresh();
@@ -94,17 +101,25 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
     }
   }
   async function chooseFile() {
+    const generation = uploadGeneration.current;
     setUploading(true); setError(null);
     try {
       const picked = await pickConversationAttachment();
-      if (!picked) return;
+      if (!picked || generation !== uploadGeneration.current) return;
+      const key = `${picked.name}-${Date.now()}`;
+      setHeld(current => [...current, { key, state: 'scanning' }]);
+      setTransport(`Scanning · ${picked.name}`);
       const grant = await createAttachmentUpload({ orgId, scopeType, scopeId, fileName: picked.name, declaredBytes: picked.size });
       await uploadConversationFile(picked.file, grant);
       const done = await finalizeAttachment({ orgId, scopeType, scopeId, attachmentId: grant.id });
-      setTransport(done.state === 'ready' ? `Ready · ${picked.name} · ${done.detectedType} · ${done.byteLength} bytes` : 'This file was rejected.');
+      if (generation !== uploadGeneration.current) return;
+      const ready = done.state === 'ready';
+      setHeld(current => current.map(item => item.key === key ? { ...item, attachmentId: grant.id, state: ready ? 'ready' : 'rejected' } : item));
+      setTransport(ready ? `Ready · ${picked.name} · ${done.detectedType} · ${done.byteLength} bytes` : `Rejected · ${picked.name}${done.rejectionCode ? ` · ${done.rejectionCode}` : ''}`);
     } catch (caught) {
+      if (generation !== uploadGeneration.current) return;
       setTransport(caught instanceof Error && caught.message ? caught.message : 'This file was not uploaded.');
-    } finally { setUploading(false); }
+    } finally { if (generation === uploadGeneration.current) setUploading(false); }
   }
   const youthClosed = page?.mode === 'youth' && page.youthPosting === 'closed';
   const title = scopeType === 'event' ? 'Event conversation' : scopeType === 'team' ? 'Team conversation' : scopeType === 'division' ? 'Division announcements' : 'Organization announcements';
@@ -116,6 +131,7 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       {!items.length ? <EmptyState message="No messages yet." /> : items.map(item => <View key={item.id} style={styles.card}>
         <Text style={styles.body}>{item.tombstoned ? 'Message removed by a moderator' : item.body}</Text>
+        {item.tombstoned ? null : item.attachments?.map(file => <Text key={file.id} style={styles.pin}>{file.fileName} · {file.detectedType} · {file.byteLength} bytes</Text>)}
         {item.editedAt ? <Text style={styles.pin}>Edited</Text> : null}
         {item.pinned ? <Text style={styles.pin}>Pinned</Text> : null}
         {item.tombstoned ? null : <View style={styles.reactions}>{CONVERSATION_REACTIONS.map(choice => {

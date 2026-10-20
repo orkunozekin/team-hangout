@@ -22,7 +22,7 @@ export type AttachmentFinalize = {
   byteLength: number;
   sha256: string | null;
   fileName: string | null;
-  scan: { scanner: "fake"; verdict: "clean" | "rejected"; code?: string } | null;
+  scan: { scanner: string; verdict: "clean" | "rejected"; code?: string } | null;
   rejectionCode: string | null;
 };
 

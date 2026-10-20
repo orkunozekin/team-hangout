@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { deflateSync } from 'node:zlib';
 import { createRequire } from 'node:module';
 const require = createRequire(new URL('../../functions/package.json', import.meta.url));
 const scan = require('./lib/communications/attachmentScan.js');
@@ -47,6 +48,178 @@ test('review rejects expired, oversized, and mismatched bytes before a rejecting
   const failed = await scan.reviewAttachment({ fileName: 'photo.jpg', declaredBytes: jpeg.length, bytes: jpeg, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: () => { throw new Error('offline'); } });
   assert.equal(failed.code, 'SCAN_FAILED');
 });
+
+const validJpeg = Buffer.from("ffd8ffe000104a46494600010100000100010000ffdb004300080606070605080707070909080a0c140d0c0b0b0c1912130f141d1a1f1e1d1a1c1c20242e2720222c231c1c2837292c30313434341f27393d38323c2e333432ffc0000b080001000101011100ffc4001f0000010501010101010100000000000000000102030405060708090a0bffda000800010100003f007f00ffd9", "hex");
+function app1(payload) {
+  const data = Buffer.concat([Buffer.from("Exif\0\0"), Buffer.from(payload)]);
+  const length = Buffer.alloc(2);
+  length.writeUInt16BE(data.length + 2);
+  return Buffer.concat([Buffer.from([0xff, 0xe1]), length, data]);
+}
+function withExif(bytes, payload) {
+  return Buffer.concat([bytes.subarray(0, 2), app1(payload), bytes.subarray(2)]);
+}
+function pngText(bytes, text) {
+  const data = Buffer.concat([Buffer.from("Comment\0"), Buffer.from(text)]);
+  const type = Buffer.from("tEXt");
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(data.length);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(scan.attachmentCrc32(Buffer.concat([type, data])) >>> 0);
+  const chunk = Buffer.concat([length, type, data, crc]);
+  const end = bytes.lastIndexOf(Buffer.from("IEND"));
+  return Buffer.concat([bytes.subarray(0, end - 4), chunk, bytes.subarray(end - 4)]);
+}
+
+test('the content scanner strips image metadata, rejects active PDF content, and fails closed', async () => {
+  assert.equal(scan.ATTACHMENT_QUARANTINE_TTL_MS, 24 * 60 * 60 * 1000);
+  const marked = withExif(validJpeg, "GPS-SYNTHETIC");
+  const jpeg = await scan.reviewAttachment({ fileName: "photo.jpg", declaredBytes: marked.length, bytes: marked, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.contentScanner, scannerName: "content" });
+  assert.equal(jpeg.state, "ready");
+  assert.equal(jpeg.scan.scanner, "content");
+  assert.equal(jpeg.bytes.includes(Buffer.from("GPS-SYNTHETIC")), false);
+  assert.equal(jpeg.bytes.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff])), true);
+  assert.notEqual(jpeg.sha256, scan.sha256(marked));
+  const again = await scan.contentScanner({ bytes: jpeg.bytes, detectedType: "image/jpeg" });
+  assert.equal(Buffer.compare(again.bytes, jpeg.bytes), 0);
+  const text = pngText(png, "GPS-SYNTHETIC");
+  const image = await scan.reviewAttachment({ fileName: "diagram.png", declaredBytes: text.length, bytes: text, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.contentScanner, scannerName: "content" });
+  assert.equal(image.state, "ready");
+  assert.equal(image.bytes.includes(Buffer.from("GPS-SYNTHETIC")), false);
+  assert.equal(Buffer.compare(image.bytes, png), 0);
+  const info = Buffer.from("%PDF-1.4\n1 0 obj\n<< /Title (GPS-SYNTHETIC) >>\nendobj\n%%EOF\nTRAILING-GARBAGE");
+  const pdf = await scan.reviewAttachment({ fileName: "notes.pdf", declaredBytes: info.length, bytes: info, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.contentScanner, scannerName: "content" });
+  assert.equal(pdf.state, "ready");
+  assert.equal(pdf.bytes.includes(Buffer.from("GPS-SYNTHETIC")), false);
+  assert.equal(pdf.bytes.includes(Buffer.from("TRAILING-GARBAGE")), false);
+  assert.equal(pdf.bytes.includes(Buffer.from("%PDF-")), true);
+  const active = Buffer.from("%PDF-1.4\n1 0 obj\n<< /JavaScript (alert) >>\nendobj\n%%EOF");
+  const script = await scan.reviewAttachment({ fileName: "notes.pdf", declaredBytes: active.length, bytes: active, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.contentScanner, scannerName: "content" });
+  assert.equal(script.state, "rejected");
+  assert.equal(script.code, "ACTIVE_CONTENT");
+  const encoded = Buffer.from("%PDF-1.4\n1 0 obj\n<< /J#61vaScript (alert) >>\nendobj\n%%EOF");
+  const escaped = await scan.reviewAttachment({ fileName: "notes.pdf", declaredBytes: encoded.length, bytes: encoded, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.contentScanner, scannerName: "content" });
+  assert.equal(escaped.code, "ACTIVE_CONTENT");
+  const hexName = Buffer.from("%PDF-1.4\n1 0 obj\n<< /#4A#53 (alert) >>\nendobj\n%%EOF");
+  const hex = await scan.reviewAttachment({ fileName: "notes.pdf", declaredBytes: hexName.length, bytes: hexName, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.contentScanner, scannerName: "content" });
+  assert.equal(hex.code, "ACTIVE_CONTENT");
+  const head = "%PDF-1.4\n1 0 obj\n<< /Title (GPS-SYNTHETIC) >>\nendobj\n";
+  const xrefAt = Buffer.byteLength(head);
+  const linkedPdf = Buffer.from(`${head}xref\n0 1\n0000000000 65535 f \ntrailer\n<< /Size 1 >>\nstartxref\n${xrefAt}\n%%EOF\nTRAILING-GARBAGE`);
+  const stable = await scan.reviewAttachment({ fileName: "notes.pdf", declaredBytes: linkedPdf.length, bytes: linkedPdf, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.contentScanner, scannerName: "content" });
+  assert.equal(stable.state, "ready");
+  assert.equal(stable.bytes.includes(Buffer.from("GPS-SYNTHETIC")), false);
+  assert.equal(stable.bytes.includes(Buffer.from("TRAILING-GARBAGE")), false);
+  assert.equal(stable.bytes.indexOf("xref"), xrefAt);
+  assert.equal(stable.bytes.includes(Buffer.from(`startxref\n${xrefAt}\n`)), true);
+  assert.equal(stable.byteLength, linkedPdf.length - Buffer.from("TRAILING-GARBAGE").length);
+  assert.equal(script.scan.scanner, "content");
+  assert.notEqual(script.code, "INTEGRITY");
+  assert.notEqual(script.code, "ACCESS_REVOKED");
+  assert.notEqual(script.code, "SIGNATURE_MISMATCH");
+  const offline = scan.selectAttachmentScanner({ mode: "unavailable" });
+  const failed = await scan.reviewAttachment({ fileName: "photo.jpg", declaredBytes: validJpeg.length, bytes: validJpeg, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: offline.scan, scannerName: offline.name });
+  assert.equal(failed.code, "SCAN_FAILED");
+  assert.notEqual(failed.code, "INTEGRITY");
+  const missing = scan.selectAttachmentScanner({ mode: "external" });
+  const blocked = await scan.reviewAttachment({ fileName: "photo.jpg", declaredBytes: validJpeg.length, bytes: validJpeg, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: missing.scan, scannerName: missing.name });
+  assert.equal(blocked.code, "SCAN_FAILED");
+  const calls = [];
+  const external = scan.selectAttachmentScanner({ mode: "external", externalUrl: "https://scanner.example.test/scan" }, async (url, init) => {
+    calls.push({ url, type: init.headers["x-detected-type"], body: Buffer.from(init.body) });
+    return { ok: false, status: 503, json: async () => ({}) };
+  });
+  const remoteDown = await scan.reviewAttachment({ fileName: "photo.jpg", declaredBytes: marked.length, bytes: marked, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: external.scan, scannerName: external.name });
+  assert.equal(remoteDown.code, "SCAN_FAILED");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].body.includes(Buffer.from("GPS-SYNTHETIC")), false);
+  const rejecting = scan.selectAttachmentScanner({ mode: "external", externalUrl: "https://scanner.example.test/scan" }, async () => ({ ok: true, status: 200, json: async () => ({ verdict: "rejected", code: "MALWARE" }) }));
+  const malware = await scan.reviewAttachment({ fileName: "photo.jpg", declaredBytes: validJpeg.length, bytes: validJpeg, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: rejecting.scan, scannerName: rejecting.name });
+  assert.equal(malware.code, "MALWARE");
+  assert.equal(malware.scan.scanner, "external");
+  for (const code of ["INTEGRITY", "ACCESS_REVOKED"]) {
+    const spoof = scan.selectAttachmentScanner({ mode: "external", externalUrl: "https://scanner.example.test/scan" }, async () => ({ ok: true, status: 200, json: async () => ({ verdict: "rejected", code }) }));
+    const reserved = await scan.reviewAttachment({ fileName: "photo.jpg", declaredBytes: validJpeg.length, bytes: validJpeg, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: spoof.scan, scannerName: spoof.name });
+    assert.equal(reserved.code, "SCAN_REJECTED");
+    assert.equal(reserved.scan.scanner, "external");
+    assert.notEqual(reserved.code, code);
+  }
+  const clean = scan.selectAttachmentScanner({ mode: "content" });
+  assert.equal(clean.name, "content");
+  assert.equal(scan.selectAttachmentScanner({ mode: "skip" }).scan === clean.scan, false);
+  const unknown = await scan.reviewAttachment({ fileName: "photo.jpg", declaredBytes: validJpeg.length, bytes: validJpeg, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.selectAttachmentScanner({ mode: "skip" }).scan, scannerName: "content" });
+  assert.equal(unknown.code, "SCAN_FAILED");
+  assert.equal(scan.abandonedAttachment({ state: "ready", createdAtMs: 1, nowMs: scan.ATTACHMENT_QUARANTINE_TTL_MS + 5 }), false);
+  assert.equal(scan.abandonedAttachment({ state: "quarantined", createdAtMs: 1, nowMs: scan.ATTACHMENT_QUARANTINE_TTL_MS + 1 }), true);
+  assert.equal(scan.abandonedAttachment({ state: "canonicalizing", createdAtMs: 1, nowMs: scan.ATTACHMENT_QUARANTINE_TTL_MS + 1 }), true);
+  assert.equal(scan.abandonedAttachment({ state: "quarantined", createdAtMs: 10_000, nowMs: 10_000 + scan.ATTACHMENT_QUARANTINE_TTL_MS - 1 }), false);
+  assert.equal(scan.abandonedObject({ timeCreatedMs: 1, nowMs: scan.ATTACHMENT_QUARANTINE_TTL_MS + 1, ready: false }), true);
+  assert.equal(scan.abandonedObject({ timeCreatedMs: 1, nowMs: scan.ATTACHMENT_QUARANTINE_TTL_MS + 1, ready: true }), false);
+  assert.equal(scan.abandonedObject({ timeCreatedMs: null, nowMs: scan.ATTACHMENT_QUARANTINE_TTL_MS + 1, ready: false }), false);
+});
+
+function flateObject(payload, filter = '/FlateDecode') {
+  const compressed = deflateSync(payload);
+  const header = `%PDF-1.4\n1 0 obj\n<< /Type /ObjStm /N 1 /First 0 /Filter ${filter} /Length ${compressed.length} >>\nstream\n`;
+  return Buffer.concat([Buffer.from(header), compressed, Buffer.from('\nendstream\nendobj\n%%EOF')]);
+}
+
+test('the content scanner rejects active PDF content hidden in a compressed object', async () => {
+  const hidden = flateObject(Buffer.from('<< /JavaScript (alert) >>'));
+  assert.equal(hidden.includes(Buffer.from('/JavaScript')), false);
+  const script = await scan.reviewAttachment({ fileName: 'notes.pdf', declaredBytes: hidden.length, bytes: hidden, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.contentScanner, scannerName: 'content' });
+  assert.equal(script.state, 'rejected');
+  assert.equal(script.code, 'ACTIVE_CONTENT');
+  const abbreviated = flateObject(Buffer.from('<< /JS (alert) >>'), '/Fl');
+  assert.equal(abbreviated.includes(Buffer.from('/JS')), false);
+  const short = await scan.reviewAttachment({ fileName: 'notes.pdf', declaredBytes: abbreviated.length, bytes: abbreviated, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.contentScanner, scannerName: 'content' });
+  assert.equal(short.code, 'ACTIVE_CONTENT');
+  const encoded = flateObject(Buffer.from('<< /OpenAction << /S /JavaScript >> >>'), '/Fl#61teDecode');
+  const escaped = await scan.reviewAttachment({ fileName: 'notes.pdf', declaredBytes: encoded.length, bytes: encoded, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.contentScanner, scannerName: 'content' });
+  assert.equal(escaped.code, 'ACTIVE_CONTENT');
+  const asciiPayload = ascii85(Buffer.from('<< /Launch (cmd) >>'));
+  const ascii = Buffer.from(`%PDF-1.4\n1 0 obj\n<< /Filter /ASCII85Decode /Length ${asciiPayload.length} >>\nstream\n${asciiPayload}\nendstream\nendobj\n%%EOF`);
+  assert.equal(ascii.includes(Buffer.from('/Launch')), false);
+  const launched = await scan.reviewAttachment({ fileName: 'notes.pdf', declaredBytes: ascii.length, bytes: ascii, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.contentScanner, scannerName: 'content' });
+  assert.equal(launched.code, 'ACTIVE_CONTENT');
+  const broken = Buffer.from('%PDF-1.4\n1 0 obj\n<< /Length 8 /Filter /FlateDecode >>\nstream\nnotflate\nendstream\nendobj\n%%EOF');
+  const malformed = await scan.reviewAttachment({ fileName: 'notes.pdf', declaredBytes: broken.length, bytes: broken, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.contentScanner, scannerName: 'content' });
+  assert.equal(malformed.state, 'rejected');
+  assert.equal(malformed.code, 'MALFORMED');
+  const sealed = Buffer.from('%PDF-1.4\n1 0 obj\n<< /Length 4 /Filter /Crypt >>\nstream\nabcd\nendstream\nendobj\n%%EOF');
+  const crypt = await scan.reviewAttachment({ fileName: 'notes.pdf', declaredBytes: sealed.length, bytes: sealed, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.contentScanner, scannerName: 'content' });
+  assert.equal(crypt.code, 'ACTIVE_CONTENT');
+  const compressed = deflateSync(Buffer.from('hello'));
+  const clean = Buffer.concat([
+    Buffer.from(`%PDF-1.4\n1 0 obj\n<< /Length ${compressed.length} /Filter /FlateDecode >>\nstream\n`),
+    compressed,
+    Buffer.from('\nendstream\nendobj\n2 0 obj\n<< /Title (GPS-SYNTHETIC) >>\nendobj\n%%EOF'),
+  ]);
+  const ready = await scan.reviewAttachment({ fileName: 'notes.pdf', declaredBytes: clean.length, bytes: clean, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.contentScanner, scannerName: 'content' });
+  assert.equal(ready.state, 'ready');
+  assert.equal(ready.bytes.includes(Buffer.from('GPS-SYNTHETIC')), false);
+  assert.equal(ready.bytes.subarray(0, 5).toString('ascii'), '%PDF-');
+  const image = Buffer.from('%PDF-1.4\n1 0 obj\n<< /Length 4 /Filter /DCTDecode >>\nstream\nxxxx\nendstream\nendobj\n%%EOF');
+  const photo = await scan.reviewAttachment({ fileName: 'notes.pdf', declaredBytes: image.length, bytes: image, expiresAtMs: Date.now() + 1000, nowMs: Date.now(), scanner: scan.contentScanner, scannerName: 'content' });
+  assert.equal(photo.state, 'ready');
+});
+
+function ascii85(bytes) {
+  let out = '';
+  for (let index = 0; index < bytes.length; index += 4) {
+    const chunk = bytes.subarray(index, Math.min(index + 4, bytes.length));
+    if (chunk.length === 4 && chunk.every((value) => value === 0)) { out += 'z'; continue; }
+    let value = 0;
+    for (let byte = 0; byte < 4; byte += 1) value = value * 256 + (chunk[byte] ?? 0);
+    let group = '';
+    for (let piece = 0; piece < 5; piece += 1) {
+      group = String.fromCharCode((value % 85) + 33) + group;
+      value = Math.floor(value / 85);
+    }
+    out += group.slice(0, chunk.length + 1);
+  }
+  return out;
+}
 
 test('upload grants expire and reject a tampered signature', () => {
   const grant = { v: 1, exp: Math.floor(Date.now() / 1000) + 300, attachmentId: 'file', uid: 'owner', orgId: 'org', bytes: jpeg.length, path: 'quarantine/org/file/1' };

@@ -1,7 +1,10 @@
+import { createHash } from "node:crypto";
+import { Readable } from "node:stream";
 import { getAuth } from "firebase-admin/auth";
-import { getFirestore, Timestamp, Transaction } from "firebase-admin/firestore";
+import { FieldPath, getFirestore, Timestamp, Transaction } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
 import { HttpsError, onCall, onRequest } from "firebase-functions/v2/https";
+import { onSchedule } from "firebase-functions/v2/scheduler";
 import type { Request } from "firebase-functions/v2/https";
 import type { Response } from "express";
 import { defineSecret } from "firebase-functions/params";
@@ -15,13 +18,17 @@ import {
   ATTACHMENT_EXPIRY_SECONDS,
   ATTACHMENT_LIMIT,
   ATTACHMENT_MAX_BYTES,
+  ATTACHMENT_QUARANTINE_TTL_MS,
   DEMO_ATTACHMENT_UPLOAD_KEY,
+  abandonedAttachment,
+  abandonedObject,
   attachmentCorsOrigin,
   attachmentFileName,
+  canonicalObjectPath,
   configuredAttachmentBucket,
-  developmentScanner,
   readUploadGrant,
   reviewAttachment,
+  selectAttachmentScanner,
   sha256,
   signUploadGrant,
   storageReadFailure,
@@ -104,8 +111,8 @@ function attachmentRef(orgId: string, attachmentId: string) {
 function slotRef(orgId: string, conversationId: string, uid: string) {
   return getFirestore().doc(`organizations/${orgId}/attachmentSlots/${fingerprint({ kind: "attachmentSlot", orgId, conversationId, uid })}`);
 }
-function scanRejected(code: string) {
-  return { scanner: "fake" as const, verdict: "rejected" as const, code };
+function transportScan(code: string) {
+  return { scanner: "transport" as const, verdict: "rejected" as const, code };
 }
 function view(attachmentId: string, row: Data) {
   return {
@@ -136,10 +143,10 @@ async function reserve(tx: Transaction, orgId: string, conversationId: string, u
     const row = doc.data();
     if (!row || row.ownerUid !== uid || row.conversationId !== conversationId) continue;
     if ((row.state === "pending" || row.state === "uploading") && row.expiresAt?.toMillis?.() <= now.toMillis()) {
-      tx.update(doc.ref, { state: "rejected", rejectionCode: "EXPIRED", scan: scanRejected("EXPIRED"), updatedAt: now });
+      tx.update(doc.ref, { state: "rejected", rejectionCode: "EXPIRED", scan: transportScan("EXPIRED"), updatedAt: now });
       continue;
     }
-    if (row.state === "pending" || row.state === "uploading" || row.state === "quarantined" || row.state === "ready") kept.push(doc.id);
+    if (row.state === "pending" || row.state === "uploading" || row.state === "quarantined" || row.state === "canonicalizing" || row.state === "ready") kept.push(doc.id);
   }
   if (kept.length >= ATTACHMENT_LIMIT) {
     throw new HttpsError("failed-precondition", "A conversation can hold 3 attachments.", { domainCode: "ATTACHMENT_LIMIT" });
@@ -198,6 +205,7 @@ export const createAttachmentUpload = onCall(callableOptions, async (request) =>
       expiresAt,
       rejectionCode: null,
       messageId: null,
+      canonicalSha256: null,
       createdAt: now,
       updatedAt: now,
     });
@@ -245,10 +253,10 @@ async function rejectGrant(grant: UploadGrant, code: "EXPIRED" | "OVERSIZED" | "
     const snap = await tx.get(ref);
     const row = snap.data();
     if (!row || row.ownerUid !== grant.uid || row.objectPath !== grant.path || row.orgId !== grant.orgId) return;
-    if (row.state === "ready" || row.state === "quarantined") return;
+    if (row.state === "ready" || row.state === "quarantined" || row.state === "canonicalizing") return;
     if (row.state === "rejected") return;
     const slot = (await tx.get(slotRef(grant.orgId, row.conversationId, grant.uid))).data();
-    tx.update(ref, { state: "rejected", rejectionCode: code, scan: scanRejected(code), updatedAt: Timestamp.now() });
+    tx.update(ref, { state: "rejected", rejectionCode: code, scan: transportScan(code), updatedAt: Timestamp.now() });
     dropActive(tx, grant.orgId, row.conversationId, grant.uid, grant.attachmentId, slot);
   });
 }
@@ -269,7 +277,9 @@ async function receiveUpload(grant: UploadGrant, bytes: Buffer) {
     const decision = await authorizeConversation(tx, row.orgId, scope, row.scopeId, grant.uid);
     assertPost(decision);
     if (row.conversationId !== decision.conversationId) return "missing" as const;
-    if ((row.state === "quarantined" || row.state === "uploading") && row.sha256 === hash) return "resume" as const;
+    if (row.state === "canonicalizing") return "conflict" as const;
+    if (row.state === "quarantined" && row.sha256 === hash) return "stored" as const;
+    if (row.state === "uploading" && row.sha256 === hash) return "resume" as const;
     if (row.state !== "pending") return "conflict" as const;
     tx.update(ref, { state: "uploading", sha256: hash, actualBytes: bytes.length, generation: 1, updatedAt: Timestamp.now() });
     return "claimed" as const;
@@ -280,6 +290,7 @@ async function receiveUpload(grant: UploadGrant, bytes: Buffer) {
     throw new HttpsError("failed-precondition", "This upload expired.", { domainCode: "EXPIRED" });
   }
   if (claim === "conflict") throw new HttpsError("failed-precondition", "This upload is unavailable.");
+  if (claim === "stored") return;
   await bucket().file(grant.path).save(bytes, { resumable: false, metadata: { contentType: "application/octet-stream" } });
   const finished = await db.runTransaction(async (tx) => {
     tx = cacheDocumentReads(tx);
@@ -290,7 +301,7 @@ async function receiveUpload(grant: UploadGrant, bytes: Buffer) {
     if (row.state === "quarantined") return "ok" as const;
     const slot = (await tx.get(slotRef(row.orgId, row.conversationId, row.ownerUid))).data();
     if (row.expiresAt.toMillis() <= Date.now()) {
-      tx.update(ref, { state: "rejected", rejectionCode: "EXPIRED", scan: scanRejected("EXPIRED"), updatedAt: Timestamp.now() });
+      tx.update(ref, { state: "rejected", rejectionCode: "EXPIRED", scan: transportScan("EXPIRED"), updatedAt: Timestamp.now() });
       dropActive(tx, row.orgId, row.conversationId, row.ownerUid, grant.attachmentId, slot);
       return "expired" as const;
     }
@@ -299,7 +310,7 @@ async function receiveUpload(grant: UploadGrant, bytes: Buffer) {
       assertPost(decision);
     } catch (error) {
       if (!(error instanceof HttpsError)) throw error;
-      tx.update(ref, { state: "rejected", rejectionCode: "ACCESS_REVOKED", scan: scanRejected("ACCESS_REVOKED"), updatedAt: Timestamp.now() });
+      tx.update(ref, { state: "rejected", rejectionCode: "ACCESS_REVOKED", scan: transportScan("ACCESS_REVOKED"), updatedAt: Timestamp.now() });
       dropActive(tx, row.orgId, row.conversationId, row.ownerUid, grant.attachmentId, slot);
       return "denied" as const;
     }
@@ -362,7 +373,12 @@ async function downloadAttachment(req: Request, res: Response) {
     assertRead(decision);
     const snap = await tx.get(attachmentRef(orgId, attachmentId));
     const row = snap.data();
-    if (!row || row.orgId !== orgId || row.conversationId !== decision.conversationId || row.state !== "ready" || row.messageId != null) return null;
+    if (!row || row.orgId !== orgId || row.conversationId !== decision.conversationId || row.state !== "ready") return null;
+    if (typeof row.messageId === "string") {
+      const message = await tx.get(getFirestore().doc(`organizations/${orgId}/conversations/${row.conversationId}/messages/${row.messageId}`));
+      const linked = message.data()?.attachmentIds;
+      if (!message.exists || message.data()?.tombstoned === true || !Array.isArray(linked) || !linked.includes(attachmentId)) return null;
+    }
     if (typeof row.objectPath !== "string" || typeof row.sha256 !== "string" || typeof row.detectedType !== "string") return null;
     return {
       path: row.objectPath,
@@ -373,14 +389,7 @@ async function downloadAttachment(req: Request, res: Response) {
     };
   });
   if (!allowed) return end(res, 404, "This file is unavailable.");
-  const [bytes] = await bucket().file(allowed.path).download();
-  if (bytes.length !== allowed.byteLength || sha256(bytes) !== allowed.sha256) return end(res, 404, "This file is unavailable.");
-  res.setHeader("Cache-Control", "private, no-store");
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("Content-Type", allowed.detectedType);
-  res.setHeader("Content-Disposition", disposition(allowed.fileName));
-  res.setHeader("Content-Length", String(bytes.length));
-  res.status(200).end(bytes);
+  await streamVerified(res, allowed);
 }
 
 export const attachmentTransport = onRequest(httpOptions, async (req, res) => {
@@ -436,7 +445,7 @@ export const finalizeAttachment = onCall(callableOptions, async (request) => {
     const row = snap.data();
     if (!row || row.orgId !== payload.orgId || row.conversationId !== decision.conversationId || row.ownerUid !== uid || row.messageId != null) denied();
     if (row.state === "ready" || row.state === "rejected") return { kind: "terminal" as const, result: view(payload.attachmentId, row) };
-    if (row.state !== "quarantined" || typeof row.objectPath !== "string" || typeof row.sha256 !== "string" || typeof row.fileName !== "string") {
+    if ((row.state !== "quarantined" && row.state !== "canonicalizing") || typeof row.objectPath !== "string" || typeof row.sha256 !== "string" || typeof row.fileName !== "string") {
       throw new HttpsError("failed-precondition", "Upload the file before finishing it.", { domainCode: "UPLOAD_REQUIRED" });
     }
     return {
@@ -444,6 +453,8 @@ export const finalizeAttachment = onCall(callableOptions, async (request) => {
       path: row.objectPath as string,
       declaredBytes: row.declaredBytes as number,
       sha256: row.sha256 as string,
+      canonicalSha256: typeof row.canonicalSha256 === "string" ? row.canonicalSha256 : null,
+      canonicalBytes: typeof row.canonicalBytes === "number" ? row.canonicalBytes : null,
       fileName: row.fileName as string,
       expiresAtMs: row.expiresAt.toMillis() as number,
     };
@@ -454,18 +465,49 @@ export const finalizeAttachment = onCall(callableOptions, async (request) => {
   }
   let review: AttachmentReview | null = null;
   if (opened.kind === "review") {
-    if (opened.expiresAtMs <= Date.now()) {
+    const canonicalPath = canonicalObjectPath(payload.orgId, payload.attachmentId);
+    const canonicalStored = opened.canonicalSha256 ? await readQuarantine(canonicalPath) : Buffer.alloc(0);
+    const storedCanonicalHash = opened.canonicalSha256 ? sha256(canonicalStored) : "";
+    const usingCanonical = opened.canonicalSha256 != null && canonicalStored.length > 0 && storedCanonicalHash === opened.canonicalSha256;
+    if (!usingCanonical && opened.expiresAtMs <= Date.now()) {
       review = await reviewAttachment({
-        fileName: opened.fileName, declaredBytes: opened.declaredBytes, bytes: Buffer.alloc(0), expiresAtMs: opened.expiresAtMs, nowMs: Date.now(), scanner: developmentScanner,
+        fileName: opened.fileName, declaredBytes: opened.declaredBytes, bytes: Buffer.alloc(0), expiresAtMs: opened.expiresAtMs, nowMs: Date.now(), scanner: () => ({ verdict: "clean" }),
       });
     } else {
-      const bytes = await readQuarantine(opened.path);
-      if (sha256(bytes) !== opened.sha256) {
-        review = { state: "rejected", code: "INTEGRITY", detectedType: null, sha256: sha256(bytes), byteLength: bytes.length, scan: scanRejected("INTEGRITY") };
+      const uploaded = usingCanonical ? Buffer.alloc(0) : await readQuarantine(opened.path);
+      const uploadedHash = sha256(uploaded);
+      const usingUpload = !usingCanonical && uploadedHash === opened.sha256;
+      if (!usingCanonical && !usingUpload) {
+        const objectHash = canonicalStored.length > 0 ? storedCanonicalHash : uploadedHash;
+        review = { state: "rejected", code: "INTEGRITY", detectedType: null, sha256: objectHash, byteLength: canonicalStored.length > 0 ? canonicalStored.length : uploaded.length, scan: transportScan("INTEGRITY") };
       } else {
+        const source = usingCanonical ? canonicalStored : uploaded;
+        const declaredBytes = usingCanonical ? (opened.canonicalBytes ?? source.length) : opened.declaredBytes;
+        const selected = await loadScanner();
         review = await reviewAttachment({
-          fileName: opened.fileName, declaredBytes: opened.declaredBytes, bytes, expiresAtMs: opened.expiresAtMs, nowMs: Date.now(), scanner: developmentScanner,
+          fileName: opened.fileName,
+          declaredBytes,
+          bytes: source,
+          expiresAtMs: usingCanonical ? Math.max(opened.expiresAtMs, Date.now() + 1) : opened.expiresAtMs,
+          nowMs: Date.now(),
+          scanner: selected.scan,
+          scannerName: selected.name,
         });
+        if (review.state === "ready" && review.sha256 !== sha256(source)) {
+          const canonicalHash = review.sha256;
+          const canonicalLength = review.byteLength;
+          const canonicalBytes = review.bytes;
+          const marked = await db.runTransaction(async (tx) => {
+            tx = cacheDocumentReads(tx);
+            const snap = await tx.get(ref);
+            const row = snap.data();
+            if (!row || (row.state !== "quarantined" && row.state !== "canonicalizing") || row.sha256 !== opened.sha256 || row.ownerUid !== uid) return false;
+            tx.update(ref, { state: "canonicalizing", canonicalSha256: canonicalHash, canonicalBytes: canonicalLength, updatedAt: Timestamp.now() });
+            return true;
+          });
+          if (!marked) throw new HttpsError("failed-precondition", "Upload the file before finishing it.", { domainCode: "UPLOAD_REQUIRED" });
+          await writeCanonical(canonicalPath, canonicalBytes);
+        }
       }
     }
   }
@@ -488,7 +530,8 @@ export const finalizeAttachment = onCall(callableOptions, async (request) => {
       tx.create(receipt, { uid, operation: "finalizeAttachment", fingerprint: payloadFingerprint, result: current, createdAt: Timestamp.now() });
       return current;
     }
-    if (opened.kind !== "review" || row.state !== "quarantined" || row.sha256 !== opened.sha256) {
+    const publishingCanonical = opened.kind === "review" && review!.state === "ready" && review!.sha256 !== opened.sha256;
+    if (opened.kind !== "review" || row.sha256 !== opened.sha256 || (publishingCanonical ? row.state !== "canonicalizing" || row.canonicalSha256 !== review!.sha256 : row.state !== "quarantined" && row.state !== "canonicalizing")) {
       throw new HttpsError("failed-precondition", "Upload the file before finishing it.", { domainCode: "UPLOAD_REQUIRED" });
     }
     const slot = (await tx.get(slotRef(payload.orgId, decision.conversationId, uid))).data();
@@ -499,12 +542,25 @@ export const finalizeAttachment = onCall(callableOptions, async (request) => {
       });
       dropActive(tx, payload.orgId, decision.conversationId, uid, payload.attachmentId, slot);
     } else {
-      tx.update(ref, { state: "ready", detectedType: review!.detectedType, scan: review!.scan, rejectionCode: null, sha256: review!.sha256, actualBytes: review!.byteLength, updatedAt: now });
+      tx.update(ref, {
+        state: "ready",
+        detectedType: review!.detectedType,
+        scan: review!.scan,
+        rejectionCode: null,
+        sha256: review!.sha256,
+        actualBytes: review!.byteLength,
+        ...(publishingCanonical ? { objectPath: canonicalObjectPath(payload.orgId, payload.attachmentId) } : {}),
+        updatedAt: now,
+      });
     }
     tx.create(receipt, { uid, operation: "finalizeAttachment", fingerprint: payloadFingerprint, result, createdAt: now });
     return result;
   });
   if (committed?.state === "rejected") await deleteRejectedBytes(payload.orgId, payload.attachmentId);
+  if (opened.kind === "review" && review?.state === "ready" && review.sha256 !== opened.sha256) {
+    try { await bucket().file(opened.path).delete({ ignoreNotFound: true }); }
+    catch { /* a later purge removes an unpublished object */ }
+  }
   return committed;
 });
 
@@ -517,6 +573,178 @@ async function readQuarantine(path: string): Promise<Buffer> {
     throw new HttpsError("unavailable", "Attachment storage could not be read. Try again.");
   }
 }
+
+async function loadScanner() {
+  const snap = await getFirestore().doc("platformConfig/attachmentScanner").get();
+  const stored = snap.exists ? snap.data()?.mode : undefined;
+  const mode = stored == null || stored === "" ? (process.env.ATTACHMENT_SCANNER || "content") : stored;
+  return selectAttachmentScanner({ mode, externalUrl: process.env.ATTACHMENT_SCANNER_URL });
+}
+
+async function writeCanonical(path: string, bytes: Buffer) {
+  await bucket().file(path).save(bytes, { resumable: false, metadata: { contentType: "application/octet-stream" } });
+  const written = await readQuarantine(path);
+  if (sha256(written) !== sha256(bytes)) throw new HttpsError("unavailable", "Attachment storage could not be updated. Try again.");
+}
+
+async function hashReadable(stream: Readable): Promise<{ hash: string; length: number; bytes: Buffer }> {
+  const hash = createHash("sha256");
+  const chunks: Buffer[] = [];
+  let length = 0;
+  for await (const chunk of stream) {
+    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    length += bytes.length;
+    if (length > ATTACHMENT_MAX_BYTES) {
+      stream.destroy();
+      return { hash: "", length, bytes: Buffer.alloc(0) };
+    }
+    hash.update(bytes);
+    chunks.push(bytes);
+  }
+  return { hash: hash.digest("hex"), length, bytes: Buffer.concat(chunks) };
+}
+
+async function streamVerified(res: Response, allowed: { path: string; sha256: string; byteLength: number; detectedType: string; fileName: string }) {
+  const file = bucket().file(allowed.path);
+  let size = Number.NaN;
+  try {
+    const [metadata] = await file.getMetadata();
+    size = Number(metadata.size);
+  } catch (error) {
+    if (storageReadFailure(error) === "missing") return end(res, 404, "This file is unavailable.");
+    throw new HttpsError("unavailable", "Attachment storage could not be read. Try again.");
+  }
+  if (size !== allowed.byteLength) return end(res, 404, "This file is unavailable.");
+  const hashed = await hashReadable(file.createReadStream());
+  if (hashed.hash !== allowed.sha256 || hashed.length !== allowed.byteLength) return end(res, 404, "This file is unavailable.");
+  res.setHeader("Cache-Control", "private, no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Content-Type", allowed.detectedType);
+  res.setHeader("Content-Disposition", disposition(allowed.fileName));
+  res.setHeader("Content-Length", String(allowed.byteLength));
+  res.status(200);
+  await new Promise<void>((resolve, reject) => {
+    res.on("error", reject);
+    res.on("finish", () => resolve());
+    res.end(hashed.bytes);
+  });
+}
+
+function quarantineParts(name: string): { orgId: string; attachmentId: string } | null {
+  const parts = name.split("/");
+  if (parts.length !== 4 || parts[0] !== "quarantine" || (parts[3] !== "1" && parts[3] !== "2")) return null;
+  if (!/^[A-Za-z0-9_-]+$/.test(parts[1]) || !/^[A-Za-z0-9_-]+$/.test(parts[2])) return null;
+  return { orgId: parts[1], attachmentId: parts[2] };
+}
+
+type AttachmentDb = ReturnType<typeof getFirestore>;
+type AttachmentBucket = ReturnType<ReturnType<typeof getStorage>["bucket"]>;
+
+async function purgeAttachmentDoc(db: AttachmentDb, storageBucket: AttachmentBucket, doc: FirebaseFirestore.QueryDocumentSnapshot, nowMs: number) {
+  const seeded = doc.data() as Data | undefined;
+  if (!seeded || !abandonedAttachment({ state: String(seeded.state ?? ""), createdAtMs: seeded.createdAt?.toMillis?.() ?? Number.NaN, nowMs })) return;
+  const objectPath = typeof seeded.objectPath === "string" ? seeded.objectPath : null;
+  await db.runTransaction(async (tx) => {
+    const current = await tx.get(doc.ref);
+    const live = current.data() as Data | undefined;
+    if (!live || !abandonedAttachment({ state: String(live.state ?? ""), createdAtMs: live.createdAt?.toMillis?.() ?? Number.NaN, nowMs })) return;
+    const slot = typeof live.conversationId === "string" && typeof live.ownerUid === "string" && typeof live.orgId === "string"
+      ? db.doc(`organizations/${live.orgId}/attachmentSlots/${fingerprint({ kind: "attachmentSlot", orgId: live.orgId, conversationId: live.conversationId, uid: live.ownerUid })}`) : null;
+    const slotSnap = slot ? await tx.get(slot) : null;
+    const slotData = slotSnap?.data() as Data | undefined;
+    const activeIds: string[] = Array.isArray(slotData?.activeIds)
+      ? slotData.activeIds.filter((item: unknown): item is string => item !== doc.id && typeof item === "string") : [];
+    const others = activeIds.length ? await tx.getAll(...activeIds.map((item) => db.doc(`organizations/${String(live.orgId)}/attachments/${item}`))) : [];
+    const kept = others.filter((snap) => {
+      const data = snap.data() as Data | undefined;
+      if (!data) return false;
+      if (data.state === "ready") return true;
+      return !abandonedAttachment({ state: String(data.state ?? ""), createdAtMs: data.createdAt?.toMillis?.() ?? Number.NaN, nowMs });
+    }).map((snap) => snap.id);
+    tx.delete(current.ref);
+    if (slot && slotSnap?.exists) {
+      if (kept.length) tx.set(slot, { activeIds: kept, updatedAt: Timestamp.fromMillis(nowMs) }, { merge: true });
+      else tx.delete(slot);
+    }
+  });
+  if (!objectPath) return;
+  try { await storageBucket.file(objectPath).delete({ ignoreNotFound: true }); }
+  catch (error) { if (storageReadFailure(error) !== "missing") throw error; }
+}
+
+/** Delete quarantine abandoned for 24 hours, rejected rows, and objects left without a ready document. */
+export async function purgeAbandonedAttachments(nowMs = Date.now(), options?: {
+  db?: AttachmentDb;
+  bucket?: AttachmentBucket;
+  objectTimeMs?: (name: string, timeCreatedMs: number | null) => number | null;
+  objectPages?: number;
+  objectPageSize?: number;
+}) {
+  const db = options?.db ?? getFirestore();
+  const storageBucket = options?.bucket ?? bucket();
+  const cutoff = Timestamp.fromMillis(nowMs - ATTACHMENT_QUARANTINE_TTL_MS);
+  let cursor: FirebaseFirestore.QueryDocumentSnapshot | undefined;
+  for (let page = 0; page < 8; page += 1) {
+    let query = db.collectionGroup("attachments")
+      .where("state", "in", ["pending", "uploading", "quarantined", "canonicalizing", "rejected"])
+      .where("createdAt", "<=", cutoff)
+      .orderBy("createdAt")
+      .orderBy(FieldPath.documentId())
+      .limit(25);
+    if (cursor) query = query.startAfter(cursor);
+    const snap = await query.get();
+    if (snap.empty) break;
+    for (const doc of snap.docs) await purgeAttachmentDoc(db, storageBucket, doc, nowMs);
+    cursor = snap.docs[snap.docs.length - 1];
+    if (snap.size < 25) break;
+  }
+  const cursorRef = db.doc("platformConfig/attachmentPurge");
+  const savedToken = (await cursorRef.get()).data()?.objectPageToken;
+  let pageToken = typeof savedToken === "string" && savedToken.length > 0 ? savedToken : undefined;
+  const pageLimit = options?.objectPages ?? 4;
+  const pageSize = options?.objectPageSize ?? 50;
+  let resume: string | null = null;
+  for (let page = 0; page < pageLimit; page += 1) {
+    const query: { prefix: string; autoPaginate: false; maxResults: number; pageToken?: string } = { prefix: "quarantine/", autoPaginate: false, maxResults: pageSize, ...(pageToken ? { pageToken } : {}) };
+    let listed: { 0: { name: string; getMetadata: () => Promise<[{ timeCreated?: string }]> ; delete: (options: { ignoreNotFound: boolean }) => Promise<unknown> }[]; 1: { pageToken?: string } | null };
+    try {
+      listed = await storageBucket.getFiles(query) as unknown as typeof listed;
+    } catch (error) {
+      if (!pageToken) throw error;
+      pageToken = undefined;
+      listed = await storageBucket.getFiles({ prefix: "quarantine/", autoPaginate: false, maxResults: pageSize }) as unknown as typeof listed;
+    }
+    const files = listed[0];
+    const nextQuery = listed[1];
+    for (const file of files) {
+      const parsed = quarantineParts(file.name);
+      if (!parsed) continue;
+      const snap = await db.doc(`organizations/${parsed.orgId}/attachments/${parsed.attachmentId}`).get();
+      const row = snap.data();
+      const published = row?.state === "ready" && row.objectPath === file.name;
+      let timeCreatedMs: number | null = null;
+      try {
+        const [metadata] = await file.getMetadata();
+        const parsedTime = Date.parse(String(metadata.timeCreated ?? ""));
+        timeCreatedMs = Number.isFinite(parsedTime) ? parsedTime : null;
+      } catch { timeCreatedMs = null; }
+      const clock = options?.objectTimeMs ? options.objectTimeMs(file.name, timeCreatedMs) : timeCreatedMs;
+      if (row && row.state !== "ready" && !abandonedAttachment({ state: String(row.state ?? ""), createdAtMs: row.createdAt?.toMillis?.() ?? Number.NaN, nowMs })) continue;
+      if (!abandonedObject({ timeCreatedMs: clock, nowMs, ready: published })) continue;
+      try { await file.delete({ ignoreNotFound: true }); }
+      catch (error) { if (storageReadFailure(error) !== "missing") throw error; }
+    }
+    const token = typeof nextQuery?.pageToken === "string" ? nextQuery.pageToken : "";
+    if (!token) { resume = null; break; }
+    resume = token;
+    pageToken = token;
+  }
+  await cursorRef.set({ objectPageToken: resume, updatedAt: Timestamp.fromMillis(nowMs) }, { merge: true });
+}
+
+export const purgeAttachmentQuarantine = onSchedule({ schedule: "every 60 minutes", timeoutSeconds: 300 }, async () => {
+  await purgeAbandonedAttachments(Date.now());
+});
 
 async function deleteRejectedBytes(orgId: string, attachmentId: string) {
   const row = (await attachmentRef(orgId, attachmentId).get()).data();

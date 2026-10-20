@@ -7,6 +7,7 @@ import { Data, id, invalid, keys, object, text, wire } from "../commandSupport";
 import { command } from "../commandSupport";
 import { messageTokens, queryTokens, reactionChoice, REACTION_CHOICES, textTokens } from "./tokens";
 import { fingerprint } from "../operations/requests";
+import { ATTACHMENT_LIMIT } from "./attachmentScan";
 import { checkRevision, denied } from "../operations/access";
 import { revision } from "../operations/revisions";
 import { cacheDocumentReads } from "../operations/reads";
@@ -150,8 +151,17 @@ function reactionSummaries(counts: unknown, mine: Set<string>) {
     return [{ emoji: choice.emoji, count: Math.max(value, 0), mine: mine.has(choice.code) }];
   });
 }
-function projectMessage(doc: { id: string; data: () => Data | undefined }, pinned: Set<string>, uid: string, mine: Set<string>) {
+function linkedAttachmentIds(row: Data): string[] {
+  if (!Array.isArray(row.attachmentIds)) return [];
+  return row.attachmentIds.filter((item): item is string => typeof item === "string").slice(0, ATTACHMENT_LIMIT);
+}
+function projectMessage(doc: { id: string; data: () => Data | undefined }, pinned: Set<string>, uid: string, mine: Set<string>, views: Map<string, { id: string; fileName: string; detectedType: string; byteLength: number; messageId: string }> = new Map()) {
   const row = doc.data() ?? {};
+  const attachments = row.tombstoned === true ? [] : linkedAttachmentIds(row).flatMap((attachmentId) => {
+    const view = views.get(attachmentId);
+    if (!view || view.messageId !== doc.id) return [];
+    return [{ id: view.id, fileName: view.fileName, detectedType: view.detectedType, byteLength: view.byteLength }];
+  });
   return {
     id: doc.id,
     sequence: row.sequence,
@@ -164,7 +174,38 @@ function projectMessage(doc: { id: string; data: () => Data | undefined }, pinne
     revision: row.revision ?? 0,
     mine: row.authorUid === uid,
     reactions: reactionSummaries(row.reactionCounts, mine),
+    attachments,
   };
+}
+async function attachmentViews(reader: { getAll: (...refs: DocumentReference[]) => Promise<FirebaseFirestore.DocumentSnapshot[]> }, orgId: string, rows: { id: string; data: () => Data | undefined }[]) {
+  const ids = [...new Set(rows.flatMap((row) => {
+    const data = row.data();
+    return !data || data.tombstoned === true ? [] : linkedAttachmentIds(data);
+  }))];
+  const views = new Map<string, { id: string; fileName: string; detectedType: string; byteLength: number; messageId: string }>();
+  if (!ids.length) return views;
+  const db = getFirestore();
+  for (let index = 0; index < ids.length; index += 30) {
+    const snaps = await reader.getAll(...ids.slice(index, index + 30).map((attachmentId) => db.doc(`organizations/${orgId}/attachments/${attachmentId}`)));
+    for (const snap of snaps) {
+      const data = snap.data() as Data | undefined;
+      if (!data || data.state !== "ready" || data.orgId !== orgId || typeof data.messageId !== "string") continue;
+      if (typeof data.fileName !== "string" || typeof data.detectedType !== "string" || typeof data.actualBytes !== "number") continue;
+      views.set(snap.id, { id: snap.id, fileName: data.fileName, detectedType: data.detectedType, byteLength: data.actualBytes, messageId: data.messageId });
+    }
+  }
+  return views;
+}
+function attachmentIdList(value: unknown): string[] {
+  if (value == null) return [];
+  if (!Array.isArray(value)) invalid("Invalid attachmentIds.");
+  const items = value as unknown[];
+  if (items.length > ATTACHMENT_LIMIT) {
+    throw new HttpsError("failed-precondition", "A message can include 3 attachments.", { domainCode: "ATTACHMENT_LIMIT" });
+  }
+  const ids = items.map((item) => id(item, "attachmentId"));
+  if (new Set(ids).size !== ids.length) invalid("Invalid attachmentIds.");
+  return ids;
 }
 async function reactionMine(tx: Transaction, docs: { id: string; ref: DocumentReference }[], uid: string) {
   const refs = docs.flatMap((doc) => REACTION_CHOICES.map((choice) => doc.ref.collection("reactions").doc(reactionDocumentId(uid, choice.code))));
@@ -459,18 +500,39 @@ async function loadConversation(tx: Transaction, orgId: string, conversationId: 
 }
 
 export const postConversationMessage = command("postConversationMessage", (data) => {
-  keys(data, ["requestId", "orgId", "scopeType", "scopeId", "text"]);
+  keys(data, ["requestId", "orgId", "scopeType", "scopeId", "text", "attachmentIds"]);
   const scope = scopeInput(data);
-  return { ...scope, text: text(data.text, "text", 4000), requestId: id(data.requestId, "requestId") };
+  return { ...scope, text: text(data.text, "text", 4000), requestId: id(data.requestId, "requestId"), attachmentIds: attachmentIdList(data.attachmentIds) };
 }, async (tx, payload, uid, _actor, replay) => {
   const decision = await authorize(tx, payload.orgId, payload.scopeType, payload.scopeId, uid);
   requirePost(decision);
   if (replay) return replay;
+  const attachmentIds = payload.attachmentIds as string[];
+  if (attachmentIds.length && !decision.attachments) {
+    throw new HttpsError("failed-precondition", "Attachments are not enabled for this organization.", { domainCode: "FEATURE_DISABLED" });
+  }
   const tokens = boundedTokens(payload.text);
+  const db = getFirestore();
   const { ref, row } = await loadConversation(tx, payload.orgId, decision.conversationId);
+  const attachmentRefs = attachmentIds.map((attachmentId) => db.doc(`organizations/${payload.orgId}/attachments/${attachmentId}`));
+  const slotReference = db.doc(`organizations/${payload.orgId}/attachmentSlots/${fingerprint({ kind: "attachmentSlot", orgId: payload.orgId, conversationId: decision.conversationId, uid })}`);
+  const snaps = attachmentRefs.length ? await tx.getAll(...attachmentRefs) : [];
+  const slotSnap = attachmentRefs.length ? await tx.get(slotReference) : null;
+  for (const snap of snaps) {
+    const stored = snap.data() as Data | undefined;
+    if (!stored || stored.orgId !== payload.orgId || stored.conversationId !== decision.conversationId || stored.ownerUid !== uid || stored.state !== "ready" || stored.messageId != null) {
+      throw new HttpsError("failed-precondition", "This attachment is not available.", { domainCode: "ATTACHMENT_UNAVAILABLE" });
+    }
+  }
   const sequence = (row?.sequence ?? 0) + 1;
   const messageId = fingerprint({ kind: "conversationMessage", orgId: payload.orgId, conversationId: decision.conversationId, requestId: payload.requestId });
   const now = Timestamp.now();
+  for (const snap of snaps) tx.update(snap.ref, { messageId, updatedAt: now });
+  if (attachmentRefs.length) {
+    const activeIds = Array.isArray(slotSnap?.data()?.activeIds)
+      ? (slotSnap!.data() as Data).activeIds.filter((item: unknown) => typeof item === "string" && !attachmentIds.includes(item)) : [];
+    tx.set(slotReference, { schemaVersion: 2, orgId: payload.orgId, ownerUid: uid, conversationId: decision.conversationId, activeIds, updatedAt: now }, { merge: true });
+  }
   tx.set(ref, {
     schemaVersion: 2,
     orgId: payload.orgId,
@@ -491,6 +553,7 @@ export const postConversationMessage = command("postConversationMessage", (data)
     authorUid: uid,
     sequence,
     body: payload.text,
+    attachmentIds,
     tombstoned: false,
     revision: 0,
     idempotencyKey: payload.requestId,
@@ -527,12 +590,13 @@ export const listConversationMessages = readCommand((data) => {
   const pinned = new Set<string>(conversation?.pinnedMessageIds ?? []);
   const page = rows.docs.slice(0, payload.pageSize);
   const mine = await reactionMine(tx, page, uid);
+  const views = await attachmentViews(tx, payload.orgId, page);
   return {
     conversationId: decision.conversationId,
     mode: decision.mode,
     youthPosting: decision.youthPosting,
     pinnedIds: [...pinned],
-    items: page.map((doc) => projectMessage(doc, pinned, uid, mine.get(doc.id) ?? new Set())),
+    items: page.map((doc) => projectMessage(doc, pinned, uid, mine.get(doc.id) ?? new Set(), views)),
     nextCursor: rows.size > page.length && page.length ? sequenceCursor(page[page.length - 1].data().sequence, page[page.length - 1].id) : null,
     attachments: decision.attachments ? "enabled" : "disabled",
     canPost: decision.post,
@@ -857,8 +921,9 @@ export const searchConversationMessages = onCall(emulatorDemo() ? {} : { secrets
   const more = resume || backfillRemains;
   const cursorAt = restart || position == null ? new Timestamp(0, 0) : position.createdAt;
   const cursorId = restart || position == null ? "restart" : position.messageId;
+  const views = await attachmentViews(db, scope.orgId, matches.map((match) => ({ id: match.messageId, data: () => match.message })));
   return wire({
-    items: matches.map((match) => projectMessage({ id: match.messageId, data: () => match.message }, pinned, uid, mine.get(match.messageId) ?? new Set())),
+    items: matches.map((match) => projectMessage({ id: match.messageId, data: () => match.message }, pinned, uid, mine.get(match.messageId) ?? new Set(), views)),
     nextCursor: more ? signSearchCursor(cursorAt, cursorId, binding, restart) : null,
     partial: (scanned >= SEARCH_CAP && resume) || backfillRemains,
   });

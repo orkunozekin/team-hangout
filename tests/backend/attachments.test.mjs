@@ -10,10 +10,20 @@ const { initializeApp: adminApp, deleteApp: deleteAdmin } = require('firebase-ad
 const { getAuth: adminAuth } = require('firebase-admin/auth');
 const { getFirestore, Timestamp } = require('firebase-admin/firestore');
 const { getStorage } = require('firebase-admin/storage');
-const { signUploadGrant, DEMO_ATTACHMENT_UPLOAD_KEY } = require('./lib/communications/attachmentScan.js');
+const { signUploadGrant, DEMO_ATTACHMENT_UPLOAD_KEY, contentScanner, sha256, ATTACHMENT_QUARANTINE_TTL_MS } = require('./lib/communications/attachmentScan.js');
+const { purgeAbandonedAttachments } = require('./lib/communications/attachments.js');
 requireEmulators();
 
-const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from('JFIF SYNTHETIC-JPEG-MARKER'), Buffer.from([0xff, 0xd9])]);
+const exif = Buffer.concat([Buffer.from('Exif\0\0'), Buffer.from('GPS-SYNTHETIC')]);
+const exifLength = Buffer.alloc(2);
+exifLength.writeUInt16BE(exif.length + 2);
+const jpeg = Buffer.concat([
+  Buffer.from([0xff, 0xd8, 0xff, 0xe1]), exifLength, exif,
+  Buffer.from('ffdb004300080606070605080707070909080a0c140d0c0b0b0c1912130f141d1a1f1e1d1a1c1c20242e2720222c231c1c2837292c30313434341f27393d38323c2e333432ffc0000b080001000101011100ffc4001f0000010501010101010100000000000000000102030405060708090a0bffda000800010100003f007f00ffd9', 'hex'),
+]);
+const cleaned = contentScanner({ bytes: jpeg, detectedType: 'image/jpeg' });
+if (cleaned.verdict !== 'clean') throw new Error('Synthetic JPEG was not accepted by the content scanner.');
+const cleanedJpeg = cleaned.bytes;
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
 const pdf = Buffer.from('%PDF-1.4\n%SYNTHETIC-PDF-MARKER\n%%EOF');
 const html = Buffer.from('<!DOCTYPE html><p>SYNTHETIC-HTML-MARKER</p>');
@@ -45,7 +55,7 @@ async function putBytes(token, bytes, contentType = 'text/html') {
 before(async () => {
   admin = adminApp({ projectId }, 'attachment-admin');
   db = getFirestore(admin);
-  for (const uid of ['file-admin', 'file-staff', 'file-coach', 'file-guardian', 'file-self', 'file-outsider']) {
+  for (const uid of ['file-admin', 'file-staff', 'file-coach', 'file-guardian', 'file-self', 'file-outsider', 'file-poster']) {
     const app = initializeApp({ projectId, apiKey: 'demo-key' }, uid);
     apps[uid] = app;
     connectAuthEmulator(getAuth(app), 'http://127.0.0.1:9099', { disableWarnings: true });
@@ -60,6 +70,7 @@ before(async () => {
   await db.doc('organizations/file-org/members/file-staff').set({ ...meta, orgId: 'file-org', userId: 'file-staff', roles: ['programStaff'], programIds: ['file-program'] });
   await db.doc('teams/file-team').set({ ...meta, orgId: 'file-org', programId: 'file-program', seasonId: 'file-season', divisionId: 'file-division', name: 'Falcons' });
   await db.doc('teamMembers/file-team_file-coach').set({ ...meta, orgId: 'file-org', teamId: 'file-team', userId: 'file-coach', roles: ['coach'] });
+  await db.doc('teamMembers/file-team_file-poster').set({ ...meta, orgId: 'file-org', teamId: 'file-team', userId: 'file-poster', roles: ['coach'] });
   await db.doc('organizations/file-org/participants/file-child').set({ ...meta, orgId: 'file-org', displayName: 'Child', linkedUserId: 'file-self' });
   await db.doc('teams/file-team/roster/file-child').set({ ...meta, orgId: 'file-org', participantId: 'file-child' });
   await db.doc('organizations/file-org/participants/file-child/guardians/file-guardian').set({ ...meta, orgId: 'file-org', participantId: 'file-child', userId: 'file-guardian', permissions: { viewSchedule: true, respond: true } });
@@ -88,7 +99,7 @@ test('staff can transfer a JPEG while youth posting is closed, and a guardian ca
   const mime = await fail('file-staff', 'createAttachmentUpload', { requestId: rid(), ...team, fileName: 'photo.jpg', declaredBytes: jpeg.length, contentType: 'text/html' });
   assert.equal(mime.code, 'functions/invalid-argument');
   const linked = await fail('file-staff', 'postConversationMessage', { requestId: rid(), ...team, text: 'Hello', attachmentIds: ['file'] });
-  assert.equal(linked.code, 'functions/invalid-argument');
+  assert.equal(linked.details?.domainCode, 'ATTACHMENT_UNAVAILABLE');
   const grant = await call('file-staff', 'createAttachmentUpload', { requestId: 'jpeg-once', ...team, fileName: 'photo.jpg', declaredBytes: jpeg.length });
   const replay = await call('file-staff', 'createAttachmentUpload', { requestId: 'jpeg-once', ...team, fileName: 'photo.jpg', declaredBytes: jpeg.length });
   assert.equal(replay.id, grant.id);
@@ -112,12 +123,16 @@ test('staff can transfer a JPEG while youth posting is closed, and a guardian ca
   const done = await call('file-staff', 'finalizeAttachment', { requestId: rid(), ...team, attachmentId: grant.id });
   assert.equal(done.state, 'ready');
   assert.equal(done.detectedType, 'image/jpeg');
-  assert.equal(done.scan.scanner, 'fake');
+  assert.equal(done.scan.scanner, 'content');
   assert.equal(done.scan.verdict, 'clean');
+  assert.equal(done.sha256, sha256(cleanedJpeg));
+  assert.notEqual(done.sha256, sha256(jpeg));
   const saved = await download('file-guardian', grant.id);
   assert.equal(saved.status, 200);
   assert.equal(saved.headers.get('content-type'), 'image/jpeg');
-  assert.equal(Buffer.compare(Buffer.from(await saved.arrayBuffer()), jpeg), 0);
+  const savedBytes = Buffer.from(await saved.arrayBuffer());
+  assert.equal(Buffer.compare(savedBytes, cleanedJpeg), 0);
+  assert.equal(savedBytes.includes(Buffer.from('GPS-SYNTHETIC')), false);
   assert.equal(saved.headers.get('cache-control'), 'private, no-store');
   const outsider = await download('file-outsider', grant.id);
   assert.equal(outsider.status, 404);
@@ -133,8 +148,9 @@ test('staff can transfer a JPEG while youth posting is closed, and a guardian ca
     notifications: (await db.collection('users/file-guardian/notifications').get()).docs.map((doc) => doc.data()),
     outbox: (await db.collection('organizations/file-org/outbox').get()).docs.map((doc) => doc.data()),
   });
-  assert.equal(stored.includes('SYNTHETIC-JPEG-MARKER'), false);
+  assert.equal(stored.includes('GPS-SYNTHETIC'), false);
   assert.equal(stored.includes(jpeg.toString('base64')), false);
+  assert.equal(stored.includes(cleanedJpeg.toString('base64')), false);
 });
 
 test('PNG and PDF transfers round-trip and a lied JPEG signature is rejected', async () => {
@@ -238,4 +254,208 @@ test('a fourth reservation is refused until an expired one is released, and revo
   assert.equal(staffEvent.state, 'pending');
   await db.doc('organizations/file-org/participants/file-child/guardians/file-guardian').update({ status: 'active' });
   await db.doc('organizations/file-org').update({ 'policies.youthChannels': 'approved' });
+});
+
+test('unauthorized download, revoked membership, wrong signature, scanner failure, and orphan cleanup', async () => {
+  const anonymous = await fetch(transport, { headers: { 'X-Org-Id': 'file-org', 'X-Scope-Type': 'team', 'X-Scope-Id': 'file-team', 'X-Attachment-Id': 'missing-file' } });
+  assert.equal(anonymous.status, 401);
+  const mismatched = await call('file-poster', 'createAttachmentUpload', { requestId: rid(), ...team, fileName: 'notes.pdf', declaredBytes: jpeg.length });
+  assert.equal((await putBytes(mismatched.token, jpeg)).status, 200);
+  const wrong = await call('file-poster', 'finalizeAttachment', { requestId: rid(), ...team, attachmentId: mismatched.id });
+  assert.equal(wrong.rejectionCode, 'SIGNATURE_MISMATCH');
+  assert.notEqual(wrong.scan.scanner, 'content');
+  const active = Buffer.from('%PDF-1.4\n1 0 obj\n<< /JavaScript (alert) >>\nendobj\n%%EOF');
+  const scriptGrant = await call('file-poster', 'createAttachmentUpload', { requestId: rid(), ...team, fileName: 'form.pdf', declaredBytes: active.length });
+  assert.equal((await putBytes(scriptGrant.token, active, 'application/pdf')).status, 200);
+  const script = await call('file-poster', 'finalizeAttachment', { requestId: rid(), ...team, attachmentId: scriptGrant.id });
+  assert.equal(script.state, 'rejected');
+  assert.equal(script.rejectionCode, 'ACTIVE_CONTENT');
+  assert.equal(script.scan.scanner, 'content');
+  assert.notEqual(script.rejectionCode, 'INTEGRITY');
+  assert.notEqual(script.rejectionCode, 'ACCESS_REVOKED');
+  const ids = [];
+  const hold = await call('file-poster', 'createAttachmentUpload', { requestId: rid(), ...team, fileName: 'one.jpg', declaredBytes: jpeg.length });
+  assert.equal((await putBytes(hold.token, jpeg)).status, 200);
+  const earlyLink = await fail('file-poster', 'postConversationMessage', { requestId: rid(), ...team, text: 'Not ready', attachmentIds: [hold.id] });
+  assert.equal(earlyLink.details?.domainCode, 'ATTACHMENT_UNAVAILABLE');
+  const first = await call('file-poster', 'finalizeAttachment', { requestId: rid(), ...team, attachmentId: hold.id });
+  assert.equal(first.state, 'ready');
+  ids.push(hold.id);
+  for (const name of ['two.jpg', 'three.jpg']) {
+    const grant = await call('file-poster', 'createAttachmentUpload', { requestId: rid(), ...team, fileName: name, declaredBytes: jpeg.length });
+    assert.equal((await putBytes(grant.token, jpeg)).status, 200);
+    const done = await call('file-poster', 'finalizeAttachment', { requestId: rid(), ...team, attachmentId: grant.id });
+    assert.equal(done.state, 'ready');
+    assert.equal(done.byteLength, cleanedJpeg.length);
+    ids.push(grant.id);
+  }
+  const capped = await fail('file-poster', 'createAttachmentUpload', { requestId: rid(), ...team, fileName: 'four.jpg', declaredBytes: jpeg.length });
+  assert.equal(capped.details?.domainCode, 'ATTACHMENT_LIMIT');
+  const tooMany = await fail('file-poster', 'postConversationMessage', { requestId: rid(), ...team, text: 'Too many files', attachmentIds: [...ids, 'extra-attachment-id'] });
+  assert.equal(tooMany.details?.domainCode, 'ATTACHMENT_LIMIT');
+  const stolen = await fail('file-coach', 'postConversationMessage', { requestId: rid(), ...team, text: 'Not mine', attachmentIds: [ids[0]] });
+  assert.equal(stolen.details?.domainCode, 'ATTACHMENT_UNAVAILABLE');
+  const note = await fail('file-poster', 'postStaffNote', { requestId: rid(), ...team, text: 'Hidden', attachmentIds: [ids[0]] });
+  assert.equal(note.code, 'functions/invalid-argument');
+  const posted = await call('file-poster', 'postConversationMessage', { requestId: rid(), ...team, text: 'Practice photo is attached', attachmentIds: ids });
+  const page = await call('file-guardian', 'listConversationMessages', { ...team, pageSize: 25 });
+  const message = page.items.find((item) => item.id === posted.id);
+  assert.equal(message.body, 'Practice photo is attached');
+  assert.deepEqual(message.attachments.map((item) => item.fileName), ['one.jpg', 'two.jpg', 'three.jpg']);
+  assert.equal(JSON.stringify(message).includes('GPS-SYNTHETIC'), false);
+  const search = await call('file-guardian', 'searchConversationMessages', { ...team, text: 'photo' });
+  assert.equal(search.items.some((item) => item.id === posted.id), true);
+  const byName = await call('file-guardian', 'searchConversationMessages', { ...team, text: 'one' });
+  assert.equal(byName.items.some((item) => item.id === posted.id), false);
+  const linked = await download('file-guardian', ids[0]);
+  assert.equal(linked.status, 200);
+  assert.equal(Buffer.compare(Buffer.from(await linked.arrayBuffer()), cleanedJpeg), 0);
+  assert.equal((await download('file-outsider', ids[0])).status, 404);
+  const released = await call('file-poster', 'createAttachmentUpload', { requestId: rid(), ...team, fileName: 'four.jpg', declaredBytes: jpeg.length });
+  assert.equal(released.state, 'pending');
+  await db.doc('organizations/file-org/participants/file-child/guardians/file-guardian').update({ status: 'revoked' });
+  assert.equal((await download('file-guardian', ids[0])).status, 404);
+  assert.equal((await download('file-poster', ids[0])).status, 200);
+  await db.doc('organizations/file-org/participants/file-child/guardians/file-guardian').update({ status: 'active' });
+  await call('file-admin', 'moderateConversationMessage', { requestId: rid(), ...team, messageId: posted.id, reason: 'Remove the photo' });
+  assert.equal((await download('file-poster', ids[0])).status, 404);
+  const bucket = getStorage(admin).bucket(`${projectId}.appspot.com`);
+  const row = (await db.doc(`organizations/file-org/attachments/${ids[0]}`).get()).data();
+  const abandonedId = 'abandoned-quarantine';
+  const abandonedPath = `quarantine/file-org/${abandonedId}/1`;
+  await bucket.file(abandonedPath).save(jpeg, { resumable: false });
+  await db.doc(`organizations/file-org/attachments/${abandonedId}`).set({
+    schemaVersion: 2, orgId: 'file-org', conversationId: row.conversationId, ownerUid: 'file-poster', state: 'quarantined',
+    objectPath: abandonedPath, createdAt: Timestamp.fromMillis(Date.now() - ATTACHMENT_QUARANTINE_TTL_MS - 5000), updatedAt: Timestamp.now(),
+  });
+  const slots = await db.collection('organizations/file-org/attachmentSlots').where('ownerUid', '==', 'file-poster').get();
+  assert.equal(slots.size, 1);
+  await slots.docs[0].ref.set({ activeIds: [abandonedId, 'missing-slot-id', ids[1]] }, { merge: true });
+  const orphanPath = 'quarantine/file-org/orphan-old/1';
+  const freshPath = 'quarantine/file-org/orphan-fresh/1';
+  await bucket.file(orphanPath).save(Buffer.from('orphan-bytes'));
+  await bucket.file(freshPath).save(Buffer.from('fresh-bytes'));
+  await db.doc(`organizations/file-org/attachments/${scriptGrant.id}`).update({ createdAt: Timestamp.fromMillis(Date.now() - ATTACHMENT_QUARANTINE_TTL_MS - 5000) });
+  await purgeAbandonedAttachments(Date.now(), {
+    db, bucket, objectTimeMs: (name, created) => name === orphanPath ? Date.now() - ATTACHMENT_QUARANTINE_TTL_MS - 1000 : created,
+  });
+  assert.equal((await db.doc(`organizations/file-org/attachments/${abandonedId}`).get()).exists, false);
+  assert.equal((await bucket.file(abandonedPath).exists())[0], false);
+  assert.equal((await bucket.file(orphanPath).exists())[0], false);
+  assert.equal((await bucket.file(freshPath).exists())[0], true);
+  assert.equal((await db.doc(`organizations/file-org/attachments/${ids[1]}`).get()).exists, true);
+  assert.equal((await bucket.file(row.objectPath).exists())[0], true);
+  assert.equal((await db.doc(`organizations/file-org/attachments/${scriptGrant.id}`).get()).exists, false);
+  const slot = (await slots.docs[0].ref.get()).data();
+  assert.deepEqual(slot.activeIds, [ids[1]]);
+  const config = db.doc('platformConfig/attachmentScanner');
+  try {
+    await config.set({ mode: 'unavailable' });
+    const grant = await call('file-poster', 'createAttachmentUpload', { requestId: rid(), ...team, fileName: 'five.jpg', declaredBytes: jpeg.length });
+    assert.equal((await putBytes(grant.token, jpeg)).status, 200);
+    const failed = await call('file-poster', 'finalizeAttachment', { requestId: rid(), ...team, attachmentId: grant.id });
+    assert.equal(failed.state, 'rejected');
+    assert.equal(failed.rejectionCode, 'SCAN_FAILED');
+    assert.notEqual(failed.rejectionCode, 'INTEGRITY');
+    assert.notEqual(failed.rejectionCode, 'ACCESS_REVOKED');
+    assert.equal((await bucket.file(`quarantine/file-org/${grant.id}/1`).exists())[0], false);
+  } finally {
+    await config.delete();
+  }
+});
+
+test('canonicalizing rejects the original upload and finalizes the stripped length', async () => {
+  const grant = await call('file-poster', 'createAttachmentUpload', { requestId: rid(), ...team, fileName: 'retry.jpg', declaredBytes: jpeg.length });
+  assert.equal((await putBytes(grant.token, jpeg)).status, 200);
+  const bucket = getStorage(admin).bucket(`${projectId}.appspot.com`);
+  const canonicalPath = `quarantine/file-org/${grant.id}/2`;
+  await bucket.file(canonicalPath).save(cleanedJpeg, { resumable: false });
+  await db.doc(`organizations/file-org/attachments/${grant.id}`).update({
+    state: 'canonicalizing', canonicalSha256: sha256(cleanedJpeg), canonicalBytes: cleanedJpeg.length,
+  });
+  assert.equal((await putBytes(grant.token, jpeg)).status, 409);
+  const done = await call('file-poster', 'finalizeAttachment', { requestId: rid(), ...team, attachmentId: grant.id });
+  assert.equal(done.state, 'ready');
+  assert.equal(done.byteLength, cleanedJpeg.length);
+  assert.equal(done.sha256, sha256(cleanedJpeg));
+  const downloaded = await download('file-poster', grant.id);
+  assert.equal(downloaded.status, 200);
+  assert.equal(Buffer.compare(Buffer.from(await downloaded.arrayBuffer()), cleanedJpeg), 0);
+  const row = (await db.doc(`organizations/file-org/attachments/${grant.id}`).get()).data();
+  assert.equal(row.objectPath, canonicalPath);
+});
+
+test('orphan cleanup continues past the first storage page', async () => {
+  const bucket = getStorage(admin).bucket(`${projectId}.appspot.com`);
+  const pads = [];
+  for (let index = 0; index < 2; index += 1) {
+    const name = `quarantine/000/p${index}/1`;
+    pads.push(name);
+    await bucket.file(name).save(Buffer.from(`pad-${index}`));
+  }
+  const orphan = 'quarantine/zzz/late-orphan/1';
+  await bucket.file(orphan).save(Buffer.from('late-orphan'));
+  const clock = (name, created) => name === orphan ? Date.now() - ATTACHMENT_QUARANTINE_TTL_MS - 1000 : Date.now();
+  const options = { db, bucket, objectPages: 1, objectPageSize: 1, objectTimeMs: clock };
+  await purgeAbandonedAttachments(Date.now(), options);
+  assert.equal((await bucket.file(orphan).exists())[0], true);
+  const firstToken = (await db.doc('platformConfig/attachmentPurge').get()).data().objectPageToken;
+  assert.equal(typeof firstToken, 'string');
+  let removed = false;
+  for (let attempt = 0; attempt < 40 && !removed; attempt += 1) {
+    await purgeAbandonedAttachments(Date.now(), options);
+    removed = (await bucket.file(orphan).exists())[0] === false;
+  }
+  assert.equal(removed, true);
+  const laterToken = (await db.doc('platformConfig/attachmentPurge').get()).data().objectPageToken;
+  assert.notEqual(laterToken, firstToken);
+  const canonicalOrphan = 'quarantine/zzz/late-canonical/2';
+  const readyCanonical = 'quarantine/zzz/kept-canonical/2';
+  const staleUpload = 'quarantine/zzz/kept-canonical/1';
+  await bucket.file(canonicalOrphan).save(Buffer.from('late-canonical'));
+  await bucket.file(readyCanonical).save(Buffer.from('kept-canonical'));
+  await bucket.file(staleUpload).save(Buffer.from('stale-upload'));
+  await db.doc('organizations/zzz/attachments/kept-canonical').set({
+    state: 'ready', objectPath: readyCanonical, createdAt: Timestamp.fromMillis(Date.now() - ATTACHMENT_QUARANTINE_TTL_MS - 5000),
+  });
+  await db.doc('platformConfig/attachmentPurge').set({ objectPageToken: null }, { merge: true });
+  const aged = new Set([canonicalOrphan, readyCanonical, staleUpload]);
+  const agedClock = (name, created) => aged.has(name) ? Date.now() - ATTACHMENT_QUARANTINE_TTL_MS - 1000 : Date.now();
+  const paged = { db, bucket, objectPages: 1, objectPageSize: 1, objectTimeMs: agedClock };
+  let canonicalRemoved = false;
+  let staleRemoved = false;
+  for (let attempt = 0; attempt < 60 && (!canonicalRemoved || !staleRemoved); attempt += 1) {
+    await purgeAbandonedAttachments(Date.now(), paged);
+    canonicalRemoved = (await bucket.file(canonicalOrphan).exists())[0] === false;
+    staleRemoved = (await bucket.file(staleUpload).exists())[0] === false;
+  }
+  assert.equal(canonicalRemoved, true);
+  assert.equal(staleRemoved, true);
+  assert.equal((await bucket.file(readyCanonical).exists())[0], true);
+  for (const name of pads) assert.equal((await bucket.file(name).exists())[0], true);
+});
+
+test('an expired grant finalizes a fenced canonical object and still rejects a missing one', async () => {
+  const missing = await call('file-poster', 'createAttachmentUpload', { requestId: rid(), ...team, fileName: 'expired.jpg', declaredBytes: jpeg.length });
+  assert.equal((await putBytes(missing.token, jpeg)).status, 200);
+  await db.doc(`organizations/file-org/attachments/${missing.id}`).update({ expiresAt: Timestamp.fromMillis(Date.now() - 1000) });
+  const expired = await call('file-poster', 'finalizeAttachment', { requestId: rid(), ...team, attachmentId: missing.id });
+  assert.equal(expired.state, 'rejected');
+  assert.equal(expired.rejectionCode, 'EXPIRED');
+  const grant = await call('file-poster', 'createAttachmentUpload', { requestId: rid(), ...team, fileName: 'late.jpg', declaredBytes: jpeg.length });
+  assert.equal((await putBytes(grant.token, jpeg)).status, 200);
+  const bucket = getStorage(admin).bucket(`${projectId}.appspot.com`);
+  const canonicalPath = `quarantine/file-org/${grant.id}/2`;
+  await bucket.file(canonicalPath).save(cleanedJpeg, { resumable: false });
+  await db.doc(`organizations/file-org/attachments/${grant.id}`).update({
+    state: 'canonicalizing', canonicalSha256: sha256(cleanedJpeg), canonicalBytes: cleanedJpeg.length, expiresAt: Timestamp.fromMillis(Date.now() - 1000),
+  });
+  const done = await call('file-poster', 'finalizeAttachment', { requestId: rid(), ...team, attachmentId: grant.id });
+  assert.equal(done.state, 'ready');
+  assert.equal(done.rejectionCode, null);
+  assert.equal(done.byteLength, cleanedJpeg.length);
+  assert.equal(done.sha256, sha256(cleanedJpeg));
+  const downloaded = await download('file-poster', grant.id);
+  assert.equal(downloaded.status, 200);
+  assert.equal(Buffer.compare(Buffer.from(await downloaded.arrayBuffer()), cleanedJpeg), 0);
 });
