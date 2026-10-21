@@ -17,7 +17,7 @@ yarn test:scheduling
 
 `tests/backend/pilot.test.mjs` seeds two teams and two households, then exercises the cross-tenant denials, a guardian response race, attendance, a household message, a staff note that search cannot see, the scanner kill switch, an external-scanner outage, grant expiry with and without a canonical object, and a purge that resumes from `platformConfig/attachmentPurge.objectPageToken` across object generations `/1` and `/2`. Rollback turns the phase 2 writer flags off, quarantines in-flight publications, and leaves the published event, attendance row, and message history in place. Re-enabling `features.scheduler` does not resume a quarantined publication.
 
-Account deletion now records `residualAudit.attachments` with `ownerField: ownerUid`, the count, `anonymized: false`, and `bytesRetained: true`. It does not copy file names into the job and it does not delete objects. Message `authorUid` is also retained. That is an operator policy gate, not a completed anonymization.
+Account deletion keeps organization-owned messages, announcements, staff notes, edit audits and linked attachment bytes, while replacing the deleted account's raw UID with the non-login label `Deleted user`. It removes the account's reactions and immediately deletes unfinished or unlinked attachment rows, upload slots and object generations. `residualAudit` contains only counts; file names and message or note contents are never copied into the job. Linked downloads still require live conversation authorization. This is the accepted deletion policy; organization retention duration remains an operator configuration and legal acceptance gate.
 
 The admin page `/organizations/{orgId}/pilot` shows flag state, publications stuck for at least 10 minutes, attachment state counts, rejection codes, and the scanner mode. The stuck list keeps the 25 oldest rows and says when more exist. It does not show owner ids, file names, addresses, or tokens. Each attachment state and the rejection list stop at 100 rows and say when the sample is truncated. Authorization is one small transaction. The count queries run after that so a full sample cannot exceed Firestore's 500-document transaction limit. The same org-admin grant is checked again after those queries, and a revocation during the sample returns no report. Disable phase 2 writers is an org-admin action and requires the confirmation `DISABLE_PHASE2_WRITERS`.
 
@@ -60,7 +60,8 @@ Deploy the checked-in `firestore.indexes.json` and wait until every composite in
 | Query | Index |
 | --- | --- |
 | Quarantine purge | Collection group `attachments`: `state ASC`, `createdAt ASC`, `__name__ ASC` |
-| Deletion owner audit | Collection group field `attachments.ownerUid` |
+| Deletion communication actors | Collection group fields `messages.authorUid`, `messages.moderatedBy`, `entries.authorUid`, `edits.actorUid`, and `reactions.actorUid` |
+| Deletion attachment ownership | Collection group fields `attachmentSlots.ownerUid` and `attachments.ownerUid` |
 | Stuck publications | Collection `scheduleOperations`: `state ASC`, `updatedAt ASC` |
 | Rollback page | Collection `scheduleOperations`: `state ASC`, `__name__ ASC` |
 
@@ -88,7 +89,7 @@ Every row needs a named owner, a date, and an attached result. Empty cells mean 
 | Upload secret | Create `ATTACHMENT_UPLOAD_KEY` of at least 32 characters. Leave `features.attachments` off until the scanner drill passes | Not created here |
 | External scanner | Optional. `ATTACHMENT_SCANNER_URL` over `https` only, never stored in Firestore | Not configured |
 | 10 MiB drill | One JPEG and one PDF at the cap through finalize and download on staging | Not run. Functions buffer the object |
-| Retention | Decide whether `attachments.ownerUid` and message `authorUid` stay after account deletion. The audit records the residual count and leaves the bytes | Policy pending |
+| Retention | Apply the accepted tombstone policy and name an owner/date for the organization retention duration | Identity policy accepted; duration owner/date pending |
 | Youth history | Approve who can post and what a new guardian can read | Policy pending |
 | Push and email | Expo project, APNs, FCM, verified sender, bounce webhook, and physical iOS and Android receipt tests | Credentials and devices pending |
 | Native QA | Work the consolidated list in `docs/phase-2-ui-qa-backlog.md` | Open |
@@ -104,9 +105,9 @@ Stop rollout on a material incident. Collect organization, operation, and reques
 | --- | --- | --- |
 | Publication staging, promoting, or verifying for more than 10 minutes | Open Pilot operations. Run rollback, then repeat while `truncated` is true. Do not delete the operation or the events | Quarantined ids and the audit `pilotRollback`. Advance stays `PUBLICATION_QUARANTINED` until an operator aborts |
 | `SCAN_FAILED` repeating, or the external scanner timing out | Set `platformConfig/attachmentScanner.mode` to `unavailable`, then turn `features.attachments` off | Rejected rows only. No ready file from a failed scan |
-| Account deletion pending over 10 minutes or `CLEANUP_RETRY_REQUIRED` | Keep the deny marker. Call `resumeDeletion` from the service identity. Read `residualAudit.attachments` before any retention change | Job cursor, count, and the untouched objects |
+| Account deletion pending over 10 minutes or `CLEANUP_RETRY_REQUIRED` | Keep the deny marker. Call `resumeDeletion` from the service identity. Confirm the actor/owner collection-group indexes are ready and Storage deletion is available | Stage, counts, timestamps and redacted code only; never copy names or contents |
 | Missing index or a query error on attachments or schedule operations | Keep the new writers off. Confirm the indexes in this runbook are READY | Same query shape as the emulator test, against staging |
 
-A service outage can show the last-known game-day cache with its stale label. Push is not an emergency alert. Already downloaded files and already sent email cannot be recalled. A tombstone hides an attachment download and does not delete the bytes.
+A service outage can show the last-known game-day cache with its stale label. Push is not an emergency alert. Already downloaded files and already sent email cannot be recalled. A retained linked attachment remains available only through a currently authorized retained message. Unlinked upload bytes are deleted during account cleanup.
 
 Phase 3 is a separate instruction. This step does not implement it.

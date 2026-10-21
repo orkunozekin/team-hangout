@@ -157,6 +157,8 @@ function linkedAttachmentIds(row: Data): string[] {
 }
 function projectMessage(doc: { id: string; data: () => Data | undefined }, pinned: Set<string>, uid: string, mine: Set<string>, views: Map<string, { id: string; fileName: string; detectedType: string; byteLength: number; messageId: string }> = new Map()) {
   const row = doc.data() ?? {};
+  const authorUid = typeof row.authorUid === "string" ? row.authorUid : null;
+  const authorLabel = row.authorIdentity?.kind === "deleted" ? "Deleted user" : null;
   const attachments = row.tombstoned === true ? [] : linkedAttachmentIds(row).flatMap((attachmentId) => {
     const view = views.get(attachmentId);
     if (!view || view.messageId !== doc.id) return [];
@@ -165,14 +167,15 @@ function projectMessage(doc: { id: string; data: () => Data | undefined }, pinne
   return {
     id: doc.id,
     sequence: row.sequence,
-    authorUid: row.authorUid,
+    authorUid,
+    authorLabel,
     body: row.tombstoned === true ? null : row.body ?? null,
     tombstoned: row.tombstoned === true,
     pinned: pinned.has(doc.id),
     createdAt: row.createdAt ?? null,
     editedAt: row.editedAt ?? null,
     revision: row.revision ?? 0,
-    mine: row.authorUid === uid,
+    mine: authorUid === uid,
     reactions: reactionSummaries(row.reactionCounts, mine),
     attachments,
   };
@@ -769,7 +772,13 @@ export const listStaffNotes = readCommand((data) => {
   const rows = await tx.get(query);
   const page = rows.docs.slice(0, payload.pageSize);
   return {
-    items: page.map((doc) => ({ id: doc.id, body: doc.data().body, authorUid: doc.data().authorUid, createdAt: doc.data().createdAt })),
+    items: page.map((doc) => ({
+      id: doc.id,
+      body: doc.data().body,
+      authorUid: typeof doc.data().authorUid === "string" ? doc.data().authorUid : null,
+      authorLabel: doc.data().authorIdentity?.kind === "deleted" ? "Deleted user" : null,
+      createdAt: doc.data().createdAt,
+    })),
     nextCursor: rows.size > page.length ? page[page.length - 1]?.id ?? null : null,
   };
 });

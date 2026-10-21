@@ -20,6 +20,8 @@ async function capture(page: Page, name: string) {
 test.beforeAll(async () => {
   app = initializeApp({ projectId: "demo-team-hangout" }, "conversations-browser");
   const db = getFirestore(app);
+  const { fingerprint } = require("./lib/operations/requests.js");
+  const conversationId = fingerprint({ kind: "conversation", orgId, scopeType: "team", scopeId: "browser-talk-team", channel: "household" });
   await getAuth(app).createUser({ uid: owner, email: `${owner}@example.test`, password: "SyntheticPassword123!", emailVerified: true });
   const meta = { schemaVersion: 2, revision: 1, status: "active", orgId, createdAt: Timestamp.now(), updatedAt: Timestamp.now() };
   await db.doc(`users/${owner}`).set({ uid: owner, appRole: "user" });
@@ -28,6 +30,17 @@ test.beforeAll(async () => {
   await db.doc(`organizations/${orgId}/members/${owner}`).set({ ...meta, roles: ["orgAdmin"], programIds: [] });
   await db.doc("teams/browser-talk-team").set({ ...meta, programId: "soccer", seasonId: "fall", divisionId: "u10", name: "Falcons" });
   await db.doc("teams/browser-search-team").set({ ...meta, programId: "soccer", seasonId: "fall", divisionId: "u10", name: "Owls" });
+  await db.doc(`organizations/${orgId}/conversations/${conversationId}`).set({
+    ...meta, scopeType: "team", scopeId: "browser-talk-team", channel: "household", sequence: 1,
+  });
+  await db.doc(`organizations/${orgId}/conversations/${conversationId}/messages/deleted-author-history`).set({
+    schemaVersion: 2, orgId, sequence: 1, body: "Archived update remains available", tombstoned: false,
+    authorIdentity: { kind: "deleted", label: "Deleted user" }, createdAt: Timestamp.now(),
+  });
+  await db.doc(`organizations/${orgId}/staffNotes/team_browser-talk-team/entries/deleted-author-note`).set({
+    schemaVersion: 2, orgId, scopeType: "team", scopeId: "browser-talk-team", body: "Archived staff context remains available",
+    authorIdentity: { kind: "deleted", label: "Deleted user" }, createdAt: Timestamp.now(),
+  });
 });
 test.afterAll(async () => { if (app) await deleteApp(app); });
 test("staff can post a household announcement and a separate staff note", async ({ page }) => {
@@ -45,6 +58,9 @@ test("staff can post a household announcement and a separate staff note", async 
   await page.getByRole("button", { name: "Save staff note" }).click();
   const notes = page.getByRole("region", { name: "Staff notes" });
   await expect(notes.getByText("Guardian phone is private")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Household channel" }).getByRole("listitem").filter({ hasText: "Archived update remains available" })).toContainText("Deleted user");
+  await expect(notes.getByRole("listitem").filter({ hasText: "Archived staff context remains available" })).toContainText("Deleted user");
+  await expect(page.getByText("Loading channel...")).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Household channel" }).getByText("Guardian phone is private")).toHaveCount(0);
   await expect(page.getByLabel("Attachment file")).toHaveCount(0);
   await capture(page, "conversations-and-staff-notes");

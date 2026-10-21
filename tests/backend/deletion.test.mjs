@@ -12,11 +12,12 @@ const require = createRequire(new URL('../../functions/package.json', import.met
 const { initializeApp: initAdmin, deleteApp: deleteAdmin } = require('firebase-admin/app');
 const { getFirestore, Timestamp } = require('firebase-admin/firestore');
 const { getAuth: adminAuth } = require('firebase-admin/auth');
+const { getStorage } = require('firebase-admin/storage');
 requireEmulators();
 let admin, db, auth, env, beginDeletion, resumeDeletion;
 const clients = [];
 before(async () => {
-  admin = initAdmin({ projectId }); db = getFirestore(); auth = adminAuth();
+  admin = initAdmin({ projectId, storageBucket: `${projectId}.appspot.com` }); db = getFirestore(); auth = adminAuth();
   ({ beginDeletion, resumeDeletion } = require('./lib/accounts/deletion.js'));
   env = await initializeTestEnvironment({ projectId, firestore: { host: '127.0.0.1', port: 8080, rules: readFileSync('firestore.rules', 'utf8') } });
 });
@@ -34,7 +35,7 @@ async function finish(uid) {
   for (let i = 0; i < 100; i++) {
     const state = await resumeDeletion(uid, 10);
     if (state?.status === 'complete') return state;
-    assert.equal(state.lastError, null);
+    assert.equal(state.lastError, null, JSON.stringify(state));
   }
   assert.fail('Worker did not finish');
 }
@@ -105,6 +106,10 @@ test('last admin and only guardian can delete; children, other guardians, roster
   await db.doc(`organizationOwners/${uid}`).set({ enabled: true });
   await beginDeletion(uid); await finish(uid);
   assert.equal((await db.doc('organizations/erase-only-org').get()).data().administrativeControl, 'recoveryRequired');
+  const recoveryAudit = await db.collection('organizations/erase-only-org/audit').get();
+  assert.equal(recoveryAudit.size, 1);
+  assert.equal(recoveryAudit.docs[0].id.includes(uid), false);
+  assert.deepEqual(Object.keys(recoveryAudit.docs[0].data()).sort(), ['createdAt', 'operation', 'schemaVersion']);
   assert.equal((await db.doc('organizations/erase-shared-org').get()).data().administrativeControl, undefined);
   assert.equal((await db.doc(`${root}/only`).get()).data().guardianRecoveryRequired, true);
   assert.equal((await db.doc(`${root}/shared`).get()).data().guardianRecoveryRequired, undefined);
@@ -147,30 +152,142 @@ test('initial deletion requires recent authentication and cannot choose another 
   assert.equal((await db.doc('users/erase-retained').get()).exists, true);
   assert.equal((await db.doc(`accountDeletionJobs/${uid}`).get()).data().status, 'complete');
 });
-test('deletion audits attachment owner fields and leaves the bytes in place', async () => {
-  const uid = 'erase-attachment'; await actor(uid);
-  for (let index = 0; index < 30; index += 1) {
-    await db.doc(`organizations/erase-only-org/attachments/owned-${String(index).padStart(2, '0')}`).set({
-      schemaVersion: 2, orgId: 'erase-only-org', ownerUid: uid, state: 'ready', fileName: `secret-${index}.jpg`,
-      objectPath: `quarantine/erase-only-org/owned-${index}/2`, createdAt: Timestamp.now(),
-    });
-  }
-  await db.doc('organizations/erase-shared-org/attachments/other-owner').set({
-    schemaVersion: 2, orgId: 'erase-shared-org', ownerUid: 'erase-retained', state: 'ready', fileName: 'kept.jpg', createdAt: Timestamp.now(),
+test('a pending legacy attachment-audit job upgrades before authentication and applies the new privacy stages', async () => {
+  const uid = 'erase-legacy-job'; await actor(uid);
+  await db.doc(`organizations/erase-legacy/conversations/thread/messages/history`).set({
+    schemaVersion: 2, authorUid: uid, body: 'Legacy retained history', sequence: 1, createdAt: Timestamp.now(),
   });
-  await db.doc('organizations/erase-only-org/conversations/talk/messages/kept-message').set({
-    schemaVersion: 2, authorUid: uid, body: 'Retained history', createdAt: Timestamp.now(),
+  await db.doc(`accountDeletionJobs/${uid}`).set({
+    schemaVersion: 2, status: 'pending', stage: 20, cursor: null, pages: 20,
+    membershipsRemoved: 0, recordsRemoved: 0, attempts: 1,
+    createdAt: Timestamp.now(), updatedAt: Timestamp.now(), lastError: null,
   });
-  await beginDeletion(uid);
   const state = await finish(uid);
-  assert.equal(state.residualAudit.attachments.ownerField, 'ownerUid');
-  assert.equal(state.residualAudit.attachments.count, 30);
-  assert.equal(state.residualAudit.attachments.anonymized, false);
-  assert.equal(state.residualAudit.attachments.bytesRetained, true);
-  assert.equal(JSON.stringify(state).includes('secret-0.jpg'), false);
-  const owned = await db.collectionGroup('attachments').where('ownerUid', '==', uid).get();
-  assert.equal(owned.size, 30);
-  assert.equal(owned.docs[0].data().objectPath.includes('quarantine/'), true);
-  assert.equal((await db.doc('organizations/erase-shared-org/attachments/other-owner').get()).data().ownerUid, 'erase-retained');
-  assert.equal((await db.doc('organizations/erase-only-org/conversations/talk/messages/kept-message').get()).data().authorUid, uid);
+  assert.equal(state.schemaVersion, 3);
+  const history = (await db.doc('organizations/erase-legacy/conversations/thread/messages/history').get()).data();
+  assert.equal(history.authorUid, undefined);
+  assert.deepEqual(history.authorIdentity, { kind: 'deleted', label: 'Deleted user' });
+});
+test('deletion tombstones retained communication history and removes unlinked uploads without copying content into audit data', async () => {
+  const uid = 'erase-communication'; await actor(uid);
+  const viewerUid = 'erase-history-viewer'; await actor(viewerUid);
+  const orgId = 'erase-history-org';
+  const { fingerprint } = require('./lib/operations/requests.js');
+  const conversationId = fingerprint({ kind: 'conversation', orgId, scopeType: 'organization', scopeId: orgId, channel: 'household' });
+  const messageId = 'retained-message';
+  const bucket = getStorage(admin).bucket(`${projectId}.appspot.com`);
+  await db.doc(`organizations/${orgId}`).set({
+    schemaVersion: 2, revision: 1, status: 'active',
+    features: { organizationV2: true, households: true, conversations: true, attachments: true },
+  });
+  await db.doc(`organizations/${orgId}/members/${viewerUid}`).set({
+    schemaVersion: 2, orgId, userId: viewerUid, status: 'active', roles: ['orgAdmin'], programIds: [],
+  });
+  await db.doc(`organizations/${orgId}/conversations/${conversationId}`).set({
+    schemaVersion: 2, orgId, scopeType: 'organization', scopeId: orgId, mode: 'adult', sequence: 1,
+    pinnedMessageIds: [], revision: 1, createdAt: Timestamp.now(), updatedAt: Timestamp.now(),
+  });
+  await db.doc(`organizations/${orgId}/conversations/${conversationId}/messages/${messageId}`).set({
+    schemaVersion: 2, orgId, conversationId, authorUid: uid, moderatedBy: uid, sequence: 1,
+    body: 'Retained shared history', attachmentIds: ['linked-file'], tombstoned: false,
+    reactionCounts: { yes: 1 }, revision: 1, createdAt: Timestamp.now(),
+  });
+  await db.doc(`organizations/${orgId}/conversations/${conversationId}/messages/${messageId}/edits/1`).set({
+    schemaVersion: 2, orgId, conversationId, messageId, actorUid: uid, previousRevision: 0,
+    revision: 1, kind: 'edit', editedAt: Timestamp.now(),
+  });
+  await db.doc(`organizations/${orgId}/conversations/${conversationId}/messages/${messageId}/reactions/${uid}_yes`).set({
+    schemaVersion: 2, orgId, conversationId, messageId, actorUid: uid, emoji: '👍', code: 'yes', createdAt: Timestamp.now(),
+  });
+  await db.doc(`organizations/${orgId}/messageSearch/${messageId}`).set({
+    schemaVersion: 2, orgId, conversationId, tokens: ['retained', 'shared', 'history'], revision: 1,
+    sequence: 1, createdAt: Timestamp.now(),
+  });
+  await db.doc(`organizations/${orgId}/staffNotes/organization_${orgId}/entries/retained-note`).set({
+    schemaVersion: 2, orgId, scopeType: 'organization', scopeId: orgId,
+    authorUid: uid, body: 'Retained private staff history', createdAt: Timestamp.now(),
+  });
+  await db.doc(`organizations/${orgId}/attachments/linked-file`).set({
+    schemaVersion: 2, orgId, conversationId, ownerUid: uid, state: 'ready', messageId,
+    fileName: 'retained.jpg', detectedType: 'image/jpeg', actualBytes: 4, sha256: 'linked-hash',
+    objectPath: `quarantine/${orgId}/linked-file/2`, createdAt: Timestamp.now(),
+  });
+  await bucket.file(`quarantine/${orgId}/linked-file/2`).save(Buffer.from('keep'));
+  for (let index = 0; index < 30; index += 1) {
+    const attachmentId = `orphan-${String(index).padStart(2, '0')}`;
+    const objectPath = `quarantine/${orgId}/${attachmentId}/1`;
+    await db.doc(`organizations/${orgId}/attachments/${attachmentId}`).set({
+      schemaVersion: 2, orgId, conversationId, ownerUid: uid,
+      state: index % 2 ? 'quarantined' : 'ready', messageId: null,
+      fileName: `private-${index}.jpg`, objectPath, createdAt: Timestamp.now(),
+    });
+    await bucket.file(objectPath).save(Buffer.from(`private-${index}`));
+  }
+  await db.doc(`organizations/${orgId}/attachmentSlots/deleting-owner`).set({
+    schemaVersion: 2, orgId, conversationId, ownerUid: uid, activeIds: ['orphan-00'], updatedAt: Timestamp.now(),
+  });
+
+  await beginDeletion(uid);
+  await Promise.all([resumeDeletion(uid, 2), resumeDeletion(uid, 2)]);
+  const state = await finish(uid);
+
+  assert.deepEqual(state.residualAudit.communications, {
+    messagesTombstoned: 1,
+    staffNotesTombstoned: 1,
+    editActorsTombstoned: 1,
+    moderationActorsTombstoned: 1,
+    reactionsRemoved: 1,
+  });
+  assert.deepEqual(state.residualAudit.attachments, { linkedRetained: 1, unlinkedDeleted: 30, bytesRetained: true });
+  const auditJson = JSON.stringify(state.residualAudit);
+  assert.equal(auditJson.includes('private-0.jpg'), false);
+  assert.equal(auditJson.includes('Retained shared history'), false);
+  assert.equal(auditJson.includes(uid), false);
+
+  const message = (await db.doc(`organizations/${orgId}/conversations/${conversationId}/messages/${messageId}`).get()).data();
+  assert.equal(message.authorUid, undefined);
+  assert.deepEqual(message.authorIdentity, { kind: 'deleted', label: 'Deleted user' });
+  assert.equal(message.moderatedBy, undefined);
+  assert.deepEqual(message.moderatorIdentity, { kind: 'deleted', label: 'Deleted user' });
+  assert.equal(message.body, 'Retained shared history');
+  assert.equal(message.reactionCounts.yes, 0);
+  const edit = (await db.doc(`organizations/${orgId}/conversations/${conversationId}/messages/${messageId}/edits/1`).get()).data();
+  assert.equal(edit.actorUid, undefined);
+  assert.deepEqual(edit.actorIdentity, { kind: 'deleted', label: 'Deleted user' });
+  assert.equal((await db.doc(`organizations/${orgId}/conversations/${conversationId}/messages/${messageId}/reactions/${uid}_yes`).get()).exists, false);
+  const note = (await db.doc(`organizations/${orgId}/staffNotes/organization_${orgId}/entries/retained-note`).get()).data();
+  assert.equal(note.authorUid, undefined);
+  assert.deepEqual(note.authorIdentity, { kind: 'deleted', label: 'Deleted user' });
+
+  const linked = (await db.doc(`organizations/${orgId}/attachments/linked-file`).get()).data();
+  assert.equal(linked.ownerUid, undefined);
+  assert.deepEqual(linked.ownerIdentity, { kind: 'deleted', label: 'Deleted user' });
+  assert.equal((await bucket.file(linked.objectPath).exists())[0], true);
+  assert.equal((await db.collectionGroup('attachments').where('ownerUid', '==', uid).get()).size, 0);
+  assert.equal((await db.collectionGroup('attachmentSlots').where('ownerUid', '==', uid).get()).size, 0);
+  for (let index = 0; index < 30; index += 1) {
+    const attachmentId = `orphan-${String(index).padStart(2, '0')}`;
+    assert.equal((await db.doc(`organizations/${orgId}/attachments/${attachmentId}`).get()).exists, false);
+    assert.equal((await bucket.file(`quarantine/${orgId}/${attachmentId}/1`).exists())[0], false);
+  }
+
+  const viewerApp = clients.find(app => app.name === viewerUid);
+  const viewerFunctions = getFunctions(viewerApp);
+  const scope = { orgId, scopeType: 'organization', scopeId: orgId };
+  const page = (await httpsCallable(viewerFunctions, 'listConversationMessages')({ ...scope, pageSize: 10 })).data;
+  assert.equal(page.items[0].authorUid, null);
+  assert.equal(page.items[0].authorLabel, 'Deleted user');
+  assert.equal(page.items[0].mine, false);
+  assert.equal(page.items[0].body, 'Retained shared history');
+  assert.equal(page.items[0].attachments[0].fileName, 'retained.jpg');
+  await assert.rejects(
+    httpsCallable(viewerFunctions, 'editConversationMessage')({ requestId: 'cannot-claim-deleted', ...scope, messageId, text: 'Claimed edit', expectedRevision: 1 }),
+    { code: 'functions/permission-denied' },
+  );
+  const search = (await httpsCallable(viewerFunctions, 'searchConversationMessages')({ ...scope, text: 'retained' })).data;
+  assert.equal(search.items[0].authorUid, null);
+  assert.equal(search.items[0].authorLabel, 'Deleted user');
+  const notes = (await httpsCallable(viewerFunctions, 'listStaffNotes')({ ...scope, pageSize: 10 })).data;
+  assert.equal(notes.items[0].authorUid, null);
+  assert.equal(notes.items[0].authorLabel, 'Deleted user');
 });

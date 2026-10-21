@@ -248,6 +248,7 @@ export function Conversations({ services, orgId }: { services: BrowserServices; 
       <section aria-labelledby="household-channel">
         <h2 id="household-channel">Household channel</h2>
         <ul>{messages.map((item) => <li key={item.id}>
+          {item.authorLabel ? <p>{item.authorLabel}</p> : null}
           <p>{item.tombstoned ? "Message removed by a moderator" : item.body}{item.pinned ? " · Pinned" : ""}{item.editedAt ? " · Edited" : ""}</p>
           {item.tombstoned ? null : item.attachments?.map((file) => <p key={file.id}>{file.fileName} · {file.detectedType} · {file.byteLength} bytes</p>)}
           {item.tombstoned ? null : <div>
@@ -298,7 +299,7 @@ export function Conversations({ services, orgId }: { services: BrowserServices; 
         </form>
         <section aria-labelledby="message-search">
           {search?.partial ? <p>More matches may remain. Continue the search.</p> : null}
-          <ul>{search?.items.map((item) => <li key={item.id}>{item.body}{item.editedAt ? " · Edited" : ""}</li>)}</ul>
+          <ul>{search?.items.map((item) => <li key={item.id}>{item.authorLabel ? `${item.authorLabel} · ` : ""}{item.body}{item.editedAt ? " · Edited" : ""}</li>)}</ul>
           {searched && search && !search.items.length ? <p>No matching messages.</p> : null}
           {search?.nextCursor ? <button type="button" onClick={() => void find(undefined, search.nextCursor)}>Continue search</button> : null}
         </section>
@@ -306,7 +307,7 @@ export function Conversations({ services, orgId }: { services: BrowserServices; 
       <section aria-labelledby="staff-notes">
         <h2 id="staff-notes">Staff notes</h2>
         <p>Only organization administrators and program staff can read these notes.</p>
-        <ul>{notes.map((item) => <li key={item.id}>{item.body}</li>)}</ul>
+        <ul>{notes.map((item) => <li key={item.id}>{item.authorLabel ? `${item.authorLabel} · ` : ""}{item.body}</li>)}</ul>
         {!notes.length && !error ? <p>No staff notes.</p> : null}
         {noteCursor ? <button type="button" onClick={() => void older("notes")}>Load older notes</button> : null}
         <form onSubmit={(event) => void post(event, "note")}>
