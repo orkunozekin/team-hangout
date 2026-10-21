@@ -54,14 +54,6 @@
       ]
     },
     {
-      "collectionGroup": "outbox",
-      "queryScope": "COLLECTION_GROUP",
-      "fields": [
-        { "fieldPath": "state", "order": "ASCENDING" },
-        { "fieldPath": "__name__", "order": "ASCENDING" }
-      ]
-    },
-    {
       "collectionGroup": "notificationDeliveries",
       "queryScope": "COLLECTION",
       "fields": [
@@ -777,22 +769,6 @@
       ]
     },
     {
-      "collectionGroup": "scheduleOperations",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "state", "order": "ASCENDING" },
-        { "fieldPath": "__name__", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "messages",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "sequence", "order": "DESCENDING" },
-        { "fieldPath": "__name__", "order": "DESCENDING" }
-      ]
-    },
-    {
       "collectionGroup": "messageSearch",
       "queryScope": "COLLECTION",
       "fields": [
@@ -804,6 +780,16 @@
     }
   ],
   "fieldOverrides": [
+    {
+      "collectionGroup": "outbox",
+      "fieldPath": "state",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    },
     {
       "collectionGroup": "attachments",
       "fieldPath": "ownerUid",
