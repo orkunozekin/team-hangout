@@ -91,6 +91,20 @@ test('the attachment flag stays off for an organization that only enabled conver
   await db.doc('organizations/file-org').update({ 'features.attachments': true });
 });
 
+test('an account-deletion fence rejects a claimed upload and removes late private bytes', async () => {
+  const requestId = rid();
+  const reserved = await call('file-poster', 'createAttachmentUpload', { requestId, ...team, fileName: 'late.jpg', declaredBytes: jpeg.length });
+  const ref = db.doc(`organizations/${team.orgId}/attachments/${reserved.id}`);
+  const row = (await ref.get()).data();
+  await ref.update({ state: 'deleting', deletionPending: true, updatedAt: Timestamp.now() });
+  const object = getStorage(admin).bucket(`${projectId}.appspot.com`).file(row.objectPath);
+  await object.save(jpeg);
+  assert.equal((await object.exists())[0], true);
+  const response = await putBytes(reserved.token, jpeg, 'image/jpeg');
+  assert.equal(response.status, 403);
+  assert.equal((await object.exists())[0], false);
+});
+
 test('staff can transfer a JPEG while youth posting is closed, and a guardian can download it', async () => {
   const blocked = await fail('file-guardian', 'createAttachmentUpload', { requestId: rid(), ...team, fileName: 'photo.jpg', declaredBytes: jpeg.length });
   assert.equal(blocked.details?.domainCode, 'YOUTH_POLICY');

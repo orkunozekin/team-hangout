@@ -295,3 +295,10 @@
 - **Gap:** Push ticket errors lost their terminal code, receipt cleanup could revoke a newly rotated token, transient pre-send Auth reads became ambiguous sends, endpoint revocation could block local logout, and a notification target reused the currently selected team even when the authorized update belonged elsewhere. Registration could also exceed the worker's endpoint cap, while terminal delivery state could commit before token cleanup and fallback creation.
 - **Going forward:** Preserve provider error codes through the worker, store a non-secret fingerprint of the token actually sent and condition cleanup on that generation, distinguish pre-send dependencies from ambiguous transport outcomes, make remote cleanup best effort without weakening durable local cleanup, and route only when the live target scope matches the active UI scope. Enforce fan-out bounds at registration and commit terminal state, projection status, token retirement and fallback atomically. Cover ticket and receipt failures, token rotation, dependency outages, account deletion logout, endpoint caps and cross-team links.
 - **Pointers:** `functions/src/notifications/{providers,worker,commands}.ts`, `src/api/auth.ts`, `App.tsx`, notification backend and native regressions.
+
+### 2026-10-21 — Fence storage writers before account-deletion cleanup
+
+- **Source:** PR #46 · GitHub Codex review at `e39e796`.
+- **Gap:** Account deletion removed an attachment row and its current objects without fencing an already-claimed upload or canonicalization worker, so the losing worker could write private bytes after cleanup.
+- **Going forward:** Mark attachment metadata with a transactional deletion fence before deleting objects. Make every upload and canonicalization completion recheck that fence, remove bytes it may have written when it loses the race, and cover the claimed-writer interleaving with emulator storage assertions.
+- **Pointers:** `functions/src/accounts/deletion.ts`, `functions/src/communications/attachments.ts`, `tests/backend/attachments.test.mjs`.

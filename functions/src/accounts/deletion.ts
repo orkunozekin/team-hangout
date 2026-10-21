@@ -201,56 +201,83 @@ async function deleteAttachmentBytes(orgId: string, attachmentId: string, object
   }
 }
 
-async function linkedMessage(doc: FirebaseFirestore.QueryDocumentSnapshot) {
+function linkedMessageRef(doc: FirebaseFirestore.DocumentSnapshot) {
   const row = doc.data();
   const parts = doc.ref.path.split('/');
   if (parts.length !== 4 || parts[0] !== 'organizations' || parts[2] !== 'attachments') return null;
   const orgId = parts[1];
-  const messageId = typeof row.messageId === 'string' ? row.messageId : null;
-  const conversationId = typeof row.conversationId === 'string' ? row.conversationId : null;
+  const messageId = typeof row?.messageId === 'string' ? row.messageId : null;
+  const conversationId = typeof row?.conversationId === 'string' ? row.conversationId : null;
   if (!messageId || !conversationId) return null;
-  const message = await getFirestore().doc(`organizations/${orgId}/conversations/${conversationId}/messages/${messageId}`).get();
-  const attachmentIds = message.data()?.attachmentIds;
-  return message.exists && Array.isArray(attachmentIds) && attachmentIds.includes(doc.id) ? message.ref : null;
+  return getFirestore().doc(`organizations/${orgId}/conversations/${conversationId}/messages/${messageId}`);
 }
 
-/** Storage deletion happens before the Firestore checkpoint so retries never leave private orphan bytes. */
+/** Fence writers first, then remove Storage and its Firestore checkpoint. */
 async function cleanupAttachmentPage(uid: string) {
   const db = getFirestore();
   const job = await jobRef(uid).get();
   const state = job.data();
   if (!state || state.status === 'complete' || stages[state.stage] !== 'attachments') return false;
   const page = await queryFor('attachments', uid).orderBy(FieldPath.documentId()).limit(PAGE_SIZE).get();
-  const linked = new Set<string>();
-  for (const doc of page.docs) {
-    if (await linkedMessage(doc)) linked.add(doc.ref.path);
-    else {
-      const parts = doc.ref.path.split('/');
-      await deleteAttachmentBytes(parts[1], doc.id, doc.data().objectPath);
-    }
+  if (page.empty) {
+    await db.runTransaction(async tx => {
+      const currentJob = await tx.get(jobRef(uid)); const current = currentJob.data();
+      if (!current || current.status === 'complete' || stages[current.stage] !== 'attachments') return;
+      tx.update(currentJob.ref, { stage: current.stage + 1, cursor: null, pages: current.pages + 1, updatedAt: Timestamp.now(), lastError: null });
+    });
+    return true;
   }
+
+  let fenced: { ref: FirebaseFirestore.DocumentReference; orgId: string; attachmentId: string; objectPath: unknown }[] = [];
   await db.runTransaction(async tx => {
     const currentJob = await tx.get(jobRef(uid));
     const current = currentJob.data();
     if (!current || current.status === 'complete' || stages[current.stage] !== 'attachments') return;
     const liveDocs = page.docs.length ? await tx.getAll(...page.docs.map(doc => doc.ref)) : [];
-    let linkedRetained = 0; let unlinkedDeleted = 0;
+    const messageRefs = Array.from(new Map(
+      liveDocs
+        .map(linkedMessageRef)
+        .filter((ref): ref is FirebaseFirestore.DocumentReference => ref !== null)
+        .map(ref => [ref.path, ref]),
+    ).values());
+    const messages = messageRefs.length ? await tx.getAll(...messageRefs) : [];
+    const messageByPath = new Map(messages.map(message => [message.ref.path, message]));
+    const nextFenced: typeof fenced = [];
+    let linkedRetained = 0;
     for (const live of liveDocs) {
       if (!live.exists || live.data()?.ownerUid !== uid) continue;
-      if (linked.has(live.ref.path)) {
+      const messageRef = linkedMessageRef(live);
+      const attachmentIds = messageRef ? messageByPath.get(messageRef.path)?.data()?.attachmentIds : null;
+      if (Array.isArray(attachmentIds) && attachmentIds.includes(live.id)) {
         tx.update(live.ref, { ownerUid: FieldValue.delete(), ownerIdentity: deletedIdentity });
         linkedRetained += 1;
       } else {
-        tx.delete(live.ref);
-        unlinkedDeleted += 1;
+        const parts = live.ref.path.split('/');
+        tx.update(live.ref, { state: 'deleting', deletionPending: true, updatedAt: Timestamp.now() });
+        nextFenced.push({ ref: live.ref, orgId: parts[1], attachmentId: live.id, objectPath: live.data()?.objectPath });
       }
     }
     tx.update(currentJob.ref, {
-      stage: page.empty ? current.stage + 1 : current.stage,
-      cursor: null,
-      pages: current.pages + 1,
-      recordsRemoved: current.recordsRemoved + unlinkedDeleted,
       'attachmentCounts.linkedRetained': FieldValue.increment(linkedRetained),
+      updatedAt: Timestamp.now(), lastError: null,
+    });
+    fenced = nextFenced;
+  });
+  for (const attachment of fenced) await deleteAttachmentBytes(attachment.orgId, attachment.attachmentId, attachment.objectPath);
+  await db.runTransaction(async tx => {
+    const currentJob = await tx.get(jobRef(uid)); const current = currentJob.data();
+    if (!current || current.status === 'complete' || stages[current.stage] !== 'attachments') return;
+    const liveDocs = fenced.length ? await tx.getAll(...fenced.map(item => item.ref)) : [];
+    let unlinkedDeleted = 0;
+    for (const live of liveDocs) {
+      const row = live.data();
+      if (!live.exists || row?.ownerUid !== uid || row?.state !== 'deleting' || row?.deletionPending !== true) continue;
+      tx.delete(live.ref);
+      unlinkedDeleted += 1;
+    }
+    tx.update(currentJob.ref, {
+      cursor: null, pages: current.pages + 1,
+      recordsRemoved: current.recordsRemoved + unlinkedDeleted,
       'attachmentCounts.unlinkedDeleted': FieldValue.increment(unlinkedDeleted),
       updatedAt: Timestamp.now(), lastError: null,
     });
