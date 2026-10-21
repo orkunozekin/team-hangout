@@ -130,6 +130,7 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
     {loading ? <ActivityIndicator color={colors.primary} /> : denied ? <EmptyState message="This conversation is unavailable." /> : <View style={styles.items}>
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       {!items.length ? <EmptyState message="No messages yet." /> : items.map(item => <View key={item.id} style={styles.card}>
+        {item.authorLabel ? <Text style={styles.author}>{item.authorLabel}</Text> : null}
         <Text style={styles.body}>{item.tombstoned ? 'Message removed by a moderator' : item.body}</Text>
         {item.tombstoned ? null : item.attachments?.map(file => <Text key={file.id} style={styles.pin}>{file.fileName} · {file.detectedType} · {file.byteLength} bytes</Text>)}
         {item.editedAt ? <Text style={styles.pin}>Edited</Text> : null}
@@ -151,7 +152,7 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
       <SecondaryButton label={searching ? 'Searching messages' : 'Search messages'} disabled={searching} onPress={() => void find()} />
       {search?.partial ? <Text style={styles.banner}>More matches may remain. Continue the search.</Text> : null}
       {search && !search.items.length ? <EmptyState message="No matching messages." /> : null}
-      {search?.items.map(item => <View key={item.id} style={styles.card}><Text style={styles.body}>{item.body}</Text></View>)}
+      {search?.items.map(item => <View key={item.id} style={styles.card}>{item.authorLabel ? <Text style={styles.author}>{item.authorLabel}</Text> : null}<Text style={styles.body}>{item.body}</Text></View>)}
       {search?.nextCursor ? <SecondaryButton label="Continue search" onPress={() => void find(search.nextCursor ?? undefined)} /> : null}
     </View>}
   </ScrollView></Screen>;
@@ -163,6 +164,7 @@ const styles = StyleSheet.create({
   error: { ...type.body, color: colors.danger },
   card: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md, gap: spacing.sm },
   body: { ...type.body, color: colors.text },
+  author: { ...type.caption, color: colors.textMuted },
   pin: { ...type.caption, color: colors.primary },
   reactions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   input: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, padding: spacing.sm, color: colors.text },

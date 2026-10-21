@@ -11,7 +11,8 @@ const { getAuth: adminAuth } = require('firebase-admin/auth');
 const { getFirestore, Timestamp } = require('firebase-admin/firestore');
 const { getStorage } = require('firebase-admin/storage');
 const { signUploadGrant, DEMO_ATTACHMENT_UPLOAD_KEY, contentScanner, sha256, ATTACHMENT_QUARANTINE_TTL_MS } = require('./lib/communications/attachmentScan.js');
-const { purgeAbandonedAttachments } = require('./lib/communications/attachments.js');
+const { purgeAbandonedAttachments, writeCanonical } = require('./lib/communications/attachments.js');
+const { fingerprint } = require('./lib/operations/requests.js');
 requireEmulators();
 
 const exif = Buffer.concat([Buffer.from('Exif\0\0'), Buffer.from('GPS-SYNTHETIC')]);
@@ -89,6 +90,40 @@ test('the attachment flag stays off for an organization that only enabled conver
   assert.equal(hidden.attachments, 'disabled');
   assert.equal(hidden.canPost, true);
   await db.doc('organizations/file-org').update({ 'features.attachments': true });
+});
+
+test('an account-deletion fence rejects a claimed upload and removes late private bytes', async () => {
+  const requestId = rid();
+  const reserved = await call('file-poster', 'createAttachmentUpload', { requestId, ...team, fileName: 'late.jpg', declaredBytes: jpeg.length });
+  const ref = db.doc(`organizations/${team.orgId}/attachments/${reserved.id}`);
+  const row = (await ref.get()).data();
+  await ref.update({ state: 'deleting', deletionPending: true, updatedAt: Timestamp.now() });
+  const object = getStorage(admin).bucket(`${projectId}.appspot.com`).file(row.objectPath);
+  await object.save(jpeg);
+  assert.equal((await object.exists())[0], true);
+  const response = await putBytes(reserved.token, jpeg, 'image/jpeg');
+  assert.equal(response.status, 403);
+  assert.equal((await object.exists())[0], false);
+});
+
+test('a late rejected upload does not recreate an attachment slot removed by account deletion', async () => {
+  const reserved = await call('file-poster', 'createAttachmentUpload', { requestId: rid(), ...team, fileName: 'expired.jpg', declaredBytes: jpeg.length });
+  const ref = db.doc(`organizations/${team.orgId}/attachments/${reserved.id}`);
+  const row = (await ref.get()).data();
+  const slotId = fingerprint({ kind: 'attachmentSlot', orgId: team.orgId, conversationId: row.conversationId, uid: 'file-poster' });
+  const slot = db.doc(`organizations/${team.orgId}/attachmentSlots/${slotId}`);
+  await slot.delete();
+  await ref.update({ expiresAt: Timestamp.fromMillis(Date.now() - 1000) });
+  const response = await putBytes(reserved.token, jpeg, 'image/jpeg');
+  assert.equal(response.status, 410);
+  assert.equal((await slot.get()).exists, false);
+});
+
+test('canonical verification failure removes bytes written before the failure', async () => {
+  const path = `quarantine/file-org/verification-failure/2`;
+  const object = getStorage(admin).bucket(`${projectId}.appspot.com`).file(path);
+  await assert.rejects(writeCanonical(path, cleanedJpeg, async () => { throw new Error('Synthetic verification read failure'); }));
+  assert.equal((await object.exists())[0], false);
 });
 
 test('staff can transfer a JPEG while youth posting is closed, and a guardian can download it', async () => {

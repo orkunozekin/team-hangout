@@ -29,7 +29,8 @@ export type ConversationAttachment = {
 export type ConversationMessage = {
   id: string;
   sequence: number;
-  authorUid: string;
+  authorUid: string | null;
+  authorLabel?: string | null;
   body: string | null;
   tombstoned: boolean;
   pinned: boolean;
@@ -61,7 +62,8 @@ export type ConversationPage = {
 export type StaffNote = {
   id: string;
   body: string;
-  authorUid: string;
+  authorUid: string | null;
+  authorLabel?: string | null;
   createdAt: string;
 };
 

@@ -155,6 +155,9 @@ async function reserve(tx: Transaction, orgId: string, conversationId: string, u
 }
 
 function dropActive(tx: Transaction, orgId: string, conversationId: string, uid: string, attachmentId: string, slot: Data | undefined) {
+  // A deletion worker may have already removed the slot after this upload was claimed.
+  // Do not recreate deleted-account ownership while settling the losing writer.
+  if (!slot) return;
   const activeIds = Array.isArray(slot?.activeIds) ? slot.activeIds.filter((item: unknown) => item !== attachmentId && typeof item === "string") : [];
   tx.set(slotRef(orgId, conversationId, uid), { schemaVersion: 2, orgId, ownerUid: uid, conversationId, activeIds, updatedAt: Timestamp.now() }, { merge: true });
 }
@@ -273,6 +276,7 @@ async function receiveUpload(grant: UploadGrant, bytes: Buffer) {
     if (!row || !scope || row.ownerUid !== grant.uid || row.objectPath !== grant.path || row.declaredBytes !== grant.bytes || row.orgId !== grant.orgId) {
       return "missing" as const;
     }
+    if (row.state === "deleting" || row.deletionPending === true) return "deleted" as const;
     if (row.expiresAt.toMillis() <= Date.now()) return "expired" as const;
     const decision = await authorizeConversation(tx, row.orgId, scope, row.scopeId, grant.uid);
     assertPost(decision);
@@ -290,6 +294,10 @@ async function receiveUpload(grant: UploadGrant, bytes: Buffer) {
     throw new HttpsError("failed-precondition", "This upload expired.", { domainCode: "EXPIRED" });
   }
   if (claim === "conflict") throw new HttpsError("failed-precondition", "This upload is unavailable.");
+  if (claim === "deleted") {
+    await bucket().file(grant.path).delete({ ignoreNotFound: true });
+    throw new HttpsError("permission-denied", "This upload is unavailable.");
+  }
   if (claim === "stored") return;
   await bucket().file(grant.path).save(bytes, { resumable: false, metadata: { contentType: "application/octet-stream" } });
   const finished = await db.runTransaction(async (tx) => {
@@ -297,7 +305,8 @@ async function receiveUpload(grant: UploadGrant, bytes: Buffer) {
     const snap = await tx.get(ref);
     const row = snap.data();
     const scope = storedScope(row?.scopeType);
-    if (!row || !scope || row.sha256 !== hash || (row.state !== "uploading" && row.state !== "quarantined")) return "conflict" as const;
+    if (!row || row.state === "deleting" || row.deletionPending === true) return "deleted" as const;
+    if (!scope || row.sha256 !== hash || (row.state !== "uploading" && row.state !== "quarantined")) return "conflict" as const;
     if (row.state === "quarantined") return "ok" as const;
     const slot = (await tx.get(slotRef(row.orgId, row.conversationId, row.ownerUid))).data();
     if (row.expiresAt.toMillis() <= Date.now()) {
@@ -322,6 +331,10 @@ async function receiveUpload(grant: UploadGrant, bytes: Buffer) {
     throw new HttpsError("failed-precondition", "This upload expired.", { domainCode: "EXPIRED" });
   }
   if (finished === "denied") {
+    await bucket().file(grant.path).delete({ ignoreNotFound: true });
+    throw new HttpsError("permission-denied", "This upload is unavailable.");
+  }
+  if (finished === "deleted") {
     await bucket().file(grant.path).delete({ ignoreNotFound: true });
     throw new HttpsError("permission-denied", "This upload is unavailable.");
   }
@@ -512,50 +525,60 @@ export const finalizeAttachment = onCall(callableOptions, async (request) => {
     }
   }
   const result = opened.kind === "terminal" ? opened.result : reviewView(payload.attachmentId, opened.fileName, review!);
-  const committed = await db.runTransaction(async (tx) => {
-    tx = cacheDocumentReads(tx);
-    await accountAvailable(tx, uid);
-    const decision = await authorizeConversation(tx, payload.orgId, payload.scopeType, payload.scopeId, uid);
-    assertPost(decision);
-    const previous = await tx.get(receipt);
-    if (previous.exists && previous.data()?.fingerprint !== payloadFingerprint) {
-      throw new HttpsError("already-exists", "This request ID was used for another change.", { domainCode: "REQUEST_ID_REUSED" });
+  const canonicalWritten = opened.kind === "review" && review?.state === "ready" && review.sha256 !== opened.sha256;
+  let committed;
+  try {
+    committed = await db.runTransaction(async (tx) => {
+      tx = cacheDocumentReads(tx);
+      await accountAvailable(tx, uid);
+      const decision = await authorizeConversation(tx, payload.orgId, payload.scopeType, payload.scopeId, uid);
+      assertPost(decision);
+      const previous = await tx.get(receipt);
+      if (previous.exists && previous.data()?.fingerprint !== payloadFingerprint) {
+        throw new HttpsError("already-exists", "This request ID was used for another change.", { domainCode: "REQUEST_ID_REUSED" });
+      }
+      if (previous.exists) return previous.data()?.result;
+      const snap = await tx.get(ref);
+      const row = snap.data();
+      if (!row || row.ownerUid !== uid || row.conversationId !== decision.conversationId) denied();
+      if (row.state === "ready" || row.state === "rejected") {
+        const current = view(payload.attachmentId, row);
+        tx.create(receipt, { uid, operation: "finalizeAttachment", fingerprint: payloadFingerprint, result: current, createdAt: Timestamp.now() });
+        return current;
+      }
+      const publishingCanonical = opened.kind === "review" && review!.state === "ready" && review!.sha256 !== opened.sha256;
+      if (opened.kind !== "review" || row.sha256 !== opened.sha256 || (publishingCanonical ? row.state !== "canonicalizing" || row.canonicalSha256 !== review!.sha256 : row.state !== "quarantined" && row.state !== "canonicalizing")) {
+        throw new HttpsError("failed-precondition", "Upload the file before finishing it.", { domainCode: "UPLOAD_REQUIRED" });
+      }
+      const slot = (await tx.get(slotRef(payload.orgId, decision.conversationId, uid))).data();
+      const now = Timestamp.now();
+      if (review!.state === "rejected") {
+        tx.update(ref, {
+          state: "rejected", rejectionCode: review!.code, detectedType: null, scan: review!.scan, sha256: review!.sha256, actualBytes: review!.byteLength, updatedAt: now,
+        });
+        dropActive(tx, payload.orgId, decision.conversationId, uid, payload.attachmentId, slot);
+      } else {
+        tx.update(ref, {
+          state: "ready",
+          detectedType: review!.detectedType,
+          scan: review!.scan,
+          rejectionCode: null,
+          sha256: review!.sha256,
+          actualBytes: review!.byteLength,
+          ...(publishingCanonical ? { objectPath: canonicalObjectPath(payload.orgId, payload.attachmentId) } : {}),
+          updatedAt: now,
+        });
+      }
+      tx.create(receipt, { uid, operation: "finalizeAttachment", fingerprint: payloadFingerprint, result, createdAt: now });
+      return result;
+    });
+  } catch (error) {
+    if (canonicalWritten) {
+      try { await bucket().file(canonicalObjectPath(payload.orgId, payload.attachmentId)).delete({ ignoreNotFound: true }); }
+      catch { /* deletion or the orphan purge retries cleanup */ }
     }
-    if (previous.exists) return previous.data()?.result;
-    const snap = await tx.get(ref);
-    const row = snap.data();
-    if (!row || row.ownerUid !== uid || row.conversationId !== decision.conversationId) denied();
-    if (row.state === "ready" || row.state === "rejected") {
-      const current = view(payload.attachmentId, row);
-      tx.create(receipt, { uid, operation: "finalizeAttachment", fingerprint: payloadFingerprint, result: current, createdAt: Timestamp.now() });
-      return current;
-    }
-    const publishingCanonical = opened.kind === "review" && review!.state === "ready" && review!.sha256 !== opened.sha256;
-    if (opened.kind !== "review" || row.sha256 !== opened.sha256 || (publishingCanonical ? row.state !== "canonicalizing" || row.canonicalSha256 !== review!.sha256 : row.state !== "quarantined" && row.state !== "canonicalizing")) {
-      throw new HttpsError("failed-precondition", "Upload the file before finishing it.", { domainCode: "UPLOAD_REQUIRED" });
-    }
-    const slot = (await tx.get(slotRef(payload.orgId, decision.conversationId, uid))).data();
-    const now = Timestamp.now();
-    if (review!.state === "rejected") {
-      tx.update(ref, {
-        state: "rejected", rejectionCode: review!.code, detectedType: null, scan: review!.scan, sha256: review!.sha256, actualBytes: review!.byteLength, updatedAt: now,
-      });
-      dropActive(tx, payload.orgId, decision.conversationId, uid, payload.attachmentId, slot);
-    } else {
-      tx.update(ref, {
-        state: "ready",
-        detectedType: review!.detectedType,
-        scan: review!.scan,
-        rejectionCode: null,
-        sha256: review!.sha256,
-        actualBytes: review!.byteLength,
-        ...(publishingCanonical ? { objectPath: canonicalObjectPath(payload.orgId, payload.attachmentId) } : {}),
-        updatedAt: now,
-      });
-    }
-    tx.create(receipt, { uid, operation: "finalizeAttachment", fingerprint: payloadFingerprint, result, createdAt: now });
-    return result;
-  });
+    throw error;
+  }
   if (committed?.state === "rejected") await deleteRejectedBytes(payload.orgId, payload.attachmentId);
   if (opened.kind === "review" && review?.state === "ready" && review.sha256 !== opened.sha256) {
     try { await bucket().file(opened.path).delete({ ignoreNotFound: true }); }
@@ -581,10 +604,21 @@ async function loadScanner() {
   return selectAttachmentScanner({ mode, externalUrl: process.env.ATTACHMENT_SCANNER_URL });
 }
 
-async function writeCanonical(path: string, bytes: Buffer) {
-  await bucket().file(path).save(bytes, { resumable: false, metadata: { contentType: "application/octet-stream" } });
-  const written = await readQuarantine(path);
-  if (sha256(written) !== sha256(bytes)) throw new HttpsError("unavailable", "Attachment storage could not be updated. Try again.");
+export async function writeCanonical(path: string, bytes: Buffer, readBack: (path: string) => Promise<Buffer> = readQuarantine) {
+  const file = bucket().file(path);
+  let saved = false;
+  try {
+    await file.save(bytes, { resumable: false, metadata: { contentType: "application/octet-stream" } });
+    saved = true;
+    const written = await readBack(path);
+    if (sha256(written) !== sha256(bytes)) throw new HttpsError("unavailable", "Attachment storage could not be updated. Try again.");
+  } catch (error) {
+    if (saved) {
+      try { await file.delete({ ignoreNotFound: true }); }
+      catch { /* account deletion or the orphan purge retries cleanup */ }
+    }
+    throw error;
+  }
 }
 
 async function hashReadable(stream: Readable): Promise<{ hash: string; length: number; bytes: Buffer }> {

@@ -92,6 +92,20 @@ test('shows a removed message without its old text', async () => {
   expect(screen.queryByText('Practice is at the north field')).toBeNull();
 });
 
+test('renders retained history from a deleted account as a non-editable tombstone identity', async () => {
+  const deleted = { ...page.items[0], authorUid: null, authorLabel: 'Deleted user', mine: false };
+  (api.listConversationMessages as jest.Mock).mockResolvedValue({ ...page, items: [deleted] });
+  (api.searchConversationMessages as jest.Mock).mockResolvedValue({ items: [deleted], nextCursor: null, partial: false });
+  await render(<ConversationScreen orgId="org" scopeType="team" scopeId="team" />);
+  expect(await screen.findByText('Deleted user')).toBeTruthy();
+  expect(screen.queryByText('Edit message')).toBeNull();
+  fireEvent.changeText(screen.getByLabelText('Search words'), 'practice');
+  await waitFor(() => expect(screen.getByLabelText('Search words').props.value).toBe('practice'));
+  await fireEvent.press(screen.getByText('Search messages'));
+  await waitFor(() => expect(api.searchConversationMessages).toHaveBeenCalled());
+  await waitFor(() => expect(screen.getAllByText('Deleted user')).toHaveLength(2));
+});
+
 test('drops search results when the channel changes', async () => {
   (api.listConversationMessages as jest.Mock).mockResolvedValue(page);
   (api.searchConversationMessages as jest.Mock).mockResolvedValue({
