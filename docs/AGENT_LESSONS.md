@@ -299,6 +299,6 @@
 ### 2026-10-21 — Fence storage writers before account-deletion cleanup
 
 - **Source:** PR #46 · GitHub Codex review at `e39e796`.
-- **Gap:** Account deletion removed an attachment row and its current objects without fencing an already-claimed upload or canonicalization worker, so the losing worker could write private bytes after cleanup.
-- **Going forward:** Mark attachment metadata with a transactional deletion fence before deleting objects. Make every upload and canonicalization completion recheck that fence, remove bytes it may have written when it loses the race, and cover the claimed-writer interleaving with emulator storage assertions.
+- **Gap:** Account deletion removed an attachment row and its current objects without fencing an already-claimed upload or canonicalization worker. A losing worker could write private bytes after cleanup, recreate a deleted ownership slot, or fail while verifying a canonical write before reaching the later cleanup guard.
+- **Going forward:** Mark attachment metadata with a transactional deletion fence before deleting objects. Make every upload and canonicalization completion recheck that fence, never recreate a missing ownership slot, and remove bytes from the write operation's own failure path as well as later transaction failures. Cover claimed-writer, missing-slot, and failed-verification interleavings with emulator Storage assertions.
 - **Pointers:** `functions/src/accounts/deletion.ts`, `functions/src/communications/attachments.ts`, `tests/backend/attachments.test.mjs`.

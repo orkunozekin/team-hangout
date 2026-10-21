@@ -155,6 +155,9 @@ async function reserve(tx: Transaction, orgId: string, conversationId: string, u
 }
 
 function dropActive(tx: Transaction, orgId: string, conversationId: string, uid: string, attachmentId: string, slot: Data | undefined) {
+  // A deletion worker may have already removed the slot after this upload was claimed.
+  // Do not recreate deleted-account ownership while settling the losing writer.
+  if (!slot) return;
   const activeIds = Array.isArray(slot?.activeIds) ? slot.activeIds.filter((item: unknown) => item !== attachmentId && typeof item === "string") : [];
   tx.set(slotRef(orgId, conversationId, uid), { schemaVersion: 2, orgId, ownerUid: uid, conversationId, activeIds, updatedAt: Timestamp.now() }, { merge: true });
 }
@@ -601,10 +604,21 @@ async function loadScanner() {
   return selectAttachmentScanner({ mode, externalUrl: process.env.ATTACHMENT_SCANNER_URL });
 }
 
-async function writeCanonical(path: string, bytes: Buffer) {
-  await bucket().file(path).save(bytes, { resumable: false, metadata: { contentType: "application/octet-stream" } });
-  const written = await readQuarantine(path);
-  if (sha256(written) !== sha256(bytes)) throw new HttpsError("unavailable", "Attachment storage could not be updated. Try again.");
+export async function writeCanonical(path: string, bytes: Buffer, readBack: (path: string) => Promise<Buffer> = readQuarantine) {
+  const file = bucket().file(path);
+  let saved = false;
+  try {
+    await file.save(bytes, { resumable: false, metadata: { contentType: "application/octet-stream" } });
+    saved = true;
+    const written = await readBack(path);
+    if (sha256(written) !== sha256(bytes)) throw new HttpsError("unavailable", "Attachment storage could not be updated. Try again.");
+  } catch (error) {
+    if (saved) {
+      try { await file.delete({ ignoreNotFound: true }); }
+      catch { /* account deletion or the orphan purge retries cleanup */ }
+    }
+    throw error;
+  }
 }
 
 async function hashReadable(stream: Readable): Promise<{ hash: string; length: number; bytes: Buffer }> {
