@@ -172,10 +172,13 @@ test('concurrent grants use participant revision and replay never overwrites lat
 test('guardian profile edits enforce configured rights, field allowlist, conflicts and immediate permission loss', async () => {
   const p = await create(); await enroll(p.id);
   await guardian(p.id, 'house-parent2');
+  const originalGrant = (await db.doc(`${path(p.id)}/guardians/house-parent2`).get()).data();
   const edit = () => call('house-parent2', 'editParticipantProfile', req({ orgId: a.orgId, participantId: p.id, expectedRevision: 0, fields: { contactPhone: '555-0100' } }));
   await deny(edit());
   await db.doc(`organizations/${a.orgId}`).update({ 'features.guardianProfileEditing': true });
   await guardian(p.id, 'house-parent2', 'approveGuardian', { permissions: { ...permissions, editProfile: true } });
+  const updatedGrant = (await db.doc(`${path(p.id)}/guardians/house-parent2`).get()).data();
+  assert.equal(updatedGrant.grantedAt.isEqual(originalGrant.grantedAt), true);
   const payload = req({ orgId: a.orgId, participantId: p.id, expectedRevision: 0, fields: { contactPhone: '555-0100' } });
   assert.equal((await call('house-parent2', 'editParticipantProfile', payload)).revision, 1);
   assert.equal((await profile('house-parent2', p.id)).profile.contactPhone, '555-0100');
@@ -184,6 +187,10 @@ test('guardian profile edits enforce configured rights, field allowlist, conflic
   await guardian(p.id, 'house-parent2', 'revokeGuardian');
   await deny(call('house-parent2', 'editParticipantProfile', payload));
   await deny(profile('house-parent2', p.id));
+  await guardian(p.id, 'house-parent2', 'approveGuardian', { permissions });
+  const reapprovedGrant = (await db.doc(`${path(p.id)}/guardians/house-parent2`).get()).data();
+  assert.equal(reapprovedGrant.grantedAt.toMillis() >= updatedGrant.updatedAt.toMillis(), true);
+  assert.equal(reapprovedGrant.grantedAt.isEqual(originalGrant.grantedAt), false);
 });
 test('household rollout flag and deleting actors fail closed; archival still permits grant revocation', async () => {
   const p = await create(); await guardian(p.id, 'house-parent1');

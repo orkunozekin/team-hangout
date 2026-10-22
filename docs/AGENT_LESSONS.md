@@ -302,3 +302,10 @@
 - **Gap:** Account deletion removed an attachment row and its current objects without fencing an already-claimed upload or canonicalization worker. A losing worker could write private bytes after cleanup, recreate a deleted ownership slot, or fail while verifying a canonical write before reaching the later cleanup guard.
 - **Going forward:** Mark attachment metadata with a transactional deletion fence before deleting objects. Make every upload and canonicalization completion recheck that fence, never recreate a missing ownership slot, and remove bytes from the write operation's own failure path as well as later transaction failures. Cover claimed-writer, missing-slot, and failed-verification interleavings with emulator Storage assertions.
 - **Pointers:** `functions/src/accounts/deletion.ts`, `functions/src/communications/attachments.ts`, `tests/backend/attachments.test.mjs`.
+
+### 2026-10-21 — Preserve continuous grant history and test scheduled handlers
+
+- **Source:** PR #47 review feedback.
+- **Gap:** Updating permissions on an active guardian grant reset its activation time and hid previously eligible history, while pure alert-summary tests did not exercise the scheduled monitor's enablement or Firestore queries.
+- **Going forward:** Preserve the original start of a continuously active grant, reset it only after revocation and reapproval, and invoke scheduled handlers against emulator data for disabled and enabled paths rather than testing only extracted helpers.
+- **Pointers:** `functions/src/participants/commands.ts`, `tests/backend/participants.test.mjs`, `tests/backend/phase2-monitoring.test.mjs`.
