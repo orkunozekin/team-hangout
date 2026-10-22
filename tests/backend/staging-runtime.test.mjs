@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 
 function metadata(projectId) {
   const env = { ...process.env, GCLOUD_PROJECT: projectId };
@@ -37,4 +38,19 @@ test('other project discovery keeps the email worker and existing scaling defaul
     assert.equal(agenda.max, null);
     assert.equal(agenda.min, null);
   }
+});
+
+test('Firestore index config uses the collection-group state override without redundant composites', () => {
+  const config = JSON.parse(readFileSync('firestore.indexes.json', 'utf8'));
+  const outboxState = config.fieldOverrides.find((override) => (
+    override.collectionGroup === 'outbox' && override.fieldPath === 'state'
+  ));
+  assert.deepEqual(outboxState?.indexes, [{ order: 'ASCENDING', queryScope: 'COLLECTION_GROUP' }]);
+
+  const redundant = config.indexes.filter((index) => (
+    index.fields.length === 2
+    && index.fields[1].fieldPath === '__name__'
+    && index.fields[0].order === index.fields[1].order
+  ));
+  assert.deepEqual(redundant, []);
 });
