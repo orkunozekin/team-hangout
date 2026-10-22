@@ -13,7 +13,7 @@ import { Data, id, invalid, keys, object, wire } from "../commandSupport";
 import { cacheDocumentReads } from "../operations/reads";
 import { denied } from "../operations/access";
 import { fingerprint, receiptId } from "../operations/requests";
-import { authorizeConversation, type ConversationDecision } from "./conversations";
+import { authorizeConversation, conversationMessageVisible, type ConversationDecision } from "./conversations";
 import {
   ATTACHMENT_EXPIRY_SECONDS,
   ATTACHMENT_LIMIT,
@@ -390,7 +390,7 @@ async function downloadAttachment(req: Request, res: Response) {
     if (typeof row.messageId === "string") {
       const message = await tx.get(getFirestore().doc(`organizations/${orgId}/conversations/${row.conversationId}/messages/${row.messageId}`));
       const linked = message.data()?.attachmentIds;
-      if (!message.exists || message.data()?.tombstoned === true || !Array.isArray(linked) || !linked.includes(attachmentId)) return null;
+      if (!message.exists || !conversationMessageVisible(decision, message.data()) || message.data()?.tombstoned === true || !Array.isArray(linked) || !linked.includes(attachmentId)) return null;
     }
     if (typeof row.objectPath !== "string" || typeof row.sha256 !== "string" || typeof row.detectedType !== "string") return null;
     return {

@@ -104,9 +104,12 @@ function guardianCommand(approving: boolean) {
     if (!approving && !previous) denied();
     const before = await projectionSources(tx, payload.orgId, payload.participantId, row);
     if (approving && !before.grants[payload.userId] && Object.keys(before.grants).length >= 10) throw new HttpsError('resource-exhausted', 'At most 10 active guardians are supported per participant.');
+    const now = Timestamp.now();
+    const continuingGrant = approving && previous?.status === 'active' && previous.grantedAt instanceof Timestamp;
     const grant = { orgId: payload.orgId, participantId: payload.participantId, userId: payload.userId, status: approving ? 'active' : 'revoked',
       permissions: approving ? payload.permissions : previous!.permissions, grantedBy: approving ? uid : previous!.grantedBy,
-      grantedAt: approving ? Timestamp.now() : previous!.grantedAt, revokedBy: approving ? null : uid, revokedAt: approving ? null : Timestamp.now(), ...metadata(uid, previous) };
+      grantedAt: approving ? (continuingGrant ? previous.grantedAt : now) : previous!.grantedAt,
+      revokedBy: approving ? null : uid, revokedAt: approving ? null : now, ...metadata(uid, previous) };
     const grants = { ...before.grants }; if (approving) grants[payload.userId] = grant; else delete grants[payload.userId];
     // Include a revoked target even when no longer in the active canonical query.
     const oldSources = { ...before, grants: { ...before.grants, [payload.userId]: previous ?? grant } };

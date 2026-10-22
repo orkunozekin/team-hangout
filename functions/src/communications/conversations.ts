@@ -27,6 +27,7 @@ type Decision = {
   mode: "youth" | "adult";
   conversationId: string;
   attachments: boolean;
+  historySince: Timestamp | null;
 };
 export type ConversationDecision = Decision;
 
@@ -106,8 +107,8 @@ function cursorKeyring(): { active: number; keys: Map<number, string> } {
   }
   return { active: parsed.active, keys };
 }
-function searchBinding(uid: string, conversationId: string, tokens: string[], from: string, to: string) {
-  return [uid, conversationId, tokens.join("\u001f"), from, to].join("\u001e");
+function searchBinding(uid: string, conversationId: string, tokens: string[], from: string, to: string, historySince: string) {
+  return [uid, conversationId, tokens.join("\u001f"), from, to, ...(historySince ? [historySince] : [])].join("\u001e");
 }
 function signSearchCursor(createdAt: Timestamp, messageId: string, binding: string, restart = false) {
   const ring = cursorKeyring();
@@ -302,7 +303,7 @@ async function coachOf(tx: Transaction, orgId: string, teamIds: string[], uid: s
   });
 }
 
-function guardianParticipantId(orgId: string, path: string, row: Data) {
+function guardianParticipant(orgId: string, path: string, row: Data) {
   const participantId = typeof row.participantId === "string" ? row.participantId : "";
   const userId = typeof row.userId === "string" ? row.userId : "";
   if (
@@ -310,14 +311,27 @@ function guardianParticipantId(orgId: string, path: string, row: Data) {
     row.permissions?.viewSchedule !== true ||
     path !== `organizations/${orgId}/participants/${participantId}/guardians/${userId}`
   ) return null;
-  return participantId;
+  const historySince = row.grantedAt instanceof Timestamp
+    ? row.grantedAt
+    : row.createdAt instanceof Timestamp
+      ? row.createdAt
+      : row.updatedAt instanceof Timestamp
+        ? row.updatedAt
+        : Timestamp.now();
+  return { participantId, historySince };
 }
 
 function activeParticipant(row: Data | undefined, orgId: string) {
   return !!row && row.schemaVersion === 2 && row.status === "active" && (row.orgId == null || row.orgId === orgId);
 }
 
-async function householdOnTeams(tx: Transaction, orgId: string, teamIds: string[], uid: string) {
+type HouseholdHistory = { read: boolean; historySince: Timestamp | null };
+
+function earliest(left: Timestamp | null, right: Timestamp) {
+  return left == null || right.toMillis() < left.toMillis() ? right : left;
+}
+
+async function householdOnTeams(tx: Transaction, orgId: string, teamIds: string[], uid: string): Promise<HouseholdHistory> {
   const db = getFirestore();
   const [guardians, linked] = await Promise.all([
     tx.get(
@@ -333,24 +347,26 @@ async function householdOnTeams(tx: Transaction, orgId: string, teamIds: string[
   if (guardians.size > 10 || linked.size > 20) {
     throw new HttpsError("resource-exhausted", "This household has too many active relationships.");
   }
-  const participantIds = new Set<string>();
+  const guardianStarts = new Map<string, Timestamp>();
   for (const grant of guardians.docs) {
-    const participantId = guardianParticipantId(orgId, grant.ref.path, grant.data());
-    if (participantId) participantIds.add(participantId);
+    const guardian = guardianParticipant(orgId, grant.ref.path, grant.data());
+    if (guardian) guardianStarts.set(guardian.participantId, earliest(guardianStarts.get(guardian.participantId) ?? null, guardian.historySince));
   }
+  const selfIds = new Set<string>();
   for (const participant of linked.docs) {
     const row = participant.data();
     if (
       activeParticipant(row, orgId) &&
       participant.ref.path === `organizations/${orgId}/participants/${participant.id}`
     )
-      participantIds.add(participant.id);
+      selfIds.add(participant.id);
   }
-  const candidates = [...participantIds];
+  const candidates = [...new Set([...guardianStarts.keys(), ...selfIds])];
   const participantRows = candidates.length
     ? await tx.getAll(...candidates.map((participantId) => db.doc(`organizations/${orgId}/participants/${participantId}`)))
     : [];
   const activeIds = new Set(participantRows.filter((doc) => activeParticipant(doc.data(), orgId)).map((doc) => doc.id));
+  let historySince: Timestamp | null = null;
   for (const participantId of activeIds) {
     for (const teamId of teamIds) {
       const roster = (
@@ -360,11 +376,14 @@ async function householdOnTeams(tx: Transaction, orgId: string, teamIds: string[
         roster?.status === "active" &&
         roster.orgId === orgId &&
         roster.participantId === participantId
-      )
-        return true;
+      ) {
+        if (selfIds.has(participantId)) return { read: true, historySince: null };
+        const grantedAt = guardianStarts.get(participantId);
+        if (grantedAt) historySince = earliest(historySince, grantedAt);
+      }
     }
   }
-  return false;
+  return { read: historySince != null, historySince };
 }
 
 async function authorize(
@@ -381,9 +400,9 @@ async function authorize(
   const conversationId = conversationIdFor(orgId, scope, scopeId);
   if (scope === "organization") {
     if (scopeId !== orgId) denied();
-    const orgHousehold = member.staff ? false : await orgHouseholdRead(tx, orgId, uid);
+    const orgHousehold = member.staff ? { read: false, historySince: null } : await orgHouseholdRead(tx, orgId, uid);
     return {
-      read: member.staff || orgHousehold,
+      read: member.staff || orgHousehold.read,
       post: member.staff,
       pin: member.staff,
       moderate: member.staff,
@@ -393,6 +412,7 @@ async function authorize(
       mode: "adult",
       conversationId,
       attachments: organization.features?.attachments === true,
+      historySince: member.staff ? null : orgHousehold.historySince,
     };
   }
   if (scope === "division") {
@@ -407,7 +427,7 @@ async function authorize(
     if (teams.size > 32) throw new HttpsError("resource-exhausted", "This division has too many teams.");
     const household = await householdOnTeams(tx, orgId, teams.docs.map((doc) => doc.id), uid);
     return {
-      read: staff || household,
+      read: staff || household.read,
       post: staff,
       pin: staff,
       moderate: staff,
@@ -417,6 +437,7 @@ async function authorize(
       mode: "adult" as const,
       conversationId,
       attachments: organization.features?.attachments === true,
+      historySince: staff ? null : household.historySince,
     };
   }
   let programId: string | null = null;
@@ -437,19 +458,20 @@ async function authorize(
   const staff = member.admin || (member.staff && programId != null && member.programIds.includes(programId));
   const coach = await coachOf(tx, orgId, teamIds, uid);
   if (!eventPublished && !staff && !coach) denied();
-  const household = eventPublished ? await householdOnTeams(tx, orgId, teamIds, uid) : false;
+  const household = eventPublished ? await householdOnTeams(tx, orgId, teamIds, uid) : { read: false, historySince: null };
   const adultPoster = staff || coach;
   return {
-    read: staff || coach || household,
-    post: adultPoster || (household && youthApproved),
+    read: staff || coach || household.read,
+    post: adultPoster || (household.read && youthApproved),
     pin: adultPoster,
     moderate: staff,
-    youthBlocked: household && !adultPoster && !youthApproved,
+    youthBlocked: household.read && !adultPoster && !youthApproved,
     youthPosting: youthApproved ? "open" as const : "closed" as const,
     programId,
     mode: "youth" as const,
     conversationId,
     attachments: organization.features?.attachments === true,
+    historySince: adultPoster ? null : household.historySince,
   };
 }
 
@@ -463,7 +485,7 @@ export async function authorizeConversation(
   return authorize(tx, orgId, scope, scopeId, uid);
 }
 
-async function orgHouseholdRead(tx: Transaction, orgId: string, uid: string) {
+async function orgHouseholdRead(tx: Transaction, orgId: string, uid: string): Promise<HouseholdHistory> {
   const db = getFirestore();
   const [guardians, linked] = await Promise.all([
     tx.get(
@@ -474,19 +496,29 @@ async function orgHouseholdRead(tx: Transaction, orgId: string, uid: string) {
   if (guardians.size > 10 || linked.size > 20) {
     throw new HttpsError("resource-exhausted", "This household has too many active relationships.");
   }
-  const participantIds = guardians.docs.flatMap((doc) => {
-    const participantId = guardianParticipantId(orgId, doc.ref.path, doc.data());
-    return participantId ? [participantId] : [];
-  });
+  const guardianStarts = new Map<string, Timestamp>();
+  for (const doc of guardians.docs) {
+    const guardian = guardianParticipant(orgId, doc.ref.path, doc.data());
+    if (guardian) guardianStarts.set(guardian.participantId, earliest(guardianStarts.get(guardian.participantId) ?? null, guardian.historySince));
+  }
+  const participantIds = [...guardianStarts.keys()];
   const rows = participantIds.length
     ? await tx.getAll(...participantIds.map((participantId) => db.doc(`organizations/${orgId}/participants/${participantId}`)))
     : [];
-  if (rows.some((doc) => activeParticipant(doc.data(), orgId))) return true;
-  return linked.docs.some(
+  const self = linked.docs.some(
     (doc) =>
       activeParticipant(doc.data(), orgId) &&
       doc.ref.path === `organizations/${orgId}/participants/${doc.id}`,
   );
+  if (self) return { read: true, historySince: null };
+  let historySince: Timestamp | null = null;
+  for (const doc of rows) {
+    if (activeParticipant(doc.data(), orgId)) {
+      const grantedAt = guardianStarts.get(doc.id);
+      if (grantedAt) historySince = earliest(historySince, grantedAt);
+    }
+  }
+  return { read: historySince != null, historySince };
 }
 
 function requireRead(decision: Decision) {
@@ -495,6 +527,14 @@ function requireRead(decision: Decision) {
 function requirePost(decision: Decision) {
   if (decision.youthBlocked) youthClosed();
   if (!decision.post) denied();
+}
+export function conversationMessageVisible(decision: ConversationDecision, row: Data | undefined) {
+  if (decision.historySince == null) return true;
+  const createdAt = row?.createdAt;
+  return createdAt instanceof Timestamp && createdAt.toMillis() >= decision.historySince.toMillis();
+}
+function requireVisibleMessage(decision: Decision, row: Data | undefined) {
+  if (!conversationMessageVisible(decision, row)) denied();
 }
 
 async function loadConversation(tx: Transaction, orgId: string, conversationId: string) {
@@ -586,12 +626,18 @@ export const listConversationMessages = readCommand((data) => {
     const parsed = parseSequenceCursor(payload.cursor);
     const cursor = await tx.get(messages.doc(parsed.messageId));
     if (!cursor.exists || cursor.data()?.sequence !== parsed.sequence) invalid("Invalid cursor.");
+    requireVisibleMessage(decision, cursor.data());
     query = query.startAfter(cursor);
   }
   const conversation = (await tx.get(db.doc(`organizations/${payload.orgId}/conversations/${decision.conversationId}`))).data();
   const rows = await tx.get(query);
-  const pinned = new Set<string>(conversation?.pinnedMessageIds ?? []);
-  const page = rows.docs.slice(0, payload.pageSize);
+  const visible = rows.docs.filter((doc) => conversationMessageVisible(decision, doc.data()));
+  const page = visible.slice(0, payload.pageSize);
+  const pinnedCandidates = Array.isArray(conversation?.pinnedMessageIds)
+    ? conversation.pinnedMessageIds.filter((item: unknown): item is string => typeof item === "string").slice(0, 3)
+    : [];
+  const pinnedRows = pinnedCandidates.length ? await tx.getAll(...pinnedCandidates.map((messageId) => messages.doc(messageId))) : [];
+  const pinned = new Set(pinnedRows.filter((doc) => doc.exists && conversationMessageVisible(decision, doc.data())).map((doc) => doc.id));
   const mine = await reactionMine(tx, page, uid);
   const views = await attachmentViews(tx, payload.orgId, page);
   return {
@@ -600,7 +646,7 @@ export const listConversationMessages = readCommand((data) => {
     youthPosting: decision.youthPosting,
     pinnedIds: [...pinned],
     items: page.map((doc) => projectMessage(doc, pinned, uid, mine.get(doc.id) ?? new Set(), views)),
-    nextCursor: rows.size > page.length && page.length ? sequenceCursor(page[page.length - 1].data().sequence, page[page.length - 1].id) : null,
+    nextCursor: visible.length > page.length && page.length ? sequenceCursor(page[page.length - 1].data().sequence, page[page.length - 1].id) : null,
     attachments: decision.attachments ? "enabled" : "disabled",
     canPost: decision.post,
   };
@@ -676,6 +722,7 @@ export const editConversationMessage = command("editConversationMessage", (data)
   const messageRef = getFirestore().doc(`organizations/${payload.orgId}/conversations/${decision.conversationId}/messages/${payload.messageId}`);
   const message = await tx.get(messageRef);
   if (!message.exists) throw new HttpsError("not-found", "Message not found.");
+  requireVisibleMessage(decision, message.data());
   if (message.data()?.authorUid !== uid) denied();
   if (replay) return replay;
   if (message.data()?.tombstoned === true) throw new HttpsError("failed-precondition", "Removed messages cannot be edited.");
@@ -708,6 +755,7 @@ export const reactToConversationMessage = command("reactToConversationMessage", 
   const reactionRef = messageRef.collection("reactions").doc(reactionDocumentId(uid, payload.code));
   const [message, reaction] = await tx.getAll(messageRef, reactionRef);
   if (!message.exists) throw new HttpsError("not-found", "Message not found.");
+  requireVisibleMessage(decision, message.data());
   if (replay) return replay;
   if (message.data()?.tombstoned === true) throw new HttpsError("failed-precondition", "Removed messages cannot be reacted to.");
   checkRevision(message.data(), payload.expectedRevision);
@@ -858,7 +906,10 @@ export const searchConversationMessages = onCall(emulatorDemo() ? {} : { secrets
   const fromKey = from ? from.toDate().toISOString() : "";
   const toKey = to ? to.toDate().toISOString() : "";
   let decision = await liveRead(uid, scope.orgId, scope.scopeType, scope.scopeId);
-  const binding = searchBinding(uid, decision.conversationId, tokens, fromKey, toKey);
+  const historySince = decision.historySince;
+  const historyKey = historySince ? historySince.toDate().toISOString() : "";
+  const effectiveFrom = historySince && (!from || historySince.toMillis() > from.toMillis()) ? historySince : from;
+  const binding = searchBinding(uid, decision.conversationId, tokens, fromKey, toKey, historyKey);
   const decoded = data.cursor == null ? null : readSearchCursor(id(data.cursor, "cursor"), binding);
   let position = decoded == null || decoded.restart ? null : { createdAt: decoded.createdAt, messageId: decoded.messageId };
   const indexComplete = await backfillSearchIndex(uid, scope.orgId, scope.scopeType, scope.scopeId, decision.conversationId);
@@ -866,7 +917,7 @@ export const searchConversationMessages = onCall(emulatorDemo() ? {} : { secrets
   const collection = db.collection(`organizations/${scope.orgId}/messageSearch`);
   const candidates = (limit: number, after: { createdAt: Timestamp; messageId: string } | null) => {
     let query = collection.where("conversationId", "==", decision.conversationId).where("tokens", "array-contains", tokens[0]);
-    if (from) query = query.where("createdAt", ">=", from);
+    if (effectiveFrom) query = query.where("createdAt", ">=", effectiveFrom);
     if (to) query = query.where("createdAt", "<=", to);
     query = query.orderBy("createdAt", "desc").orderBy(FieldPath.documentId(), "desc").limit(limit);
     if (after) query = query.startAfter(after.createdAt, after.messageId);
@@ -874,7 +925,7 @@ export const searchConversationMessages = onCall(emulatorDemo() ? {} : { secrets
   };
   let scanned = 0;
   let exhausted = false;
-  const matches: { createdAt: Timestamp; messageId: string; message: Data }[] = [];
+  let matches: { createdAt: Timestamp; messageId: string; message: Data }[] = [];
   while (matches.length < SEARCH_PAGE && scanned < SEARCH_CAP) {
     const take = Math.min(SEARCH_BATCH, SEARCH_CAP - scanned);
     const snap = await candidates(take, position).get();
@@ -906,6 +957,7 @@ export const searchConversationMessages = onCall(emulatorDemo() ? {} : { secrets
     decision = await liveRead(uid, scope.orgId, scope.scopeType, scope.scopeId);
   }
   decision = await liveRead(uid, scope.orgId, scope.scopeType, scope.scopeId);
+  matches = matches.filter((match) => conversationMessageVisible(decision, match.message));
   const conversation = (await db.doc(`organizations/${scope.orgId}/conversations/${decision.conversationId}`).get()).data();
   const pinned = new Set<string>(Array.isArray(conversation?.pinnedMessageIds) ? conversation.pinnedMessageIds : []);
   const messageRefs = matches.map((match) => db.doc(`organizations/${scope.orgId}/conversations/${decision.conversationId}/messages/${match.messageId}`));

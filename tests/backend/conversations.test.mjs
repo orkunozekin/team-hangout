@@ -18,7 +18,7 @@ const meta = { schemaVersion: 2, revision: 1, status: 'active', createdAt: Times
 const team = { orgId: 'talk-org', scopeType: 'team', scopeId: 'talk-team' };
 before(async () => {
   admin = adminApp({ projectId }); db = getFirestore(admin);
-  for (const uid of ['talk-admin', 'talk-staff', 'talk-coach', 'talk-guardian', 'talk-self', 'talk-outsider']) {
+  for (const uid of ['talk-admin', 'talk-staff', 'talk-coach', 'talk-guardian', 'talk-new-guardian', 'talk-self', 'talk-outsider']) {
     const app = initializeApp({ projectId, apiKey: 'demo-key' }, uid); apps[uid] = app;
     connectAuthEmulator(getAuth(app), 'http://127.0.0.1:9099', { disableWarnings: true });
     connectFunctionsEmulator(getFunctions(app), '127.0.0.1', 5001);
@@ -56,6 +56,41 @@ test('youth channels stay closed until the organization policy is approved', asy
   assert.equal(allowed.sequence > posted.sequence, true);
   const replay = await call('talk-guardian', 'postConversationMessage', { requestId: 'guardian-post', ...team, text: 'We will be there' });
   assert.equal(replay.id, allowed.id);
+});
+
+test('new guardians can only read and interact with messages created after their grant became active', async () => {
+  const before = await call('talk-coach', 'postConversationMessage', { requestId: 'guardian-cutoff-before', ...team, text: 'Beforegrantword stays private' });
+  const grantedAt = Timestamp.now();
+  await db.doc('organizations/talk-org/participants/talk-child/guardians/talk-new-guardian').set({
+    ...meta,
+    orgId: 'talk-org',
+    participantId: 'talk-child',
+    userId: 'talk-new-guardian',
+    permissions: { viewSchedule: true, respond: true },
+    grantedAt,
+    createdAt: grantedAt,
+    updatedAt: grantedAt,
+  });
+  const after = await call('talk-coach', 'postConversationMessage', { requestId: 'guardian-cutoff-after', ...team, text: 'Aftergrantword is visible' });
+
+  const page = await call('talk-new-guardian', 'listConversationMessages', { ...team, pageSize: 50 });
+  assert.equal(page.items.some(row => row.id === before.id), false);
+  assert.equal(page.items.some(row => row.id === after.id), true);
+  assert.equal(page.pinnedIds.includes(before.id), false);
+
+  const oldSearch = await call('talk-new-guardian', 'searchConversationMessages', { ...team, text: 'beforegrantword' });
+  assert.equal(oldSearch.items.length, 0);
+  const newSearch = await call('talk-new-guardian', 'searchConversationMessages', { ...team, text: 'aftergrantword' });
+  assert.equal(newSearch.items.some(row => row.id === after.id), true);
+
+  const edit = await fail('talk-new-guardian', 'editConversationMessage', {
+    requestId: 'guardian-cutoff-edit', ...team, messageId: before.id, text: 'Should stay hidden', expectedRevision: 0,
+  });
+  assert.equal(edit.code, 'functions/permission-denied');
+  const reaction = await fail('talk-new-guardian', 'reactToConversationMessage', {
+    requestId: 'guardian-cutoff-reaction', ...team, messageId: before.id, emoji: '👍', expectedRevision: 0,
+  });
+  assert.equal(reaction.code, 'functions/permission-denied');
 });
 
 test('a revoked guardian and a removed roster member lose the channel', async () => {
