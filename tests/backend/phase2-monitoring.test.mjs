@@ -6,6 +6,7 @@ import { projectId, requireEmulators } from './fixtures.mjs';
 const require = createRequire(new URL('../../functions/package.json', import.meta.url));
 const { initializeApp, deleteApp } = require('firebase-admin/app');
 const { getFirestore, Timestamp } = require('firebase-admin/firestore');
+const logger = require('firebase-functions/logger');
 const { monitorPhase2Pilot, phase2AlertSummaries } = require('./lib/operations/monitoring.js');
 requireEmulators();
 let app, db;
@@ -65,8 +66,8 @@ test('scheduled phase 2 monitor honors enablement, queries all conditions, and e
     refs[5].set({ status: 'complete', lastError: 'CLEANUP_RETRY_REQUIRED', updatedAt: recent, uid: 'private-user' }),
   ]);
   const logs = [];
-  const originalError = console.error;
-  console.error = (...args) => { if (args[0] === 'Phase 2 pilot alert.') logs.push(args[1]); };
+  const originalWrite = logger.write;
+  logger.write = (entry) => { if (entry.message === 'Phase 2 pilot alert.') logs.push(entry); };
   try {
     await db.doc('platformConfig/phase2Monitoring').set({ enabled: false, organizationIds: [orgId] });
     await monitorPhase2Pilot.run({});
@@ -74,14 +75,14 @@ test('scheduled phase 2 monitor honors enablement, queries all conditions, and e
     await db.doc('platformConfig/phase2Monitoring').set({ enabled: true, organizationIds: [orgId] });
     await monitorPhase2Pilot.run({});
   } finally {
-    console.error = originalError;
+    logger.write = originalWrite;
     await Promise.all([...refs.map(ref => ref.delete()), db.doc('platformConfig/phase2Monitoring').delete()]);
   }
-  assert.deepEqual(logs.map(({ code, count, truncated, monitoredOrganizations }) => ({ code, count, truncated, monitoredOrganizations })), [
-    { code: 'PUBLICATION_STUCK', count: 1, truncated: false, monitoredOrganizations: 1 },
-    { code: 'DELETION_STUCK', count: 1, truncated: false, monitoredOrganizations: 1 },
-    { code: 'SCAN_FAILED_REPEATED', count: 3, truncated: false, monitoredOrganizations: 1 },
-    { code: 'CLEANUP_RETRY_REQUIRED', count: 1, truncated: false, monitoredOrganizations: 1 },
+  assert.deepEqual(logs.map(({ severity, message, code, count, truncated, monitoredOrganizations }) => ({ severity, message, code, count, truncated, monitoredOrganizations })), [
+    { severity: 'ERROR', message: 'Phase 2 pilot alert.', code: 'PUBLICATION_STUCK', count: 1, truncated: false, monitoredOrganizations: 1 },
+    { severity: 'ERROR', message: 'Phase 2 pilot alert.', code: 'DELETION_STUCK', count: 1, truncated: false, monitoredOrganizations: 1 },
+    { severity: 'ERROR', message: 'Phase 2 pilot alert.', code: 'SCAN_FAILED_REPEATED', count: 3, truncated: false, monitoredOrganizations: 1 },
+    { severity: 'ERROR', message: 'Phase 2 pilot alert.', code: 'CLEANUP_RETRY_REQUIRED', count: 1, truncated: false, monitoredOrganizations: 1 },
   ]);
   assert.equal(JSON.stringify(logs).includes('private'), false);
 });
