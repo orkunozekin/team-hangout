@@ -1,4 +1,5 @@
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
+import * as logger from "firebase-functions/logger";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { PILOT_STUCK_AFTER_MS } from "./pilot";
 
@@ -67,5 +68,5 @@ export const monitorPhase2Pilot = onSchedule({ schedule: "every 5 minutes", time
     scanFailureAgesMs,
     cleanupRetryCount: cleanupRetries.size,
   });
-  for (const alert of alerts) console.error("Phase 2 pilot alert.", { ...alert, monitoredOrganizations: organizationIds.length });
+  for (const alert of alerts) logger.error("Phase 2 pilot alert.", { ...alert, monitoredOrganizations: organizationIds.length });
 });
