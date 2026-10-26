@@ -68,5 +68,10 @@ export const monitorPhase2Pilot = onSchedule({ schedule: "every 5 minutes", time
     scanFailureAgesMs,
     cleanupRetryCount: cleanupRetries.size,
   });
-  for (const alert of alerts) logger.error("Phase 2 pilot alert.", { ...alert, monitoredOrganizations: organizationIds.length });
+  for (const alert of alerts) logger.write({
+    severity: "ERROR",
+    message: "Phase 2 pilot alert.",
+    ...alert,
+    monitoredOrganizations: organizationIds.length,
+  });
 });
