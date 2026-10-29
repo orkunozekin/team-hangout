@@ -492,9 +492,6 @@ export async function markReportsStale(orgId: string, kind: 'attendance' | 'faci
   return marked;
 }
 
-const EVENT_FIELDS = ['status', 'startsAt', 'endsAt', 'teamIds', 'programId', 'seasonId', 'facilityId', 'resourceId', 'resourceOccupancy',
-  'publicationState', 'publicationOperationId', 'deletedAt', 'rosterSnapshot', 'scheduleVersion'];
-
 /** Commit time of the source write. A delete has no snapshot time, so it uses the delivery time, which can only be later. */
 function writtenAt(snapshot: { updateTime?: Timestamp } | undefined, time: string | undefined) {
   if (snapshot?.updateTime instanceof Timestamp) return snapshot.updateTime;
@@ -513,11 +510,26 @@ async function eventChanged(event: Data, reason: string, changedAt: Timestamp) {
   }
 }
 
-export const reportEventChanged = onDocumentWritten('events/{eventId}', async event => {
-  const before = event.data?.before.data(), after = event.data?.after.data();
-  if (before && after && EVENT_FIELDS.every(field => JSON.stringify(before[field] ?? null) === JSON.stringify(after[field] ?? null))) return;
-  const changedAt = writtenAt(after ? event.data?.after : undefined, event.time);
-  for (const row of [before, after]) if (row) await eventChanged(row, 'eventChanged', changedAt);
+/**
+ * Lifecycle changes (complete, cancel, postpone, reschedule, resource edits and closure postponements) each append one
+ * schedule or resource history record, so these rare writes drive stale marking instead of every event document write.
+ */
+export const reportScheduleChanged = onDocumentCreated('events/{eventId}/scheduleHistory/{revision}', async event => {
+  const history = event.data?.data();
+  const row = (await db().doc(`events/${event.params.eventId}`).get()).data();
+  if (!history || !row) return;
+  const changedAt = writtenAt(event.data, event.time);
+  await eventChanged(row, 'eventChanged', changedAt);
+  if (history.previousStartsAt instanceof Timestamp && history.previousStartsAt.toMillis() !== row.startsAt?.toMillis?.()) {
+    await eventChanged({ ...row, startsAt: history.previousStartsAt, endsAt: history.previousEndsAt ?? history.previousStartsAt, resourceOccupancy: null }, 'eventChanged', changedAt);
+  }
+});
+
+export const reportResourceChanged = onDocumentCreated('events/{eventId}/resourceHistory/{revision}', async event => {
+  const history = event.data?.data();
+  const row = (await db().doc(`events/${event.params.eventId}`).get()).data();
+  if (!history || !row || typeof history.previousFacilityId !== 'string' || !history.previousOccupancy) return;
+  await eventChanged({ ...row, facilityId: history.previousFacilityId, resourceOccupancy: history.previousOccupancy }, 'eventChanged', writtenAt(event.data, event.time));
 });
 
 /** Attendance corrections after completion make covering attendance snapshots stale. */
@@ -530,12 +542,11 @@ export const reportAttendanceChanged = onDocumentWritten('events/{eventId}/atten
     writtenAt(event.data?.after.exists ? event.data.after : undefined, event.time));
 });
 
-export const reportClosureChanged = onDocumentWritten('organizations/{orgId}/closures/{closureId}', async event => {
-  const changedAt = writtenAt(event.data?.after.exists ? event.data.after : undefined, event.time);
-  for (const row of [event.data?.before.data(), event.data?.after.data()]) {
-    if (!row || typeof row.facilityId !== 'string' || typeof row.startsAt !== 'string' || typeof row.endsAt !== 'string') continue;
-    await markReportsStale(event.params.orgId, 'facility', row.startsAt, row.endsAt, run => run.facilityId === row.facilityId, 'closureChanged', changedAt);
-  }
+/** Closures are created once when applied and never edited. */
+export const reportClosureChanged = onDocumentCreated('organizations/{orgId}/closures/{closureId}', async event => {
+  const row = event.data?.data();
+  if (!row || typeof row.facilityId !== 'string' || typeof row.startsAt !== 'string' || typeof row.endsAt !== 'string') return;
+  await markReportsStale(event.params.orgId, 'facility', row.startsAt, row.endsAt, run => run.facilityId === row.facilityId, 'closureChanged', writtenAt(event.data, event.time));
 });
 
 export const reportAvailabilityChanged = onDocumentCreated('organizations/{orgId}/facilities/{facilityId}/resources/{resourceId}/availability/{revision}', async event => {

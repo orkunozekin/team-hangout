@@ -271,10 +271,22 @@ test("facility run matches the hand calculation for closures, conflicts, shared 
   assert.deepEqual([run.summary.availableMinutes, run.summary.bookedMinutes, run.summary.utilization.rate], [420, 120, 0.2857]);
   assert.equal(JSON.stringify({ run, rows }).includes("Synthetic r10"), false, "no event titles in facility reports");
 
-  await db.doc(`organizations/${orgId}/closures/r10-closure`).update({ status: "lifted", revision: 2 });
+  // A newly applied closure marks covering facility snapshots stale.
+  const closure = db.doc(`organizations/${orgId}/closures/r10-closure-2`);
+  await closure.set({ schemaVersion: 2, orgId, facilityId: "r10-f1", resourceIds: ["r10-r2"], status: "applied", revision: 1,
+    startsAt: "2026-03-08T12:00:00.000Z", endsAt: "2026-03-08T13:00:00.000Z", reason: "Synthetic repair" });
   const stale = await settled(runId, (row) => row.stale === true);
   assert.equal(stale.staleReason, "closureChanged");
-  await db.doc(`organizations/${orgId}/closures/r10-closure`).update({ status: "applied", revision: 3 });
+  await closure.delete();
+
+  // A lifecycle change appends schedule history, which marks a fresh snapshot stale.
+  const second = await request("r10-admin", { kind: "facility", facilityId: "r10-f1", fromDate: "2026-03-08", toDate: "2026-03-08" });
+  await built(second.runId);
+  await db.doc("events/r10-b6").update({ status: "cancelled", revision: 2 });
+  await db.doc("events/r10-b6/scheduleHistory/2").set({ schemaVersion: 2, revision: 2, action: "cancel", previousStatus: "completed", status: "cancelled" });
+  const changed = await settled(second.runId, (row) => row.stale === true);
+  assert.equal(changed.staleReason, "eventChanged");
+  await db.doc("events/r10-b6").update({ status: "completed", revision: 3 });
 });
 
 test("partial and abandoned builds never publish rows, and duplicate workers converge", async () => {
