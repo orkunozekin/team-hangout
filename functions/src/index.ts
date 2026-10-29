@@ -67,3 +67,4 @@ export { recordPlayAction, finalizePlaySession, getPlaySession } from './coachin
 export { saveCompetitionRules, proposeResult, finalizeResult, correctResult, listCompetitions, getCompetition, getEventResults } from './competition/results';
 export { rebuildStandings, reconcileStandings, getStandings, getEventStandings } from './competition/generations';
 export { previewBracket, publishBracket, linkBracketEvent, getBracket, getEventBracket, previewBracketCorrection, correctBracket } from './competition/brackets';
+export { saveVolunteerSlot, claimVolunteerSlot, releaseVolunteerSlot, getEventVolunteers } from './volunteers/slots';

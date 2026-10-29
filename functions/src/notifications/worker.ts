@@ -28,7 +28,7 @@ function safeCopy(intent: Data) {
   const labels: Record<string, string> = {
     'event:edit': 'Event updated', 'event:postpone': 'Event postponed', 'event:cancel': 'Event cancelled',
     'event:reschedule': 'Schedule changed', 'event:complete': 'Event completed', eventPostponed: 'Event postponed',
-    facilityClosure: 'Facility closed', schedulePublished: 'Schedule published', rsvpReminder: 'RSVP reminder',
+    facilityClosure: 'Facility closed', schedulePublished: 'Schedule published', rsvpReminder: 'RSVP reminder', volunteerSlotCancelled: 'Volunteer slot cancelled',
   };
   return { title: labels[intent.templateKey] ?? 'Team update', body: 'Open Team Hangout for current details.' };
 }

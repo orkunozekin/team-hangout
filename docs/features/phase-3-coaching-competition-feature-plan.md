@@ -6,13 +6,13 @@ Turn the approved [product direction](../plans/product-plan.md#phase-3-coaching-
 
 | Field | Value |
 | --- | --- |
-| Status | in review, Step 7 implemented on `codex/phase-3-step-7` |
+| Status | in review, Step 8 implemented on `codex/phase-3-step-8` |
 | Last updated | 2026-10-29 |
-| Source baseline | Team Hangout `7d49cd7` from `main` after Step 6 merged |
-| Related PR / branch | [PR #49](https://github.com/orkunozekin/team-hangout/pull/49) and [PR #50](https://github.com/orkunozekin/team-hangout/pull/50) and [PR #52](https://github.com/orkunozekin/team-hangout/pull/52) and [PR #53](https://github.com/orkunozekin/team-hangout/pull/53) and [PR #54](https://github.com/orkunozekin/team-hangout/pull/54) and [PR #55](https://github.com/orkunozekin/team-hangout/pull/55) merged; Step 7 on `codex/phase-3-step-7` |
+| Source baseline | Team Hangout `951c0d3` from `main` after Step 7 merged |
+| Related PR / branch | [PR #49](https://github.com/orkunozekin/team-hangout/pull/49) and [PR #50](https://github.com/orkunozekin/team-hangout/pull/50) and [PR #52](https://github.com/orkunozekin/team-hangout/pull/52) and [PR #53](https://github.com/orkunozekin/team-hangout/pull/53) and [PR #54](https://github.com/orkunozekin/team-hangout/pull/54) and [PR #55](https://github.com/orkunozekin/team-hangout/pull/55) and [PR #56](https://github.com/orkunozekin/team-hangout/pull/56) merged; Step 8 on `codex/phase-3-step-8` |
 | Dependencies | Phase 1 organization/participant/season authorization and Phase 2 canonical events, attendance, facilities, communications |
 | Commercial status | Business model selection pending; no feature paywall, fee, or entitlement approved |
-| Next implementation step | Review Step 7 only; Step 8 has not started |
+| Next implementation step | Review Step 8 only; Step 9 has not started |
 
 Read the [phase index and common evidence standard](../plans/phase-plans.md), [Phase 1 foundations plan](phase-1-foundations-feature-plan.md), and [Phase 2 operations plan](phase-2-league-operations-feature-plan.md) before implementation.
 
@@ -265,7 +265,7 @@ Proposed uncreated modules, not clickable source claims: `src/lib/coaching/` for
 - [ ] Each UI PR embeds inspected screenshots accessible to reviewers from its latest checkout, with captions and required empty/error/conflict states.
 - [ ] Required tests/typecheck and backend build pass per step; CI and configured AI review feedback are addressed using `address-pr-feedback`, followed by a new bot-tagged re-review comment after fixes. Missing reviews are reported, not treated as approval.
 
-Planning executed the 11 reference geometry/marker tests described above. Step 1 added pure contracts and emulator isolation coverage only. Step 2 added the development-only surface harness. Step 3 added emulator-proven private lineup persistence and explicit publication. Step 4 added the emulator-proven playing-time ledger and clock transitions. Step 5 added emulator-proven competition rules, result proposal, finalization and correction history. Step 6 added the emulator-proven standings reducer, generation worker and reconciliation. Step 7 added emulator-proven single-elimination previews, canonical match links, winner progression and reviewed corrections; no migration, feature flag, deployment, production access or pilot operation has run. Every remaining unchecked item belongs to a later explicitly authorized step.
+Planning executed the 11 reference geometry/marker tests described above. Step 1 added pure contracts and emulator isolation coverage only. Step 2 added the development-only surface harness. Step 3 added emulator-proven private lineup persistence and explicit publication. Step 4 added the emulator-proven playing-time ledger and clock transitions. Step 5 added emulator-proven competition rules, result proposal, finalization and correction history. Step 6 added the emulator-proven standings reducer, generation worker and reconciliation. Step 7 added emulator-proven single-elimination previews, canonical match links, winner progression and reviewed corrections. Step 8 added emulator-proven volunteer slots with transactional capacity and alias-only assignment views; no migration, feature flag, deployment, production access or pilot operation has run. Every remaining unchecked item belongs to a later explicitly authorized step.
 
 ## Handoff
 
@@ -331,9 +331,17 @@ Planning executed the 11 reference geometry/marker tests described above. Step 1
 - Added the admin `Bracket` panel for knockout competitions (manual or standings seeding, reasoned override, preview with byes, publish, per-game match links, unresolved winner state) and a `Check bracket impact` review with explicit confirmation in the correction form. Added a native read-only `EventBracket` section on canonical match detail for team viewers. Both ignore outdated responses.
 - Validation on the implementation checkout: `yarn typecheck`; Functions `tsc`; admin `tsc`; pure bracket Jest tests for 3, 5, 8 and 128 teams, seeding ties and correction impact; focused emulator suites `brackets`, `competition`, `standings`, `staging-runtime`, `phase3-contracts` and `lineups`, 33/33; admin Playwright `brackets.spec.ts` and `competitions.spec.ts`, 4/4; `yarn test:coverage --ci --runInBand --silent`, 388/388 with 97.59% statements; `git diff --check`.
 
+- Step 8 added `functions/src/volunteers/slots.ts` with `saveVolunteerSlot`, `claimVolunteerSlot`, `releaseVolunteerSlot` and `getEventVolunteers`. Slots live at `/events/{eventId}/volunteerSlots/{slotId}` with claims at `.../claims/{uid}`; both stay deny-all in rules and are callable-only.
+- Slot setup (kinds snacks, setup, scorekeeping, cleanup, other; capacity 1 to 50; optional claim deadline before event end; at most 30 slots per team per event) needs an active coach of that team, matching the Step 1 `volunteers.manage` capability. Organization staff, revoked coaches and guardians are denied. Capacity cannot drop below active claims (`VOLUNTEER_CAPACITY_BELOW_CLAIMS`) and saves check the slot revision. Cancelling is terminal, retains every claim and, when the slot had volunteers, writes one team-audience outbox intent `volunteerSlotCancelled` with generic copy and no alias or claimant identity.
+- Claim and release run in one transaction that reads the slot and the caller's claim, so two last-seat claims produce one winner and the loser gets `VOLUNTEER_SLOT_FULL`. Command receipts replay the original outcome after rechecking current eligibility; a second claim while active and a repeated release are no-ops. Claims close at the slot deadline or event start and only while the event is scheduled (`VOLUNTEER_CLOSED`); cancelled slots or events reject claims (`VOLUNTEER_SLOT_CANCELLED`).
+- Eligible adults are an active team coach or a guardian with `respond` permission for a participant actively rostered on the team. A participant's own linked account never qualifies, so children cannot self-assign; players, view-only guardians, revoked guardians, outsiders and other tenants are denied. Claimants must type a display alias and confirm it can appear; aliases with email, phone-like digit runs or links are rejected on client and server.
+- Slot documents store aliases with opaque random keys, never claimant UIDs. `getEventVolunteers` returns kind, title, capacity, open count, effective state (`open`, `full`, `closed`, `cancelled`), aliases, and the caller's own claim. Only coaches receive the opaque key used to remove a volunteer. Team members, scoped staff and households of a rostered participant can view. Cancelled events and slots show the caller's assignment as cancelled without deleting it.
+- Added `shared/volunteers.ts`, `src/firebase/volunteers.ts` and the native `EventVolunteers` section on canonical event detail: open/full/closed/cancelled states, consented alias form, release, claim-loss notice with refresh, uncertain-write retry with the same request ID, coach slot creation, removal and cancellation, and outdated-response guards.
+- Validation on the implementation checkout: `yarn typecheck`; Functions `tsc`; focused emulator suites `volunteers`, `staging-runtime`, `phase3-contracts` and `lineups`, 24/24; focused Jest for `EventVolunteers` and the volunteer wrapper, 9/9; `yarn test:coverage --ci --runInBand --silent`, 397/397; `git diff --check`.
+
 ### Remaining work
 
-Step 7 is implemented on `codex/phase-3-step-7` and awaits review, final-head CI and the owner's merge decision. Do not start Step 8 until Step 7 is merged and the next step is explicitly requested. Each later explicit "implement the next step" request selects the next numbered incomplete step, not the whole phase.
+Step 8 is implemented on `codex/phase-3-step-8` and awaits review, final-head CI and the owner's merge decision. Do not start Step 9 until Step 8 is merged and the next step is explicitly requested. Each later explicit "implement the next step" request selects the next numbered incomplete step, not the whole phase.
 
 ### Blockers and risks
 
@@ -347,7 +355,9 @@ Step 7 is implemented on `codex/phase-3-step-7` and awaits review, final-head CI
 - Standings deployment needs the `competitions.standingsPendingSince` collection-group index override and the `generations(state, startedAt)` collection-group index enabled before the reconciliation schedule runs. Superseded, duplicate, failed and retired generation summary documents are retained (rows deleted); add a retention job if their count matters.
 - Step 7 UI evidence comes from the admin web workspace against local emulators. The native `EventBracket` section is covered by component tests only; native screen-reader, large-text and Android behavior remain unverified on a simulator or device.
 - Bracket links do not create or edit calendar events. When a correction clears an unstarted game's link, the old match stays on the calendar with its original teams until a scheduler edits it. Linking draws from the loaded match results page only.
-- Volunteers, rides, reports, exports, rollover and practice resources are intentionally unimplemented.
+- Step 8 UI evidence comes from Expo web (the native `EventVolunteers` component in a temporary local harness against emulator data). Native screen-reader, large-text and Android behavior of the volunteer section remain unverified on a simulator or device. Household entry from the household agenda is not wired; guardians who are not team members reach volunteers through the callable only.
+- Volunteer claims do not recheck an archived season, and cancelling an event does not notify volunteers beyond the existing event cancellation intent.
+- Rides, reports, exports, rollover and practice resources are intentionally unimplemented.
 - Pilot league rules, transport policy, rights evidence and qualified content reviewer are external gates owned by the organization/product owner.
 - No production credentials/data/notifications are authorized by this plan; development uses non-sensitive emulator fixtures. Business model selection remains pending.
 
