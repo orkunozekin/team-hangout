@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react-nativ
 import TeamScreen from '../TeamScreen';
 import { getTeam, listTeamMembers } from '../../firebase/teams';
 jest.mock('../../firebase/teams', () => ({ getTeam: jest.fn(), listTeamMembers: jest.fn(), regenerateInviteCode: jest.fn() }));
+jest.mock('../../firebase/reports', () => ({ listTeamReports: jest.fn(async () => ({ items: [], nextCursor: null })), getReportRun: jest.fn(), requestTeamAttendanceReport: jest.fn(), reportRequestId: () => 'r' }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 jest.mock('@react-navigation/native', () => ({ useFocusEffect: (callback: () => void) => require('react').useEffect(callback, [callback]) }));
 const membership = { teamId: 'a', userId: 'coach', role: 'coach' } as any;
@@ -33,6 +34,18 @@ test('canonical Team tab opens the team channel from the live organization', asy
   expect(onConversation).toHaveBeenCalledWith({ orgId: 'org', scopeType: 'team', scopeId: 'a' });
   expect(screen.queryByText('Open organization announcements')).toBeNull();
   expect(listTeamMembers).not.toHaveBeenCalled();
+});
+
+test('only a coach of a canonical team with a season scope sees the attendance summary', async () => {
+  const { listTeamReports } = jest.requireMock('../../firebase/reports');
+  listTeamReports.mockResolvedValue({ items: [], nextCursor: null });
+  (getTeam as jest.Mock).mockResolvedValue({ id: 'a', schemaVersion: 2, name: 'Falcons', orgId: 'org', programId: 'p', seasonId: 's' });
+  await render(<TeamScreen teamId="a" membership={membership} />);
+  await screen.findByText('Attendance summary');
+  expect(listTeamReports).toHaveBeenCalledWith('org', 'a');
+  await render(<TeamScreen teamId="a" membership={{ ...membership, role: 'player' }} />);
+  await screen.findByText('Falcons');
+  expect(screen.queryByText('Attendance summary')).toBeNull();
 });
 
 test('legacy Team tab retains members and invite controls', async () => {

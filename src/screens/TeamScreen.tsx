@@ -57,6 +57,7 @@ import {
   type,
 } from '../theme/theme';
 import { teamConversationTargets, type ConversationRoute } from '../lib/conversationNavigation';
+import { TeamReportSummary } from '../components/TeamReportSummary';
 
 type Props = {
   teamId: string;
@@ -189,6 +190,9 @@ export default function TeamScreen({ teamId, membership, appRole, onConversation
             <SecondaryButton key={`${target.scopeType}:${target.scopeId}`} label={target.label} onPress={() => onConversation({ orgId: target.orgId, scopeType: target.scopeType, scopeId: target.scopeId })} />
           )) : null}
           <SecondaryButton label="Refresh team" onPress={onRefresh} disabled={refreshing} />
+          {membership.role === 'coach' && team.orgId && team.programId && team.seasonId ? (
+            <TeamReportSummary orgId={team.orgId} programId={team.programId} seasonId={team.seasonId} teamId={team.id} />
+          ) : null}
         </View>
       ) : (
         <>

@@ -2,6 +2,7 @@ import { Conversations } from "./Conversations";
 import { DeliveryDiagnostics } from "./DeliveryDiagnostics";
 import { PilotOperations } from "./PilotOperations";
 import { Competitions } from "./Competitions";
+import { Reports } from "./Reports";
 import { Closures } from "./Closures";
 import { ScheduleDrafts } from "./ScheduleDrafts";
 import { Recurrence } from "./Recurrence";
@@ -212,6 +213,8 @@ export function App({ services }: { services: BrowserServices }) {
               <DeliveryDiagnostics services={services} orgId={route.orgId} />
             ) : route.section === "competition" ? (
               <Competitions key={route.orgId} services={services} orgId={route.orgId} programId={route.programId} />
+            ) : route.section === "reports" ? (
+              <Reports key={route.orgId} services={services} orgId={route.orgId} programId={route.programId} />
             ) : route.section === "pilot" ? (
               <PilotOperations services={services} orgId={route.orgId} />
             ) : route.section === "closures" ? (

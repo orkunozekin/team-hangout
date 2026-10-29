@@ -21,6 +21,8 @@ export interface Team {
   schemaVersion?: number;
   timeZone?: string;
   orgId?: string;
+  programId?: string;
+  seasonId?: string;
   divisionId?: string;
   id: string;
   name: string;

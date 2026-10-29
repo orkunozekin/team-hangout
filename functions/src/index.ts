@@ -68,4 +68,5 @@ export { saveCompetitionRules, proposeResult, finalizeResult, correctResult, lis
 export { rebuildStandings, reconcileStandings, getStandings, getEventStandings } from './competition/generations';
 export { previewBracket, publishBracket, linkBracketEvent, getBracket, getEventBracket, previewBracketCorrection, correctBracket } from './competition/brackets';
 export { saveVolunteerSlot, claimVolunteerSlot, releaseVolunteerSlot, getEventVolunteers } from './volunteers/slots';
+export { requestReport, rebuildReport, getReportRun, listReportRuns, runReport, reconcileReports, reportEventChanged, reportAttendanceChanged, reportClosureChanged, reportAvailabilityChanged } from './reports/runs';
 export { saveRideRequest, confirmRideArrangement, revokeRideConsent, getEventRides, getRideContacts } from './volunteers/rides';
