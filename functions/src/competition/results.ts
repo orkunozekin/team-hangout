@@ -5,6 +5,7 @@ import { readCommand } from '../participants/policy';
 import { checkRevision, denied, hierarchy, requireProgram, staffScope } from '../operations/access';
 import { publishedEvent } from '../scheduling/visibility';
 import { coachingEvent } from '../coaching/lineups';
+import { bracketChange, bracketDomain, writeBracketChange } from './bracketProgress';
 import {
   assertRulesFitFormat, CompetitionFormat, CompetitionResultValues, CompetitionRuleError, CompetitionRules,
   normalizeResultValues, normalizeRules, sameResult, sameRules,
@@ -26,7 +27,7 @@ export function pendingSince(competition: Data | undefined, now: Timestamp): Tim
   return competition?.standingsPendingSince instanceof Timestamp ? competition.standingsPendingSince : now;
 }
 
-function domain(code: string, message: string, transport: 'failed-precondition' | 'invalid-argument' | 'resource-exhausted' = 'failed-precondition'): never {
+export function domain(code: string, message: string, transport: 'failed-precondition' | 'invalid-argument' | 'resource-exhausted' = 'failed-precondition'): never {
   throw new HttpsError(transport, message, { domainCode: code });
 }
 
@@ -35,11 +36,11 @@ function ruleFailure(error: unknown): never {
   throw error;
 }
 
-function competitionRef(orgId: string, competitionId: string) {
+export function competitionRef(orgId: string, competitionId: string) {
   return db().doc(`organizations/${orgId}/competitions/${competitionId}`);
 }
 
-function envelope(data: Data, payloadFields: string[]) {
+export function envelope(data: Data, payloadFields: string[]) {
   keys(data, ['requestId', 'orgId', 'resourceId', 'expectedRevision', 'payload']);
   const payload = object(data.payload);
   keys(payload, payloadFields);
@@ -85,13 +86,13 @@ export function normalizeCompetitionRules(data: Data) {
 }
 
 /** Competition managers and scorers: active orgAdmin, or programStaff assigned to the competition's program. */
-async function competitionStaff(tx: Transaction, orgId: string, programId: string, uid: string) {
+export async function competitionStaff(tx: Transaction, orgId: string, programId: string, uid: string) {
   const scope = await staffScope(tx, orgId, uid);
   requireProgram(scope, programId);
   return scope;
 }
 
-async function loadCompetition(tx: Transaction, orgId: string, competitionId: string) {
+export async function loadCompetition(tx: Transaction, orgId: string, competitionId: string) {
   const snap = await tx.get(competitionRef(orgId, competitionId));
   const competition = snap.data();
   if (competition && (competition.schemaVersion !== 2 || competition.orgId !== orgId)) denied();
@@ -125,6 +126,9 @@ export const saveCompetitionRules = command('saveCompetitionRules', normalizeCom
   const teamsChanged = current && JSON.stringify(current.teamIds) !== JSON.stringify(data.teamIds);
   if (teamsChanged && (current!.finalResultCount ?? 0) > 0) {
     domain('COMPETITION_LOCKED', 'Teams cannot change after a result is final. Correct results or create a new competition.');
+  }
+  if (teamsChanged && current!.bracket?.bracketId) {
+    domain('COMPETITION_LOCKED', 'Teams cannot change after a bracket is published.');
   }
   const now = Timestamp.now();
   const ref = competitionRef(data.orgId, data.competitionId);
@@ -188,7 +192,7 @@ export function normalizeResultCommand(data: Data, withTeam: boolean, withReason
  * A result belongs to one canonical match whose two explicit sides are both competition teams in the same scope.
  * A one-sided external-opponent event never enters an internal competition.
  */
-async function competitionMatch(tx: Transaction, competition: Data, eventId: string) {
+export async function competitionMatch(tx: Transaction, competition: Data, eventId: string) {
   const event = (await tx.get(db().doc(`events/${eventId}`))).data();
   if (!event || event.schemaVersion !== 2 || event.orgId !== competition.orgId) denied();
   if (event!.type !== 'match' || !Array.isArray(event!.teamIds) || event!.teamIds.length !== 2
@@ -214,7 +218,7 @@ function assertPlayable(event: Data, values: CompetitionResultValues, now: Times
   }
 }
 
-function validate(values: Data, sides: { homeTeamId: string; awayTeamId: string }, competition: Data, rules: CompetitionRules | null) {
+export function validate(values: Data, sides: { homeTeamId: string; awayTeamId: string }, competition: Data, rules: CompetitionRules | null) {
   try {
     return normalizeResultValues(values, sides, competition.format, rules);
   } catch (error) {
@@ -284,7 +288,7 @@ export const proposeResult = command('proposeResult', data => normalizeResultCom
   return { requestId: data.requestId, revision: written.revision, state: 'proposed', operationId: written.operationId };
 });
 
-async function scorerContext(tx: Transaction, data: Data, uid: string, writing: boolean) {
+export async function scorerContext(tx: Transaction, data: Data, uid: string, writing: boolean) {
   const competition = await loadCompetition(tx, data.orgId, data.competitionId);
   if (!competition) denied();
   await competitionStaff(tx, data.orgId, competition!.programId, uid);
@@ -292,17 +296,17 @@ async function scorerContext(tx: Transaction, data: Data, uid: string, writing: 
   return activeCompetition(competition);
 }
 
-function bumpSource(tx: Transaction, competition: Data, finalDelta: number, uid: string, now: Timestamp) {
+function bumpSource(tx: Transaction, competition: Data, finalDelta: number, uid: string, now: Timestamp, extra: Data = {}) {
   // Every finalization or correction advances the source revision that standings generations rebuild from.
   const sourceRevision = (competition.sourceRevision ?? 0) + 1;
   tx.update(competitionRef(competition.orgId, competition.competitionId), {
     sourceRevision, finalResultCount: (competition.finalResultCount ?? 0) + finalDelta, sourceUpdatedAt: now, sourceUpdatedBy: uid,
-    standingsPendingSince: pendingSince(competition, now),
+    standingsPendingSince: pendingSince(competition, now), ...extra,
   });
   return sourceRevision;
 }
 
-function finalRules(competition: Data): CompetitionRules {
+export function finalRules(competition: Data): CompetitionRules {
   if (!competition.activeRules || !competition.activeRulesVersion) {
     domain('RULES_NOT_CONFIRMED', 'A competition manager must confirm the league rules before results become final.');
   }
@@ -323,16 +327,28 @@ export const finalizeResult = command('finalizeResult', data => normalizeResultC
   const now = Timestamp.now();
   const values = validate(data.result, sides, competition, rules);
   assertPlayable(event, values!, now);
+  // Bracket progression reads before any write and only ever advances a finalized winner.
+  const bracket = await bracketChange(tx, competition, data.eventId, sides, values!.winnerTeamId, now);
+  if (bracket?.invalidated.length) requireBracketReview(bracket.invalidated);
   const written = writeResult(tx, competition, data.eventId, event, sides, current, 'finalize', {
     status: 'final',
     final: { ...values, appliedRulesVersion: competition.activeRulesVersion, finalizedBy: uid, finalizedAt: now, correctedAt: null },
   }, uid, data.requestId, now, null);
-  const sourceRevision = bumpSource(tx, competition, 1, uid, now);
+  const progressed = bracket ? writeBracketChange(tx, competition, bracket, 'progress', uid, now, null) : {};
+  const sourceRevision = bumpSource(tx, competition, 1, uid, now, progressed);
   return { requestId: data.requestId, revision: written.revision, state: 'final', sourceRevision, operationId: written.operationId };
 });
 
-export const correctResult = command('correctResult', data => normalizeResultCommand(data, false, true), async (tx, data, uid, _actor, replay) => {
-  const competition = await scorerContext(tx, data, uid, !replay);
+function requireBracketReview(invalidated: string[]): never {
+  bracketDomain('BRACKET_CORRECTION_REQUIRED',
+    'Later bracket games already started. Review the bracket correction preview and confirm the games it invalidates.', { invalidatedNodeIds: invalidated });
+}
+
+/**
+ * Corrects a final result. When the winner of a linked bracket game changes, downstream games that have not started are
+ * cleared automatically; started ones block unless the caller passes exactly the reviewed invalidation list.
+ */
+export async function correctFinal(tx: Transaction, competition: Data, data: Data, uid: string, confirmedInvalidation: string[] | null) {
   const current = (await tx.get(competitionRef(data.orgId, data.competitionId).collection('results').doc(data.eventId))).data();
   let match: Awaited<ReturnType<typeof competitionMatch>> | null = null;
   try {
@@ -341,7 +357,6 @@ export const correctResult = command('correctResult', data => normalizeResultCom
     // A final whose event no longer qualifies (type, teams or publication changed) can still be voided with its saved sides.
     if (current?.status !== 'final' || data.result?.outcome !== 'void') throw error;
   }
-  if (replay) return replay;
   if (current?.status !== 'final') domain('RESULT_NOT_FINAL', 'Only a final result can be corrected.');
   checkRevision(current, data.expectedRevision);
   const rules = finalRules(competition);
@@ -353,6 +368,14 @@ export const correctResult = command('correctResult', data => normalizeResultCom
   if (sameResult(values!, current!.final) && current!.final.appliedRulesVersion === competition.activeRulesVersion) {
     domain('NO_CHANGE', 'The correction matches the current final result.', 'invalid-argument');
   }
+  const bracket = await bracketChange(tx, competition, data.eventId, sides, values!.winnerTeamId, now);
+  const invalidated = bracket?.invalidated ?? [];
+  if (confirmedInvalidation === null) {
+    if (invalidated.length) requireBracketReview(invalidated);
+  } else if (!bracket || bracket.previousWinnerTeamId === bracket.winnerTeamId
+    || JSON.stringify([...confirmedInvalidation].sort()) !== JSON.stringify([...invalidated].sort())) {
+    bracketDomain('BRACKET_PREVIEW_CHANGED', 'The bracket changed since the correction preview. Review it again.', { invalidatedNodeIds: invalidated });
+  }
   const written = writeResult(tx, competition, data.eventId, event, sides, current, 'correct', {
     status: 'final',
     final: {
@@ -360,8 +383,24 @@ export const correctResult = command('correctResult', data => normalizeResultCom
       finalizedAt: current!.final.finalizedAt, correctedBy: uid, correctedAt: now, correctionReason: data.reason,
     },
   }, uid, data.requestId, now, data.reason);
-  const sourceRevision = bumpSource(tx, competition, 0, uid, now);
-  return { requestId: data.requestId, revision: written.revision, state: 'final', sourceRevision, operationId: written.operationId };
+  const bracketFields = bracket ? writeBracketChange(tx, competition, bracket, 'correct', uid, now, data.reason) : {};
+  const sourceRevision = bumpSource(tx, competition, 0, uid, now, bracketFields);
+  return {
+    requestId: data.requestId, revision: written.revision, state: 'final' as const, sourceRevision, operationId: written.operationId,
+    ...(bracket ? { bracketRevision: (bracketFields.bracketRevision as number | undefined) ?? competition.bracketRevision ?? 0 } : {}),
+  };
+}
+
+export const correctResult = command('correctResult', data => normalizeResultCommand(data, false, true), async (tx, data, uid, _actor, replay) => {
+  const competition = await scorerContext(tx, data, uid, !replay);
+  if (replay) {
+    // Replays still require the event to belong to this competition, as before.
+    await competitionMatch(tx, competition, data.eventId).catch(error => {
+      if (replay.state !== 'final' || data.result?.outcome !== 'void') throw error;
+    });
+    return replay;
+  }
+  return correctFinal(tx, competition, data, uid, null);
 });
 
 function publicResult(result: Data | undefined) {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { AdminEntity } from "../../shared/admin";
 import {
   DECIDER_LABELS,
@@ -7,6 +7,7 @@ import {
   KNOCKOUT_DECIDERS_ALL,
   RESULT_REASON_MAX,
   TIE_BREAKER_LABELS,
+  type BracketCorrectionPreview,
   type CompetitionDetail,
   type CompetitionFormat,
   type CompetitionRules,
@@ -20,6 +21,7 @@ import type { BrowserServices } from "./firebase";
 import { errorCode, message } from "./errors";
 import { Mutation } from "./Mutation";
 import { Standings } from "./Standings";
+import { Bracket, BracketImpact } from "./Bracket";
 
 type Match = CompetitionDetail["matches"][number];
 type ProgramData = { programId: string; seasons: AdminEntity[]; divisions: AdminEntity[]; teams: AdminEntity[] };
@@ -137,6 +139,30 @@ function ResultForm({ services, orgId, detail, match, onSaved, onDenied }: { ser
       ? { outcome, homeScore: null, awayScore: null, forfeitingTeamId: forfeiting || null, winnerTeamId: null, decider: null }
       : { outcome, homeScore: Number(home), awayScore: Number(away), forfeitingTeamId: null, winnerTeamId: tied && winner ? winner : null, decider: tied && decider ? decider : null };
   const deciders = detail.competition.activeRules?.knockoutDeciders ?? [];
+  const bracketCheck = correcting && detail.competition.format === "knockout";
+  const [impact, setImpact] = useState<{ key: string; value: BracketCorrectionPreview } | null>(null);
+  const [impactError, setImpactError] = useState<{ key: string; text: string } | null>(null);
+  const [confirmImpact, setConfirmImpact] = useState(false);
+  const impactSeq = useRef(0);
+  const valuesKey = JSON.stringify(values());
+  // The impact applies only to the values it was checked with; editing the result requires a new check.
+  const currentImpact = impact?.key === valuesKey ? impact.value : null;
+  const needsConfirmation = !!currentImpact?.requiresConfirmation;
+  const checkImpact = async () => {
+    const seq = ++impactSeq.current;
+    const key = valuesKey;
+    setImpactError(null);
+    setConfirmImpact(false);
+    try {
+      const value = await services.call("previewBracketCorrection", { orgId, competitionId: detail.competition.competitionId, eventId: match.eventId, result: values() });
+      if (seq === impactSeq.current) setImpact({ key, value });
+    } catch (reason) {
+      if (seq !== impactSeq.current) return;
+      setImpact(null);
+      if (errorCode(reason).includes("permission-denied")) onDenied();
+      else setImpactError({ key, text: message(reason) });
+    }
+  };
   return (
     <section className="panel" aria-label={correcting ? "Correct final result" : "Finalize result"}>
       <h2>{correcting ? "Correct final result" : "Finalize result"}</h2>
@@ -150,6 +176,14 @@ function ResultForm({ services, orgId, detail, match, onSaved, onDenied }: { ser
           const requestId = crypto.randomUUID();
           const payload = { eventId: match.eventId, result: values() };
           const envelope = { requestId, orgId, resourceId: detail.competition.competitionId, expectedRevision: result?.revision ?? 0 };
+          if (correcting && needsConfirmation) {
+            // Reviewed administrator correction: confirms exactly the started games the preview listed.
+            const reviewed = currentImpact!;
+            return () => services.call("correctBracket", {
+              requestId, orgId, resourceId: detail.competition.competitionId, expectedRevision: reviewed.bracketRevision,
+              payload: { ...payload, reason: reason.trim(), resultRevision: reviewed.resultRevision, invalidatedNodeIds: reviewed.invalidatedNodeIds },
+            });
+          }
           return () => correcting
             ? services.call("correctResult", { ...envelope, payload: { ...payload, reason: reason.trim() } })
             : services.call("finalizeResult", { ...envelope, payload });
@@ -206,6 +240,19 @@ function ResultForm({ services, orgId, detail, match, onSaved, onDenied }: { ser
             </label>
           )}
         </div>
+        {bracketCheck && (
+          <div className="bracket-impact">
+            <button type="button" onClick={() => void checkImpact()}>Check bracket impact</button>
+            {impactError?.key === valuesKey && <p className="error" role="alert">{impactError.text}</p>}
+            {currentImpact && <BracketImpact impact={currentImpact} names={name} />}
+            {needsConfirmation && (
+              <label className="toggle">
+                <input type="checkbox" required checked={confirmImpact} onChange={(e) => setConfirmImpact(e.target.checked)} />
+                I confirm invalidating the started games listed above. This is recorded with the reason.
+              </label>
+            )}
+          </div>
+        )}
       </Mutation>
     </section>
   );
@@ -412,6 +459,20 @@ export function Competitions({ services, orgId, programId: initialProgram }: { s
           orgId={orgId}
           competitionId={detail.competition.competitionId}
           onDenied={fail}
+        />
+      )}
+      {detail && detail.competition.format === "knockout" && (
+        <Bracket
+          key={`${detail.competition.competitionId}:${detail.competition.sourceRevision}`}
+          services={services}
+          orgId={orgId}
+          detail={detail}
+          sources={competitions.filter((item) => item.seasonId === detail.competition.seasonId && item.activeRulesVersion !== null)}
+          onDenied={() => setDenied(true)}
+          onChanged={(text) => {
+            setNotice(text);
+            void open(detail.competition.competitionId, cursor);
+          }}
         />
       )}
       {detail && (

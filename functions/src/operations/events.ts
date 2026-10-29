@@ -202,10 +202,15 @@ export async function lifecycleMutation(tx: Transaction, data: Data, uid: string
     throw new HttpsError('failed-precondition', 'Use Closures and makeups in the browser workspace to review and confirm this closure makeup.', { domainCode: 'MAKEUP_REVIEW_REQUIRED' });
   }
   if (['complete', 'edit'].includes(data.action)) await requireOpenInterval(tx, event);
-  // A final competition result keeps its match identity; scorers void it before the event can stop being a match.
-  if (data.patch.type !== undefined && data.patch.type !== event.type && event.type === 'match'
-    && !(await tx.get(ref.collection('competitionResults').limit(1))).empty) {
-    throw new HttpsError('failed-precondition', 'A competition result is final for this match. Ask a scorer to void it before changing the event type.', { domainCode: 'RESULT_RECORDED' });
+  // A final competition result or bracket link keeps its match identity; scorers void or relink it before the event can stop being a match.
+  if (data.patch.type !== undefined && data.patch.type !== event.type && event.type === 'match') {
+    const [results, links] = await Promise.all([tx.get(ref.collection('competitionResults').limit(1)), tx.get(ref.collection('bracketLinks').limit(1))]);
+    if (!results.empty) {
+      throw new HttpsError('failed-precondition', 'A competition result is final for this match. Ask a scorer to void it before changing the event type.', { domainCode: 'RESULT_RECORDED' });
+    }
+    if (!links.empty) {
+      throw new HttpsError('failed-precondition', 'This match is linked to a published bracket game. Ask a competition manager to link another match first.', { domainCode: 'BRACKET_LINKED' });
+    }
   }
   const now = Timestamp.now(); const nextRevision = event.revision + 1;
   const changes: Data = { ...data.patch };
