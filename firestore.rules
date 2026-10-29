@@ -124,6 +124,8 @@ service cloud.firestore {
       match /lineupViews/{teamId}/{document=**} {
         allow read, write: if false;
       }
+      // Step 4 playing time is callable-only: recordPlayAction/finalizePlaySession/getPlaySession recheck the
+      // live coach assignment, and immutable action rows are backend-written. Households never read playtime.
       match /playSessions/{teamId}/{document=**} {
         allow read, write: if false;
       }

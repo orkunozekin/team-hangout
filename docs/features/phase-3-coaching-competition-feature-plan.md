@@ -6,13 +6,13 @@ Turn the approved [product direction](../plans/product-plan.md#phase-3-coaching-
 
 | Field | Value |
 | --- | --- |
-| Status | in review, Step 3 implemented on `codex/phase-3-step-3` |
+| Status | in review, Step 4 implemented on `codex/phase-3-step-4` |
 | Last updated | 2026-10-29 |
-| Source baseline | Team Hangout `b2318cd` from `main` after Step 2 merged |
-| Related PR / branch | [PR #49](https://github.com/orkunozekin/team-hangout/pull/49) and [PR #50](https://github.com/orkunozekin/team-hangout/pull/50) merged; Step 3 on `codex/phase-3-step-3` |
+| Source baseline | Team Hangout `6ad0891` from `main` after Step 3 merged |
+| Related PR / branch | [PR #49](https://github.com/orkunozekin/team-hangout/pull/49) and [PR #50](https://github.com/orkunozekin/team-hangout/pull/50) and [PR #52](https://github.com/orkunozekin/team-hangout/pull/52) merged; Step 4 on `codex/phase-3-step-4` |
 | Dependencies | Phase 1 organization/participant/season authorization and Phase 2 canonical events, attendance, facilities, communications |
 | Commercial status | Business model selection pending; no feature paywall, fee, or entitlement approved |
-| Next implementation step | Review Step 3 only; Step 4 has not started |
+| Next implementation step | Review Step 4 only; Step 5 has not started |
 
 Read the [phase index and common evidence standard](../plans/phase-plans.md), [Phase 1 foundations plan](phase-1-foundations-feature-plan.md), and [Phase 2 operations plan](phase-2-league-operations-feature-plan.md) before implementation.
 
@@ -254,7 +254,7 @@ Proposed uncreated modules, not clickable source claims: `src/lib/coaching/` for
 - [x] All documented dependency contracts actually exist and cross-organization/private-access fixtures pass against emulators.
 - [ ] Soccer/basketball/football lineups preserve normalized positions, bench order and unit membership after save/reload; tap/list alternative works with screen reader/large text.
 - [ ] Private notes and individual playtime remain inaccessible to households and unauthorized staff; public lineup publication is explicit.
-- [ ] Clock/background/corrections replay deterministically; duplicate commands and simultaneous editors do not double-count or overwrite.
+- [x] Clock/background/corrections replay deterministically; duplicate commands and simultaneous editors do not double-count or overwrite.
 - [ ] Results and configured rules reproduce standings; unresolved ties remain visible; score corrections and worker retries converge on one active complete generation.
 - [ ] Brackets use canonical events and safely block/correct affected descendants; no bye becomes a false game/absence.
 - [ ] Volunteer capacity holds under contention; rides expose contacts only to consented parties and stay disabled without organization policy.
@@ -265,7 +265,7 @@ Proposed uncreated modules, not clickable source claims: `src/lib/coaching/` for
 - [ ] Each UI PR embeds inspected screenshots accessible to reviewers from its latest checkout, with captions and required empty/error/conflict states.
 - [ ] Required tests/typecheck and backend build pass per step; CI and configured AI review feedback are addressed using `address-pr-feedback`, followed by a new bot-tagged re-review comment after fixes. Missing reviews are reported, not treated as approval.
 
-Planning executed the 11 reference geometry/marker tests described above. Step 1 added pure contracts and emulator isolation coverage only. Step 2 added the development-only surface harness. Step 3 added emulator-proven private lineup persistence and explicit publication; no worker, migration, feature flag, deployment, production access or pilot operation has run. Every remaining unchecked item belongs to a later explicitly authorized step.
+Planning executed the 11 reference geometry/marker tests described above. Step 1 added pure contracts and emulator isolation coverage only. Step 2 added the development-only surface harness. Step 3 added emulator-proven private lineup persistence and explicit publication. Step 4 added the emulator-proven playing-time ledger and clock transitions; no worker, migration, feature flag, deployment, production access or pilot operation has run. Every remaining unchecked item belongs to a later explicitly authorized step.
 
 ## Handoff
 
@@ -295,20 +295,27 @@ Planning executed the 11 reference geometry/marker tests described above. Step 1
 - Publication copies an explicit allowlist (positions, display names, bench order). Later private saves do not leak until the coach republishes; retraction deletes the public view.
 - Added `src/firebase/lineups.ts`, pure draft helpers in `src/lib/coaching/lineupDraft.ts` and the `EventLineup` component on canonical event detail: tap participant then tap position, bench ordering, private note, conflict reload, offline retry with the same request ID, empty-roster and departure states, publish/republish/retract, and a read-only family view.
 - Validation on the implementation checkout: `yarn typecheck`; Functions `tsc`; focused emulator suites `lineups` plus `phase3-contracts`, 13/13; `yarn test:coverage --ci --runInBand --silent`, 314/314 with 97.5% statements; `yarn test:backend`, 322/322 after updating the staging export count for the four new callables; `git diff --check`.
+- Step 4 added a pure playing-time reducer in `functions/src/coaching/playLedger.ts` (no Firebase imports) and `recordPlayAction`, `finalizePlaySession` and `getPlaySession` callables in `functions/src/coaching/playTime.ts`. The session lives at `/events/{eventId}/playSessions/{teamId}` with immutable backend-written action rows under `actions/{operationId}`; both stay deny-all in rules.
+- Time is authoritative game-elapsed milliseconds stamped by the server from the last clock anchor; it advances only while running. `start` seeds units from the saved private lineup and rejects a departed participant. Each write checks the live coach assignment, session revision and legal transition in one transaction; no timer writes exist and reads never write.
+- Per-participant intervals are derived from the active unit only, so football participants in several units accrue the union once. Identical-instant substitutions leave no zero-length interval, and totals are bounded by measured game duration.
+- Corrections reference an earlier substitution, need a reason, replay the full immutable history and return affected participant IDs for review; a correction that contradicts later actions is rejected with `CORRECTION_CONFLICT`. Finalization requires an ended final period and proves the stored incremental ledger equals a full replay before locking totals.
+- Added `src/firebase/playTime.ts`, `shared/playTime.ts`, `src/lib/coaching/playClock.ts` and a coach-only `EventPlayTime` section on canonical event detail: period choice, start, pause, resume, end period, active-unit switch, tap-out then tap-in substitution, live totals rendered from the anchor, corrections with reason, finalize, and an offline state that labels the last acknowledged clock as stale and never claims an action was recorded.
+- Validation on the implementation checkout: `yarn typecheck`; Functions `tsc`; focused emulator suites `playtime`, `lineups` and `phase3-contracts`, 20/20; `yarn test:coverage --ci --runInBand --silent`, 341/341 with 97.58% statements; `yarn test:backend`, 329/329 after updating the staging export count for the three new callables; `git diff --check`.
 
 ### Remaining work
 
-Step 3 is implemented on `codex/phase-3-step-3` and awaits review, final-head CI and the owner's merge decision. Do not start Step 4 until Step 3 is merged and the user explicitly requests it. Each later explicit "implement the next step" request selects the next numbered incomplete step, not the whole phase.
+Step 4 is implemented on `codex/phase-3-step-4` and awaits review, final-head CI and the owner's merge decision. Do not start Step 5 until Step 4 is merged and the next step is explicitly requested. Each later explicit "implement the next step" request selects the next numbered incomplete step, not the whole phase.
 
 ### Blockers and risks
 
 - Android SDK, emulator and `adb` are unavailable on this host, so the required Android development-client capture and runtime interaction proof remain blocked. Keep the harness development-only and the PR open; iOS evidence does not prove Android behavior.
 - Marker drag uses the documented activation delay and touch slop and has focused configuration coverage. Native scrolling and the accessible non-drag placement path were exposed in the simulator accessibility tree; physical-device timing and performance remain unclaimed.
 - Step 3 UI evidence comes from Expo web against local emulators because no iOS or Android simulator was reachable in the Step 3 environment. Native screen-reader, large-text and Android behavior of the lineup editor remain unverified.
-- Playing time, competition and the other later Phase 3 runtime features are intentionally unimplemented.
+- Step 4 UI evidence also comes from Expo web against local emulators; native backgrounding, screen-reader and Android behavior of the playing-time section remain unverified on a simulator or device. Background resume is proven by the anchor-based estimate tests, not a native capture.
+- Competition and the other later Phase 3 runtime features are intentionally unimplemented.
 - Pilot league rules, transport policy, rights evidence and qualified content reviewer are external gates owned by the organization/product owner.
 - No production credentials/data/notifications are authorized by this plan; development uses non-sensitive emulator fixtures. Business model selection remains pending.
 
 ### Pointers for the next agent
 
-For Step 3 review, keep lineup data callable-only, keep coaching authority to active team coaches, and keep notes out of every publication path. Household entry from the household agenda is not wired yet; `EventLineup` accepts a `participantId` for that later entry. Step 4 should build playing time on the saved `units` shape and the football unit IDs. Leave merging to the user.
+For Step 3 review, keep lineup data callable-only, keep coaching authority to active team coaches, and keep notes out of every publication path. Household entry from the household agenda is not wired yet; `EventLineup` accepts a `participantId` for that later entry. Playing time is coach-only and seeded from the saved `units`; keep households and organization staff away from individual totals until a separate product permission decision. Substitutions currently target the active unit; Step 10 reports should consume `finalTotals` from finalized sessions rather than replaying live ones. Leave merging to the user.
