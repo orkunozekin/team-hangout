@@ -280,24 +280,25 @@ export async function facilitySource(run: Data): Promise<Built> {
   const parts: Data = { resources: [], closures: closures.map((c: Data) => [c.id, c.revision ?? 0, c.startsAt, c.endsAt, [...c.resourceIds].sort()]), bookings: [] };
   for (const doc of resources) {
     // Every version that starts inside the interval, plus the one already in force at its start.
-    const rows = await doc.ref.collection('availability').where('effectiveFrom', '<', endsAt).orderBy('effectiveFrom', 'desc')
-      .limit(REPORT_LIMITS.availabilityVersions + 1).get();
-    manifest.availabilityReads += Math.max(rows.size, 1);
-    if (rows.size > REPORT_LIMITS.availabilityVersions) throw new ReportTooLarge('A resource has too many availability versions in this range. Choose a shorter date range.');
-    const versions: AvailabilityVersion[] = [];
-    for (const row of rows.docs) {
-      const v = row.data();
-      if (v.schemaVersion !== 2 || v.orgId !== orgId || !Array.isArray(v.windows)) continue;
-      versions.push({ revision: v.revision, effectiveFrom: v.effectiveFrom, windows: v.windows });
-      if (v.effectiveFrom <= startsAt) break;
-    }
-    versions.reverse();
+    // Older history never counts toward the limit, so a short range always stays readable.
+    const availability = doc.ref.collection('availability');
+    const [inForce, inRange] = await Promise.all([
+      availability.where('effectiveFrom', '<=', startsAt).orderBy('effectiveFrom', 'desc').limit(1).get(),
+      availability.where('effectiveFrom', '>', startsAt).where('effectiveFrom', '<', endsAt).orderBy('effectiveFrom')
+        .limit(REPORT_LIMITS.availabilityVersions + 1).get(),
+    ]);
+    manifest.availabilityReads += Math.max(inForce.size, 1) + Math.max(inRange.size, 1);
+    if (inRange.size > REPORT_LIMITS.availabilityVersions) throw new ReportTooLarge('A resource has too many availability versions in this range. Choose a shorter date range.');
+    const versions: AvailabilityVersion[] = [...inForce.docs, ...inRange.docs].map(row => row.data())
+      .filter(v => v.schemaVersion === 2 && v.orgId === orgId && Array.isArray(v.windows))
+      .map(v => ({ revision: v.revision, effectiveFrom: v.effectiveFrom, windows: v.windows }));
     inputs.set(doc.id, { resourceId: doc.id, availability: versions, bookings: [],
       closures: closures.filter((c: Data) => c.resourceIds.includes(doc.id)).map((c: Data) => ({ startsAt: c.startsAt, endsAt: c.endsAt })) });
     parts.resources.push([doc.id, versions.map(v => [v.revision, v.effectiveFrom])]);
   }
-  // Bookings are at most 24 hours plus setup and cleanup, so a booking overlapping the interval starts after this bound.
-  const earliest = Timestamp.fromMillis(Date.parse(startsAt) - 27 * 3_600_000), end = Timestamp.fromDate(new Date(endsAt));
+  // Bookings are at most 24 hours plus up to 3 hours each of setup and cleanup, so a booking whose occupancy overlaps
+  // the interval starts within these bounds; occupancy is checked exactly below.
+  const earliest = Timestamp.fromMillis(Date.parse(startsAt) - 27 * 3_600_000), end = Timestamp.fromMillis(Date.parse(endsAt) + 3 * 3_600_000);
   const tx = reader();
   let last: FirebaseFirestore.QueryDocumentSnapshot | null = null;
   for (;;) {
@@ -312,7 +313,7 @@ export async function facilitySource(run: Data): Promise<Built> {
       const resource = inputs.get(e.resourceId);
       if (e.schemaVersion !== 2 || e.orgId !== orgId || !resource || !(await publishedEvent(tx, e))) continue;
       const occupancy = { startsAt: iso(e.resourceOccupancy?.startsAt ?? e.startsAt)!, endsAt: iso(e.resourceOccupancy?.endsAt ?? e.endsAt)! };
-      if (occupancy.endsAt <= startsAt) continue;
+      if (occupancy.endsAt <= startsAt || occupancy.startsAt >= endsAt) continue;
       manifest.bookingsInScope += 1;
       if (manifest.bookingsInScope > REPORT_LIMITS.events) throw new ReportTooLarge(`More than ${REPORT_LIMITS.events} reservations match. Choose a shorter date range.`);
       const booking: BookingInput = { eventId: doc.id, status: e.status, occupancy };
@@ -473,22 +474,25 @@ export async function markReportsStale(orgId: string, kind: 'attendance' | 'faci
   reason: string, changedAt: Timestamp) {
   const rows = await db().collection(`organizations/${orgId}/reportRuns`).where('kind', '==', kind)
     .where('state', 'in', ['queued', 'building', 'complete']).where('stale', '==', false).where('intervalEndsAt', '>', from).limit(200).get();
-  const now = Timestamp.now();
   let marked = 0;
-  const batch = db().batch();
   for (const doc of rows.docs) {
-    const run = doc.data();
-    if (run.intervalStartsAt >= to || !matches(run)) continue;
-    if (run.state === 'complete') {
-      if (run.sourceCutoff instanceof Timestamp && changedAt.toMillis() < run.sourceCutoff.toMillis()) continue;
-      batch.update(doc.ref, { stale: true, staleReason: reason, staleAt: now });
-    } else {
-      if (run.sourceChangedAt instanceof Timestamp && run.sourceChangedAt.toMillis() >= changedAt.toMillis()) continue;
-      batch.update(doc.ref, { sourceChangedAt: changedAt });
-    }
-    marked += 1;
+    if (doc.data().intervalStartsAt >= to || !matches(doc.data())) continue;
+    // Re-read in a transaction: a run that completed after the query must be judged as complete, not building.
+    const changed = await db().runTransaction(async tx => {
+      const run = (await tx.get(doc.ref)).data();
+      if (!run || run.stale === true) return false;
+      if (run.state === 'complete') {
+        if (run.sourceCutoff instanceof Timestamp && changedAt.toMillis() < run.sourceCutoff.toMillis()) return false;
+        tx.update(doc.ref, { stale: true, staleReason: reason, staleAt: Timestamp.now() });
+        return true;
+      }
+      if (run.state !== 'queued' && run.state !== 'building') return false;
+      if (run.sourceChangedAt instanceof Timestamp && run.sourceChangedAt.toMillis() >= changedAt.toMillis()) return false;
+      tx.update(doc.ref, { sourceChangedAt: changedAt });
+      return true;
+    });
+    if (changed) marked += 1;
   }
-  if (marked) await batch.commit();
   return marked;
 }
 

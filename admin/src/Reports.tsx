@@ -320,7 +320,7 @@ export function Reports({ services, orgId, programId: initialProgram }: { servic
               </label>
               <label>
                 Season
-                <select value={seasonId} onChange={(e) => setSeasonId(e.target.value)} disabled={!seasons.length}>
+                <select value={seasonId} onChange={(e) => { setSeasonId(e.target.value); setTeamId(""); }} disabled={!seasons.length}>
                   {seasons.map((season) => <option key={season.id} value={season.id}>{season.name}</option>)}
                 </select>
               </label>

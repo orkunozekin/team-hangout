@@ -134,6 +134,9 @@ before(async () => {
   for (const id of ["r10-r1", "r10-r2"]) batch.set(db.doc(`${facility}/resources/${id}`), { ...meta(), orgId, facilityId: "r10-f1", label: id === "r10-r1" ? "Field 1" : "Field 2", sports: ["soccer"], setupMinutes: 0, cleanupMinutes: 0 });
   batch.set(db.doc(`${facility}/resources/r10-r1/availability/1`), { schemaVersion: 2, orgId, facilityId: "r10-f1", resourceId: "r10-r1", revision: 1,
     effectiveFrom: "2026-03-01T00:00:00.000Z", windows: [{ startsAt: "2026-03-08T13:00:00.000Z", endsAt: "2026-03-08T21:00:00.000Z" }] });
+  // Superseded history before the version in force at the interval start never contributes.
+  batch.set(db.doc(`${facility}/resources/r10-r1/availability/0`), { schemaVersion: 2, orgId, facilityId: "r10-f1", resourceId: "r10-r1", revision: 0,
+    effectiveFrom: "2026-02-01T00:00:00.000Z", windows: [{ startsAt: "2026-03-08T05:00:00.000Z", endsAt: "2026-03-09T04:00:00.000Z" }] });
   batch.set(db.doc(`organizations/${orgId}/closures/r10-closure`), { schemaVersion: 2, orgId, facilityId: "r10-f1", resourceIds: ["r10-r1"], status: "applied", revision: 1,
     startsAt: "2026-03-08T19:00:00.000Z", endsAt: "2026-03-08T20:00:00.000Z", reason: "Synthetic maintenance" });
   const booking = (id, resourceId, status, startsAt, endsAt, extra = {}) => {
@@ -149,6 +152,12 @@ before(async () => {
   booking("r10-b5", "r10-r1", "scheduled", "2026-03-08T19:30:00Z", "2026-03-08T20:30:00Z");
   booking("r10-b6", "r10-r1", "completed", "2026-03-08T21:00:00Z", "2026-03-08T22:00:00Z");
   booking("r10-b7", "r10-r2", "completed", "2026-03-08T10:00:00Z", "2026-03-08T11:00:00Z");
+  // Starts after the interval ends (00:30 local next day) but its 60-minute setup occupies the last 30 minutes.
+  {
+    const [path, row] = event("r10-b9", { teamIds: ["r10-d"], seasonId: "r10-year", status: "completed", startsAt: ts("2026-03-09T04:30:00Z"), endsAt: ts("2026-03-09T05:30:00Z"),
+      facilityId: "r10-f1", resourceId: "r10-r1", resourceOccupancy: { startsAt: ts("2026-03-09T03:30:00Z"), endsAt: ts("2026-03-09T05:30:00Z"), setupMinutes: 60, cleanupMinutes: 0 } });
+    batch.set(db.doc(path), row);
+  }
   booking("r10-b8", "r10-r1", "completed", "2026-03-08T17:00:00Z", "2026-03-08T18:00:00Z", { orgId: "r10-foreign-org" });
   await batch.commit();
 
@@ -263,9 +272,9 @@ test("facility run matches the hand calculation for closures, conflicts, shared 
   const { run, rows } = await call("r10-admin", "getReportRun", { orgId, runId });
   assert.equal(run.interval.hours, 23);
   const [r1, r2] = rows;
-  // 480 scheduled minus 60 closed; b1 union b2 = 120 booked; b6 60 outside; b5 sits in the closure.
-  assert.deepEqual([r1.label, r1.availableMinutes, r1.closedMinutes, r1.bookedMinutes, r1.conflictMinutes, r1.outsideAvailabilityMinutes], ["Field 1", 420, 60, 120, 30, 60]);
-  assert.deepEqual([r1.bookings, r1.excludedBookings, r1.closureAffectedBookings], [3, 1, 1]);
+  // 480 scheduled minus 60 closed; b1 union b2 = 120 booked; b6 60 and b9's setup 30 outside; b5 sits in the closure.
+  assert.deepEqual([r1.label, r1.availableMinutes, r1.closedMinutes, r1.bookedMinutes, r1.conflictMinutes, r1.outsideAvailabilityMinutes], ["Field 1", 420, 60, 120, 30, 90]);
+  assert.deepEqual([r1.bookings, r1.excludedBookings, r1.closureAffectedBookings], [4, 1, 1]);
   assert.deepEqual(r1.utilization, { numerator: 120, denominator: 420, rate: 0.2857 });
   assert.deepEqual([r2.unknownAvailabilityMinutes, r2.unknownAvailabilityBookedMinutes, r2.availableMinutes, r2.utilization.rate], [1380, 60, 0, null]);
   assert.deepEqual([run.summary.availableMinutes, run.summary.bookedMinutes, run.summary.utilization.rate], [420, 120, 0.2857]);
