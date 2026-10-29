@@ -9,6 +9,7 @@ import { clearGameDayCache, loadCachedEvent, saveCachedEvent } from '../../lib/g
 jest.mock('../../firebase/events', () => ({ getEvent: jest.fn(), createCanonicalEvent: jest.fn(), mutateEventSchedule: jest.fn(), listEventTeamChoices: jest.fn() }));
 jest.mock('../../firebase/availability', () => ({ getEventAvailability: jest.fn().mockRejectedValue(new Error('Unavailable')) }));
 jest.mock('../../firebase/attendance', () => ({ getEventAttendance: jest.fn().mockRejectedValue(new Error('Unavailable')) }));
+jest.mock('../../firebase/lineups', () => ({ getLineup: jest.fn().mockResolvedValue({ orgId: 'org', eventId: 'event', teamId: 'team', revision: 0, sportPresetId: null, presetVersion: null, units: [], bench: [], note: '', roster: [], unavailableParticipantIds: [], publication: { state: 'private', sourceRevision: null, publishedAt: null }, updatedAt: null }), getLineupView: jest.fn(), saveLineup: jest.fn(), publishLineup: jest.fn(), lineupRequestId: () => 'id' }));
 jest.mock('../../firebase/teams', () => ({ getTeam: jest.fn() }));
 jest.mock('../../lib/gameDayCache', () => ({
   loadCachedEvent: jest.fn(), saveCachedEvent: jest.fn(), clearGameDayCache: jest.fn(),
@@ -45,6 +46,14 @@ test('offline event detail is visibly stale and read-only', async () => {
   expect(screen.queryByText('Edit event')).toBeNull();
   expect(screen.queryByText('Open event conversation')).toBeNull();
   expect(screen.queryByText('Participant availability')).toBeNull();
+});
+test('canonical event detail offers the team lineup entry without loading it until opened', async () => {
+  const { getLineup } = jest.requireMock('../../firebase/lineups');
+  (getEvent as jest.Mock).mockResolvedValue({ ...event, orgId: 'org' });
+  await render(<EventDetailScreen userId="user-a" cacheScope="a" membership={membership} navigation={navigation} route={{ params: { eventId: 'shared' } } as any} />);
+  await fireEvent.press(await screen.findByText('Team lineup'));
+  expect(await screen.findByText(/No active roster participants yet/)).toBeTruthy();
+  expect(getLineup).toHaveBeenCalledWith('shared', membership.teamId);
 });
 test('published event detail opens the event conversation for the event organization', async () => {
   (getEvent as jest.Mock).mockResolvedValue({ ...event, orgId: 'org' });

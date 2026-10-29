@@ -62,3 +62,4 @@ export { postConversationMessage, listConversationMessages, setConversationPin, 
 export { createAttachmentUpload, finalizeAttachment, attachmentTransport, purgeAttachmentQuarantine } from './communications/attachments';
 export { resumeNotificationInbox } from './notifications/worker';
 export { resumeRsvpReminders } from './notifications/reminders';
+export { getLineup, saveLineup, publishLineup, getLineupView } from './coaching/lineups';

@@ -6,13 +6,13 @@ Turn the approved [product direction](../plans/product-plan.md#phase-3-coaching-
 
 | Field | Value |
 | --- | --- |
-| Status | in review, Step 2 implemented in PR #50 |
-| Last updated | 2026-10-28 |
-| Source baseline | Team Hangout `0fade5c03a011e9c6a519844d381f098c2760b32` from `main` after Step 1 merged |
-| Related PR / branch | [PR #49](https://github.com/orkunozekin/team-hangout/pull/49) merged; [PR #50](https://github.com/orkunozekin/team-hangout/pull/50) on `codex/phase-3-step-2` |
+| Status | in review, Step 3 implemented on `codex/phase-3-step-3` |
+| Last updated | 2026-10-29 |
+| Source baseline | Team Hangout `b2318cd` from `main` after Step 2 merged |
+| Related PR / branch | [PR #49](https://github.com/orkunozekin/team-hangout/pull/49) and [PR #50](https://github.com/orkunozekin/team-hangout/pull/50) merged; Step 3 on `codex/phase-3-step-3` |
 | Dependencies | Phase 1 organization/participant/season authorization and Phase 2 canonical events, attendance, facilities, communications |
 | Commercial status | Business model selection pending; no feature paywall, fee, or entitlement approved |
-| Next implementation step | Review Step 2 only; Step 3 has not started |
+| Next implementation step | Review Step 3 only; Step 4 has not started |
 
 Read the [phase index and common evidence standard](../plans/phase-plans.md), [Phase 1 foundations plan](phase-1-foundations-feature-plan.md), and [Phase 2 operations plan](phase-2-league-operations-feature-plan.md) before implementation.
 
@@ -265,7 +265,7 @@ Proposed uncreated modules, not clickable source claims: `src/lib/coaching/` for
 - [ ] Each UI PR embeds inspected screenshots accessible to reviewers from its latest checkout, with captions and required empty/error/conflict states.
 - [ ] Required tests/typecheck and backend build pass per step; CI and configured AI review feedback are addressed using `address-pr-feedback`, followed by a new bot-tagged re-review comment after fixes. Missing reviews are reported, not treated as approval.
 
-Planning executed the 11 reference geometry/marker tests described above. Step 1 added pure contracts and emulator isolation coverage only. No Phase 3 UI, worker, migration, feature flag, deployment, production access, native screenshot or pilot operation has run. Every remaining unchecked item belongs to a later explicitly authorized step.
+Planning executed the 11 reference geometry/marker tests described above. Step 1 added pure contracts and emulator isolation coverage only. Step 2 added the development-only surface harness. Step 3 added emulator-proven private lineup persistence and explicit publication; no worker, migration, feature flag, deployment, production access or pilot operation has run. Every remaining unchecked item belongs to a later explicitly authorized step.
 
 ## Handoff
 
@@ -288,18 +288,27 @@ Planning executed the 11 reference geometry/marker tests described above. Step 1
 - Built and launched the SDK 54 iOS development client from this checkout on an iPhone 17 Pro simulator running iOS 26.5. Inspected narrow portrait, landscape and accessibility-extra-extra-large text. The first large-text capture exposed clipping; the corrected harness preserves full labels with a tested 2x text ceiling and a 1.25x marker-number ceiling.
 - Exercised the native accessibility tree through preset and mode controls, selected `Samira Abdullah-Rahman` from the synthetic bench, placed her at Goalkeeper through list mode and observed the live announcement `Samira Abdullah-Rahman is now Goalkeeper.` Landscape reflow kept controls and long selected names visible. This is simulator evidence, not physical-device performance proof.
 
+- Step 3 added `getLineup`, `saveLineup`, `publishLineup` and `getLineupView` callables in `functions/src/coaching/lineups.ts`. Private lineups live at `/events/{eventId}/coaching/{teamId}`, the private coach note at `.../notes/lineup`, and the sanitized publication at `/events/{eventId}/lineupViews/{teamId}`. All three paths stay deny-all in rules; access is callable-only.
+- Coaching authority is only an active `coach` assignment for that team, rechecked on every read, save, publish and replay. Organization staff, captains, guardians, revoked coaches and platform administrators are denied private lineups and notes. The family view admits active team members, scoped staff, or a household whose participant is actively rostered on that team.
+- Saves use the Phase 3 envelope `{requestId, orgId, resourceId, expectedRevision, payload}` with receipt deduplication and `STALE_REVISION` conflicts. Validation rejects duplicate participants within a unit, unknown slots, bench overlap, oversize notes and any departed or unknown participant (`PARTICIPANT_UNAVAILABLE`). A departed participant stays in the saved slot, flagged for replacement; nothing is auto-replaced and RSVP order is never used.
+- Presets gained versioned units in `src/lib/coaching/lineupSurface.ts`; football has independent offense, defense and special-teams units. `functions/src/coaching/presets.ts` mirrors slot identity and a Jest test enforces alignment.
+- Publication copies an explicit allowlist (positions, display names, bench order). Later private saves do not leak until the coach republishes; retraction deletes the public view.
+- Added `src/firebase/lineups.ts`, pure draft helpers in `src/lib/coaching/lineupDraft.ts` and the `EventLineup` component on canonical event detail: tap participant then tap position, bench ordering, private note, conflict reload, offline retry with the same request ID, empty-roster and departure states, publish/republish/retract, and a read-only family view.
+- Validation on the implementation checkout: `yarn typecheck`; Functions `tsc`; focused emulator suites `lineups` plus `phase3-contracts`, 13/13; `yarn test:coverage --ci --runInBand --silent`, 314/314 with 97.5% statements; `yarn test:backend`, 322/322 after updating the staging export count for the four new callables; `git diff --check`.
+
 ### Remaining work
 
-Step 2 is implemented in PR #50 and awaiting required GitHub Codex review, final-head CI and coordinator merge decision. Do not start Step 3 until Step 2 is merged and the user explicitly requests it. Each later explicit “implement the next step” request selects the next numbered incomplete step, not the whole phase.
+Step 3 is implemented on `codex/phase-3-step-3` and awaits review, final-head CI and the owner's merge decision. Do not start Step 4 until Step 3 is merged and the user explicitly requests it. Each later explicit "implement the next step" request selects the next numbered incomplete step, not the whole phase.
 
 ### Blockers and risks
 
 - Android SDK, emulator and `adb` are unavailable on this host, so the required Android development-client capture and runtime interaction proof remain blocked. Keep the harness development-only and the PR open; iOS evidence does not prove Android behavior.
 - Marker drag uses the documented activation delay and touch slop and has focused configuration coverage. Native scrolling and the accessible non-drag placement path were exposed in the simulator accessibility tree; physical-device timing and performance remain unclaimed.
-- The remaining Phase 3 persistence, publication and runtime features are intentionally unimplemented.
+- Step 3 UI evidence comes from Expo web against local emulators because no iOS or Android simulator was reachable in the Step 3 environment. Native screen-reader, large-text and Android behavior of the lineup editor remain unverified.
+- Playing time, competition and the other later Phase 3 runtime features are intentionally unimplemented.
 - Pilot league rules, transport policy, rights evidence and qualified content reviewer are external gates owned by the organization/product owner.
 - No production credentials/data/notifications are authorized by this plan; development uses non-sensitive emulator fixtures. Business model selection remains pending.
 
 ### Pointers for the next agent
 
-For Step 2 review, preserve the development-only gate, synthetic-only data, initial screenshot provenance and Android runtime blocker. Confirm required GitHub Codex review and final-head CI without exceeding the two-run cap. Do not start Step 3 or add persistence, publication, flags, deployments or production access. Leave merging to the user.
+For Step 3 review, keep lineup data callable-only, keep coaching authority to active team coaches, and keep notes out of every publication path. Household entry from the household agenda is not wired yet; `EventLineup` accepts a `participantId` for that later entry. Step 4 should build playing time on the saved `units` shape and the football unit IDs. Leave merging to the user.
