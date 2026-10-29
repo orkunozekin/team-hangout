@@ -41,16 +41,17 @@ export async function collectPhase3Alerts(nowMs = Date.now()) {
   const db = getFirestore();
   const stuck = Timestamp.fromMillis(nowMs - PHASE3_STUCK_AFTER_MS);
   const recent = Timestamp.fromMillis(nowMs - PHASE3_FAILED_WINDOW_MS);
-  const jobs = (group: "reportRuns" | "rolloverJobs", running: "building" | "running") => [
+  // Failures are windowed by when they failed (reports stamp finishedAt, rollovers failedAt), not by when they were queued.
+  const jobs = (group: "reportRuns" | "rolloverJobs", running: "building" | "running", failedAt: "finishedAt" | "failedAt") => [
     count(db.collectionGroup(group).where("state", "==", "queued").where("queuedAt", "<=", stuck).orderBy("queuedAt"), "organizations"),
     count(db.collectionGroup(group).where("state", "==", running).where("leaseExpiresAt", "<=", stuck).orderBy("leaseExpiresAt"), "organizations"),
-    count(db.collectionGroup(group).where("state", "==", "failed").where("queuedAt", ">=", recent).orderBy("queuedAt"), "organizations"),
+    count(db.collectionGroup(group).where("state", "==", "failed").where(failedAt, ">=", recent).orderBy(failedAt), "organizations"),
   ];
   const [standings, builds, reportQueued, reportLease, reportFailed, rolloverQueued, rolloverLease, rolloverFailed] = await Promise.all([
     count(db.collectionGroup("competitions").where("standingsPendingSince", "<=", stuck).orderBy("standingsPendingSince"), "organizations"),
     count(db.collectionGroup("generations").where("state", "==", "building").where("startedAt", "<=", stuck).orderBy("startedAt"), "competitions"),
-    ...jobs("reportRuns", "building"),
-    ...jobs("rolloverJobs", "running"),
+    ...jobs("reportRuns", "building", "finishedAt"),
+    ...jobs("rolloverJobs", "running", "failedAt"),
   ]);
   return phase3AlertSummaries({
     STANDINGS_STALE: standings,

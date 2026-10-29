@@ -39,10 +39,13 @@ test('scheduled phase 3 monitor is read-only, honors enablement and reports only
     [`organizations/${orgId}/reportRuns/queued`]: { state: 'queued', queuedAt: old, filters: { teamId: 'private-team' } },
     [`organizations/${orgId}/reportRuns/lease`]: { state: 'building', queuedAt: old, leaseExpiresAt: old },
     [`organizations/${orgId}/reportRuns/live`]: { state: 'building', queuedAt: fresh, leaseExpiresAt: fresh },
-    [`organizations/${orgId}/reportRuns/failed`]: { state: 'failed', queuedAt: fresh, failure: { message: 'private failure' } },
+    // Queued long ago but failed recently: counted by failure time.
+    [`organizations/${orgId}/reportRuns/failed`]: { state: 'failed', queuedAt: Timestamp.fromMillis(now - 3 * 86_400_000), finishedAt: fresh, failure: { message: 'private failure' } },
+    [`organizations/${orgId}/reportRuns/old-failure`]: { state: 'failed', queuedAt: fresh, finishedAt: Timestamp.fromMillis(now - 2 * 86_400_000) },
     [`organizations/${orgId}/rolloverJobs/queued`]: { state: 'queued', queuedAt: old, actorUid: 'private-user' },
     [`organizations/${orgId}/rolloverJobs/lease`]: { state: 'running', queuedAt: old, leaseExpiresAt: old },
-    [`organizations/${orgId}/rolloverJobs/failed`]: { state: 'failed', queuedAt: fresh },
+    [`organizations/${orgId}/rolloverJobs/failed`]: { state: 'failed', queuedAt: Timestamp.fromMillis(now - 3 * 86_400_000), failedAt: fresh },
+    [`organizations/${orgId}/rolloverJobs/old-failure`]: { state: 'failed', queuedAt: fresh, failedAt: Timestamp.fromMillis(now - 2 * 86_400_000) },
     // Outside the tenant tree: never counted.
     'reportRuns/stray': { state: 'queued', queuedAt: old },
   };
