@@ -228,7 +228,10 @@ export const releaseVolunteerSlot = command('releaseVolunteerSlot', data => {
   }
   const claim = claimDoc?.data();
   if (!claim || claim.status !== 'active') return { requestId: data.requestId, revision: slot!.revision, state: 'released', slotId: data.slotId };
-  if (!data.assigneeKey && slotState(slot!, event, Date.now()) === 'closed') {
+  // Cancelled assignments are retained as history; neither the adult nor a coach can release them.
+  const state = slotState(slot!, event, Date.now());
+  if (state === 'cancelled') fail('VOLUNTEER_SLOT_CANCELLED', 'This volunteer slot was cancelled. The assignment is kept as cancelled.');
+  if (!data.assigneeKey && state === 'closed') {
     fail('VOLUNTEER_CLOSED', 'The release deadline has passed. Ask your coach to remove you.');
   }
   const now = Timestamp.now();

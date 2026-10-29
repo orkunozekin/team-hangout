@@ -66,3 +66,26 @@ export function slotStatusLabel(slot: Pick<VolunteerSlot, "state" | "openCount" 
   if (slot.state === "full") return `Full (${slot.capacity} of ${slot.capacity} taken)`;
   return `${slot.openCount} of ${slot.capacity} ${slot.capacity === 1 ? "spot" : "spots"} open`;
 }
+
+const pad = (value: number) => String(value).padStart(2, "0");
+
+/** Deadline form text in the device's local time: "YYYY-MM-DD HH:MM". */
+export function deadlineInput(iso: string | null): string {
+  if (!iso) return "";
+  const at = new Date(iso);
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}`;
+}
+
+/** Blank means sign-up stays open until the event starts. Returns undefined for unreadable text. */
+export function parseDeadline(value: string): string | null | undefined {
+  const text = value.trim();
+  if (!text) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})$/.exec(text);
+  if (!match) return undefined;
+  const [year, month, day, hour, minute] = match.slice(1).map(Number);
+  const at = new Date(year, month - 1, day, hour, minute);
+  if (at.getFullYear() !== year || at.getMonth() !== month - 1 || at.getDate() !== day || at.getHours() !== hour || at.getMinutes() !== minute) {
+    return undefined;
+  }
+  return at.toISOString();
+}

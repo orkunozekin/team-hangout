@@ -5,7 +5,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react-nativ
 import EventVolunteers from '../EventVolunteers';
 import { claimVolunteerSlot, getEventVolunteers, releaseVolunteerSlot, saveVolunteerSlot, volunteerRequestId } from '../../firebase/volunteers';
 import type { EventVolunteers as Data, VolunteerSlot } from '../../../shared/volunteers';
-import { aliasProblem, VOLUNTEER_KINDS } from '../../../shared/volunteers';
+import { aliasProblem, deadlineInput, parseDeadline, VOLUNTEER_KINDS } from '../../../shared/volunteers';
 
 jest.mock('../../firebase/volunteers', () => ({
   getEventVolunteers: jest.fn(), claimVolunteerSlot: jest.fn(), releaseVolunteerSlot: jest.fn(), saveVolunteerSlot: jest.fn(), volunteerRequestId: jest.fn(),
@@ -111,6 +111,33 @@ test('coaches add slots, remove a volunteer by key and cancel a slot; households
   await waitFor(() => expect(save).toHaveBeenCalledWith('o', 'e', 't', 0, { kind: 'scorekeeping', title: 'Scoreboard', capacity: 2, claimDeadline: null }, 'r2'));
   await fireEvent.press(await screen.findByRole('button', { name: 'Cancel slot Halftime oranges' }));
   await waitFor(() => expect(save).toHaveBeenCalledWith('o', 'e', 't', 1, { slotId: 's1', action: 'cancel' }, 'r3'));
+});
+
+test('coaches edit an existing slot with its current revision and a local deadline', async () => {
+  read.mockResolvedValue(data([slot({ revision: 4, assignees: [{ alias: 'Jo', assigneeKey: 'k1' }], openCount: 1 })], { canManage: true }));
+  save.mockResolvedValue({ state: 'open' });
+  await open();
+  await fireEvent.press(await screen.findByRole('button', { name: 'Edit slot Halftime oranges' }));
+  expect(screen.getByLabelText('Edit Halftime oranges: Slot title').props.value).toBe('Halftime oranges');
+  await fireEvent.changeText(screen.getByLabelText('Edit Halftime oranges: Number of volunteers needed'), '3');
+  await fireEvent.changeText(screen.getByLabelText('Edit Halftime oranges: Sign-up deadline'), 'tomorrow');
+  await fireEvent.press(screen.getByRole('button', { name: 'Save slot changes' }));
+  expect(screen.getByText('Enter the deadline as YYYY-MM-DD HH:MM, or leave it blank.')).toBeTruthy();
+  expect(save).not.toHaveBeenCalled();
+  await fireEvent.changeText(screen.getByLabelText('Edit Halftime oranges: Sign-up deadline'), '2027-03-19 18:30');
+  await fireEvent.press(screen.getByRole('button', { name: 'Save slot changes' }));
+  await waitFor(() => expect(save).toHaveBeenCalledWith('o', 'e', 't', 4,
+    { slotId: 's1', kind: 'snacks', title: 'Halftime oranges', capacity: 3, claimDeadline: new Date(2027, 2, 19, 18, 30).toISOString() }, 'r1'));
+  expect(await screen.findByRole('button', { name: 'Edit slot Halftime oranges' })).toBeTruthy();
+});
+
+test('deadline text round-trips in local time and rejects impossible dates', () => {
+  const iso = parseDeadline('2027-03-19 18:30')!;
+  expect(deadlineInput(iso)).toBe('2027-03-19 18:30');
+  expect(parseDeadline('')).toBeNull();
+  expect(parseDeadline('2027-02-30 10:00')).toBeUndefined();
+  expect(parseDeadline('19/03/2027')).toBeUndefined();
+  expect(deadlineInput(null)).toBe('');
 });
 
 test('households without manage rights see no staff controls, and load failures offer retry', async () => {

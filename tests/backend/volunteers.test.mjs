@@ -208,6 +208,11 @@ test("cancelled slots and events show cancelled assignments and block claims", a
   assert.deepEqual(outbox[0].audience, { teamIds: [teamId] });
   assert.equal(JSON.stringify(outbox[0]).includes("Alias"), false);
   assert.equal(JSON.stringify(outbox[0]).includes("p38-guardian"), false);
+  // A cancelled assignment is retained: neither the adult nor a coach can release it afterwards.
+  await domain(release("p38-guardian", first.slotId), "VOLUNTEER_SLOT_CANCELLED");
+  const cancelledKey = (await view("p38-coach")).slots[0].assignees[0].assigneeKey;
+  await domain(release("p38-coach", first.slotId, cancelledKey), "VOLUNTEER_SLOT_CANCELLED");
+  assert.equal((await slotDoc(first.slotId)).claimedCount, 1);
   const shown = await view("p38-guardian");
   assert.deepEqual(shown.slots.map((slot) => [slot.state, slot.ownClaim?.status]), [["cancelled", "cancelled"], ["open", "active"]]);
   await db.doc(`events/${eventId}`).update({ status: "cancelled" });

@@ -2,8 +2,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text as NativeText, type TextProps, View } from 'react-native';
 
 import type { EventVolunteers as VolunteersData, VolunteerKind, VolunteerSlot } from '../../shared/volunteers';
-import { aliasProblem, slotStatusLabel, VOLUNTEER_CAPACITY_MAX, VOLUNTEER_KIND_LABELS, VOLUNTEER_KINDS } from '../../shared/volunteers';
-import { claimVolunteerSlot, getEventVolunteers, releaseVolunteerSlot, saveVolunteerSlot, volunteerRequestId } from '../firebase/volunteers';
+import { aliasProblem, deadlineInput, parseDeadline, slotStatusLabel, VOLUNTEER_CAPACITY_MAX, VOLUNTEER_KIND_LABELS, VOLUNTEER_KINDS } from '../../shared/volunteers';
+import { claimVolunteerSlot, getEventVolunteers, releaseVolunteerSlot, saveVolunteerSlot, type SlotInput, volunteerRequestId } from '../firebase/volunteers';
 import { colors, radius, spacing, type } from '../theme/theme';
 import { ConsentCheckbox, PrimaryButton, SecondaryButton, TextField } from './ui';
 
@@ -34,12 +34,14 @@ function message(error: unknown, fallback: string) {
 
 type Props = { orgId: string; eventId: string; teamId: string };
 
-function SlotCard({ slot, data, busy, onClaim, onRelease, onRemove, onCancel }: {
+function SlotCard({ slot, data, busy, onClaim, onRelease, onRemove, onCancel, onEdit }: {
   slot: VolunteerSlot; data: VolunteersData; busy: boolean;
   onClaim: (slot: VolunteerSlot, alias: string) => void; onRelease: (slot: VolunteerSlot) => void;
   onRemove: (slot: VolunteerSlot, key: string, alias: string) => void; onCancel: (slot: VolunteerSlot) => void;
+  onEdit: (slot: VolunteerSlot, input: SlotInput) => Promise<boolean>;
 }) {
   const [claiming, setClaiming] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [alias, setAlias] = useState('');
   const [consent, setConsent] = useState(false);
   const [problem, setProblem] = useState('');
@@ -85,42 +87,58 @@ function SlotCard({ slot, data, busy, onClaim, onRelease, onRemove, onCancel }: 
         {slot.assignees.map((row) => row.assigneeKey ? (
           <SecondaryButton key={row.assigneeKey} label={`Remove ${row.alias}`} disabled={busy} onPress={() => onRemove(slot, row.assigneeKey!, row.alias)} />
         ) : null)}
+        {editing
+          ? <SlotForm key={slot.revision} initial={slot} busy={busy} onSave={(input) => onEdit(slot, input)} onClose={() => setEditing(false)} />
+          : <SecondaryButton label={`Edit slot ${slot.title}`} disabled={busy} onPress={() => setEditing(true)} />}
         <SecondaryButton label={`Cancel slot ${slot.title}`} disabled={busy} onPress={() => onCancel(slot)} />
       </> : null}
     </View>
   );
 }
 
-function NewSlotForm({ busy, onSave }: { busy: boolean; onSave: (kind: VolunteerKind, title: string, capacity: number) => Promise<boolean> }) {
-  const [kind, setKind] = useState<VolunteerKind>('snacks');
-  const [title, setTitle] = useState('');
-  const [capacity, setCapacity] = useState('1');
+function SlotForm({ initial, busy, onSave, onClose }: {
+  initial?: VolunteerSlot; busy: boolean; onSave: (input: SlotInput) => Promise<boolean>; onClose?: () => void;
+}) {
+  const [kind, setKind] = useState<VolunteerKind>(initial?.kind ?? 'snacks');
+  const [title, setTitle] = useState(initial?.title ?? '');
+  const [capacity, setCapacity] = useState(String(initial?.capacity ?? 1));
+  const [deadline, setDeadline] = useState(deadlineInput(initial?.claimDeadline ?? null));
   const [problem, setProblem] = useState('');
+  const editing = !!initial;
   const save = async () => {
     const count = Number(capacity);
+    const claimDeadline = parseDeadline(deadline);
     if (!title.trim()) return setProblem('Enter a slot title.');
     if (!Number.isInteger(count) || count < 1 || count > VOLUNTEER_CAPACITY_MAX) return setProblem(`Capacity must be 1 through ${VOLUNTEER_CAPACITY_MAX}.`);
+    if (claimDeadline === undefined) return setProblem('Enter the deadline as YYYY-MM-DD HH:MM, or leave it blank.');
     setProblem('');
-    if (await onSave(kind, title.trim(), count)) { setTitle(''); setCapacity('1'); }
+    if (await onSave({ kind, title: title.trim(), capacity: count, claimDeadline })) {
+      if (editing) onClose?.();
+      else { setTitle(''); setCapacity('1'); setDeadline(''); }
+    }
   };
+  const prefix = editing ? `Edit ${initial!.title}: ` : '';
   return (
     <View style={styles.form}>
-      <Text style={styles.subheading}>Add a volunteer slot</Text>
+      <Text style={styles.subheading}>{editing ? 'Edit volunteer slot' : 'Add a volunteer slot'}</Text>
       <View style={styles.wrap}>
         {VOLUNTEER_KINDS.map((value) => {
           const selected = value === kind;
           return (
-            <Pressable key={value} accessibilityRole="button" accessibilityLabel={`Slot kind ${VOLUNTEER_KIND_LABELS[value]}`} accessibilityState={{ selected }}
+            <Pressable key={value} accessibilityRole="button" accessibilityLabel={`${prefix}Slot kind ${VOLUNTEER_KIND_LABELS[value]}`} accessibilityState={{ selected }}
               onPress={() => setKind(value)} style={[styles.chip, selected ? styles.chipSelected : null]}>
               <Text style={[styles.chipText, selected ? styles.chipTextSelected : null]}>{VOLUNTEER_KIND_LABELS[value]}</Text>
             </Pressable>
           );
         })}
       </View>
-      <TextField accessibilityLabel="Slot title" value={title} onChangeText={setTitle} maxLength={80} placeholder="Slot title" />
-      <TextField accessibilityLabel="Number of volunteers needed" value={capacity} onChangeText={setCapacity} keyboardType="number-pad" maxLength={2} />
+      <TextField accessibilityLabel={`${prefix}Slot title`} value={title} onChangeText={setTitle} maxLength={80} placeholder="Slot title" />
+      <TextField accessibilityLabel={`${prefix}Number of volunteers needed`} value={capacity} onChangeText={setCapacity} keyboardType="number-pad" maxLength={2} />
+      <TextField accessibilityLabel={`${prefix}Sign-up deadline`} value={deadline} onChangeText={setDeadline} maxLength={16} placeholder="Deadline YYYY-MM-DD HH:MM (optional)" />
+      <Text style={styles.copy}>Leave the deadline blank to keep sign-up open until the event starts.</Text>
       {problem ? <Text accessibilityRole="alert" style={styles.error}>{problem}</Text> : null}
-      <PrimaryButton label="Add slot" loading={busy} onPress={() => void save()} />
+      <PrimaryButton label={editing ? 'Save slot changes' : 'Add slot'} loading={busy} onPress={() => void save()} />
+      {editing ? <SecondaryButton label="Close edit form" disabled={busy} onPress={() => onClose?.()} /> : null}
     </View>
   );
 }
@@ -206,13 +224,15 @@ function VolunteersPanel({ orgId, eventId, teamId }: Props) {
             (requestId) => releaseVolunteerSlot(orgId, eventId, teamId, target.slotId, requestId), `You released your spot for ${target.title}.`, 'Could not release your spot.')}
           onRemove={(target, key, alias) => void run(`remove:${target.slotId}:${key}`,
             (requestId) => releaseVolunteerSlot(orgId, eventId, teamId, target.slotId, requestId, key), `Removed ${alias} from ${target.title}.`, 'Could not remove the volunteer.')}
+          onEdit={(target, input) => run(`edit:${target.slotId}:${target.revision}:${JSON.stringify(input)}`,
+            (requestId) => saveVolunteerSlot(orgId, eventId, teamId, target.revision, { slotId: target.slotId, ...input }, requestId), `Saved ${input.title}.`, 'Could not save the slot.')}
           onCancel={(target) => void run(`cancel:${target.slotId}:${target.revision}`,
             (requestId) => saveVolunteerSlot(orgId, eventId, teamId, target.revision, { slotId: target.slotId, action: 'cancel' }, requestId), `Cancelled ${target.title}.`, 'Could not cancel the slot.')}
         />
       ))}
       {data.canManage && data.eventStatus !== 'cancelled' ? (
-        <NewSlotForm busy={busy} onSave={(kind, title, capacity) => run(`create:${kind}:${title}:${capacity}`,
-          (requestId) => saveVolunteerSlot(orgId, eventId, teamId, 0, { kind, title, capacity, claimDeadline: null }, requestId), `Added ${title}.`, 'Could not add the slot.')} />
+        <SlotForm busy={busy} onSave={(input) => run(`create:${JSON.stringify(input)}`,
+          (requestId) => saveVolunteerSlot(orgId, eventId, teamId, 0, input, requestId), `Added ${input.title}.`, 'Could not add the slot.')} />
       ) : null}
       <SecondaryButton label="Refresh volunteer slots" disabled={loading} onPress={() => void load()} />
       {loading ? <ActivityIndicator accessibilityLabel="Loading volunteer slots" /> : null}
