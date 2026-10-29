@@ -52,14 +52,15 @@ type Marker = { slotId: string; participantId: string; x: number; y: number; nam
 /** Visual summary only. The position list below exposes every placement to assistive technology. */
 function SurfacePreview({ preset, markers }: { preset: SportPreset; markers: Marker[] }) {
   const window = useWindowDimensions();
-  const frame = resolveSurfaceFrame({ width: Math.min(window.width, 520), height: Math.max(window.height, 640), fontScale: window.fontScale }, preset);
+  // A compact preview keeps the accessible position list within reach on phones.
+  const frame = resolveSurfaceFrame({ width: Math.min(window.width, 520), height: Math.min(window.height, 560), fontScale: window.fontScale }, preset);
   return (
     <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.surface, { width: frame.width, height: frame.height }]}>
       <SurfaceMarkings preset={preset} frame={frame} />
       {markers.map((marker) => {
         const pixels = denormalizePoint(marker, frame);
         return (
-          <View key={marker.slotId} style={[styles.marker, marker.unavailable ? styles.markerWarning : null, { left: pixels.x - 44, top: pixels.y - 12 }]}>
+          <View key={marker.slotId} style={[styles.marker, marker.unavailable ? styles.markerWarning : null, { left: pixels.x - 36, top: pixels.y - 11 }]}>
             <NativeText numberOfLines={1} maxFontSizeMultiplier={1.25} style={styles.markerText}>
               {marker.name.split(' ')[0]}
             </NativeText>
@@ -70,7 +71,8 @@ function SurfacePreview({ preset, markers }: { preset: SportPreset; markers: Mar
   );
 }
 
-function Chip({ label, selected, onPress, hint }: { label: string; selected?: boolean; onPress: () => void; hint?: string }) {
+/** `text` is the short visible caption; `label` is always the full accessible name. */
+function Chip({ label, text, selected, onPress, hint }: { label: string; text?: string; selected?: boolean; onPress: () => void; hint?: string }) {
   return (
     <Pressable
       accessibilityRole="button"
@@ -80,7 +82,7 @@ function Chip({ label, selected, onPress, hint }: { label: string; selected?: bo
       onPress={onPress}
       style={[styles.chip, selected ? styles.chipSelected : null]}
     >
-      <Text style={[styles.chipText, selected ? styles.chipTextSelected : null]}>{label}</Text>
+      <Text style={[styles.chipText, selected ? styles.chipTextSelected : null]}>{text ?? label}</Text>
     </Pressable>
   );
 }
@@ -298,7 +300,7 @@ function LineupEditor({ orgId, eventId, teamId, onDenied }: { orgId: string; eve
                   <Text style={styles.slotText}>{label}</Text>
                 </Pressable>
                 {placement ? (
-                  <Chip label={`Clear ${slot.label}`} onPress={() => update(clearSlot(draft, unit.id, slot.id), `${slot.label} cleared.`)} />
+                  <Chip label={`Clear ${slot.label}`} text="Clear" onPress={() => update(clearSlot(draft, unit.id, slot.id), `${slot.label} cleared.`)} />
                 ) : null}
               </View>
             );
@@ -325,9 +327,9 @@ function LineupEditor({ orgId, eventId, teamId, onDenied }: { orgId: string; eve
               <Text style={[styles.benchName, isUnavailable(participantId) ? styles.warningText : null]}>
                 {`${index + 1}. ${nameOf(participantId)}${isUnavailable(participantId) ? ' (left the roster)' : ''}`}
               </Text>
-              <Chip label={`Move ${nameOf(participantId)} up`} onPress={() => update(moveBench(draft, participantId, -1), `${nameOf(participantId)} moved up.`)} />
-              <Chip label={`Move ${nameOf(participantId)} down`} onPress={() => update(moveBench(draft, participantId, 1), `${nameOf(participantId)} moved down.`)} />
-              <Chip label={`Remove ${nameOf(participantId)} from bench`} onPress={() => update(removeFromBench(draft, participantId), `${nameOf(participantId)} removed from bench.`)} />
+              <Chip label={`Move ${nameOf(participantId)} up`} text="Up" onPress={() => update(moveBench(draft, participantId, -1), `${nameOf(participantId)} moved up.`)} />
+              <Chip label={`Move ${nameOf(participantId)} down`} text="Down" onPress={() => update(moveBench(draft, participantId, 1), `${nameOf(participantId)} moved down.`)} />
+              <Chip label={`Remove ${nameOf(participantId)} from bench`} text="Remove" onPress={() => update(removeFromBench(draft, participantId), `${nameOf(participantId)} removed from bench.`)} />
             </View>
           )) : <Text style={styles.copy}>No bench order yet.</Text>}
           <FieldLabel>Private coach note</FieldLabel>
@@ -405,7 +407,7 @@ const styles = StyleSheet.create({
   chipText: { ...type.label, color: colors.text },
   chipTextSelected: { color: colors.white },
   surface: { alignSelf: 'center', marginVertical: spacing.sm },
-  marker: { position: 'absolute', width: 88, height: 24, borderRadius: radius.full, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.primary },
+  marker: { position: 'absolute', width: 72, height: 22, borderRadius: radius.full, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.primary },
   markerWarning: { borderColor: colors.warning, backgroundColor: colors.warningBg },
   markerText: { ...type.tiny, color: colors.text },
   row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.xs },
