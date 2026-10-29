@@ -21,7 +21,7 @@ export type RideInput =
 /** Each helper takes the caller's request ID so an uncertain retry of the same intent cannot double-apply. */
 export const saveRideRequest = (
   orgId: string, eventId: string, teamId: string, expectedRevision: number,
-  payload: RideInput | { rideId: string; action: "cancel" }, requestId: string,
+  payload: (RideInput & { rideId?: string }) | { rideId: string; action: "cancel" }, requestId: string,
 ) => runCommand<RideMutationResult>("saveRideRequest", { orgId, resourceId: eventId, expectedRevision, payload: { teamId, ...payload } }, requestId);
 
 export type RideConsent = { displayAlias: string; contact: string; pickupNote: string | null };

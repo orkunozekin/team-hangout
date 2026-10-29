@@ -156,3 +156,34 @@ test('shared helpers mirror backend area and seat rules', () => {
   expect(rideSeatsLabel('offer', 1)).toBe('1 seat open');
   expect(rideSeatsLabel('need', 2)).toBe('Needs 2 seats');
 });
+
+test('a guardian with two matching requests chooses which child the seats are for before consenting', async () => {
+  const second: OwnRide = { ...need, rideId: 'need2', area: 'Library', participants: [{ participantId: 'p2', displayName: 'Synthetic Blake' }] };
+  read.mockResolvedValue(enabled({ mine: [need, second], children: [...need.participants, ...second.participants] }));
+  confirm.mockResolvedValue({ requestId: 'r1', revision: 1, state: 'pending', arrangementId: 'a1' });
+  await open();
+  expect(await screen.findByText('For Synthetic Avery from Elm school')).toBeTruthy();
+  await fireEvent.press(screen.getByRole('button', { name: 'Use Synthetic Blake from Library' }));
+  expect(screen.getByText('For Synthetic Blake from Library')).toBeTruthy();
+  await fireEvent.press(screen.getByRole('button', { name: 'Ask for seats near North park' }));
+  await fireEvent.changeText(screen.getByLabelText('Name shown to the other adult'), 'Sam R.');
+  await fireEvent.changeText(screen.getByLabelText('How to reach you'), 'synthetic@example.test');
+  await fireEvent.press(screen.getByText('Share these details with the other adult in this ride'));
+  await fireEvent.press(screen.getByRole('button', { name: 'Send and share my details after confirmation' }));
+  await waitFor(() => expect(confirm).toHaveBeenCalledWith('o', 'e', 't', { offerId: 'offer1', needId: 'need2' },
+    { displayAlias: 'Sam R.', contact: 'synthetic@example.test', pickupNote: null }, 'r1'));
+});
+
+test('an existing ride can be edited with its current revision', async () => {
+  const offer: OwnRide = { ...need, rideId: 'offer9', kind: 'offer', seats: 3, seatsOpen: 2, participants: [], area: 'North park', revision: 4, hasArrangement: true };
+  read.mockResolvedValue(enabled({ mine: [offer], canOffer: true, matches: [] }));
+  save.mockResolvedValue({ requestId: 'r1', revision: 5, state: 'open', rideId: 'offer9' });
+  await open();
+  await fireEvent.press(await screen.findByRole('button', { name: 'Edit offer to the event near North park' }));
+  await fireEvent.changeText(screen.getByLabelText('Edit offer to the event near North park: seats offered'), '2');
+  await fireEvent.press(screen.getAllByText('Let other team families find this by area and seats (no names are shown)')[0]);
+  await fireEvent.press(screen.getByRole('button', { name: 'Save ride changes' }));
+  await waitFor(() => expect(save).toHaveBeenCalledWith('o', 'e', 't', 4,
+    { rideId: 'offer9', kind: 'offer', direction: 'toEvent', area: 'North park', discoverable: false, seats: 2 }, 'r1'));
+  expect(await screen.findByText('Ride updated.')).toBeTruthy();
+});

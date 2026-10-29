@@ -142,6 +142,78 @@ function RideForm({ data, busy, onSave }: { data: Enabled; busy: boolean; onSave
   );
 }
 
+function ownLabel(ride: OwnRide) {
+  return ride.kind === 'need'
+    ? `${ride.participants.map((row) => row.displayName).join(', ') || 'your request'} from ${ride.area}`
+    : `your ${ride.seatsOpen ?? ride.seats} open ${ride.seatsOpen === 1 ? 'seat' : 'seats'} from ${ride.area}`;
+}
+
+/** The guardian picks which of their own requests or offers a match uses, and sees it named before consenting. */
+function MatchCard({ match, candidates, busy, open, onOpen, onClose, onSubmit }: {
+  match: RideMatch; candidates: OwnRide[]; busy: boolean; open: boolean;
+  onOpen: () => void; onClose: () => void; onSubmit: (own: OwnRide, consent: RideConsent) => void;
+}) {
+  const [chosenId, setChosenId] = useState<string | null>(null);
+  const own = candidates.find((ride) => ride.rideId === chosenId) ?? candidates[0];
+  return (
+    <View style={styles.card}>
+      <Text style={styles.title}>{rideTitle(match)}</Text>
+      <Text style={styles.copy}>{rideSeatsLabel(match.kind, match.seats)}</Text>
+      {!own ? <Text style={styles.copy}>{match.kind === 'offer' ? 'Add a matching ride request first.' : 'Add a matching seat offer first.'}</Text> : null}
+      {own && candidates.length > 1 ? (
+        <Choice label="Use" value={own.rideId} options={candidates.map((ride) => ({ value: ride.rideId, label: ownLabel(ride) }))} onChange={setChosenId} />
+      ) : null}
+      {own ? <Text style={styles.own}>{match.kind === 'offer' ? `For ${ownLabel(own)}` : `Using ${ownLabel(own)}`}</Text> : null}
+      {own && !open ? (
+        <SecondaryButton label={match.kind === 'offer' ? `Ask for seats near ${match.area}` : `Offer to drive near ${match.area}`} disabled={busy} onPress={onOpen} />
+      ) : null}
+      {own && open ? (
+        <ConsentForm busy={busy} submitLabel="Send and share my details after confirmation" onClose={onClose} onSubmit={(consent) => onSubmit(own, consent)} />
+      ) : null}
+    </View>
+  );
+}
+
+/** Edits keep the kind, direction and children; arrangements in progress block changes the backend rejects. */
+function RideEditForm({ ride, busy, onSave }: { ride: OwnRide; busy: boolean; onSave: (input: RideInput) => Promise<boolean> }) {
+  const [editing, setEditing] = useState(false);
+  const [area, setArea] = useState(ride.area);
+  const [seats, setSeats] = useState(String(ride.seats));
+  const [discoverable, setDiscoverable] = useState(ride.discoverable);
+  const [problem, setProblem] = useState('');
+  const label = `${ride.kind === 'offer' ? 'offer' : 'request'} ${RIDE_DIRECTION_LABELS[ride.direction].toLowerCase()} near ${ride.area}`;
+  if (!editing) {
+    return <SecondaryButton label={`Edit ${label}`} disabled={busy} onPress={() => {
+      setArea(ride.area); setSeats(String(ride.seats)); setDiscoverable(ride.discoverable); setProblem(''); setEditing(true);
+    }} />;
+  }
+  const save = async () => {
+    const count = Number(seats);
+    const issue = areaProblem(area)
+      ?? (ride.kind === 'offer' && (!Number.isInteger(count) || count < 1 || count > RIDE_SEATS_MAX) ? `Seats must be 1 through ${RIDE_SEATS_MAX}.` : null);
+    setProblem(issue ?? '');
+    if (issue) return;
+    const base = { direction: ride.direction, area: area.trim().replace(/\s+/g, ' '), discoverable };
+    const input: RideInput = ride.kind === 'offer'
+      ? { kind: 'offer', ...base, seats: count }
+      : { kind: 'need', ...base, participantIds: ride.participants.map((row) => row.participantId) };
+    if (await onSave(input)) setEditing(false);
+  };
+  return (
+    <View style={styles.form}>
+      <TextField accessibilityLabel={`Edit ${label}: meeting area`} value={area} onChangeText={setArea} maxLength={60} />
+      {ride.kind === 'offer' ? (
+        <TextField accessibilityLabel={`Edit ${label}: seats offered`} value={seats} onChangeText={setSeats} keyboardType="number-pad" maxLength={1} />
+      ) : null}
+      <ConsentCheckbox checked={discoverable} onToggle={() => setDiscoverable((value) => !value)}
+        label={<Text>Let other team families find this by area and seats (no names are shown)</Text>} />
+      {problem ? <Text accessibilityRole="alert" style={styles.error}>{problem}</Text> : null}
+      <PrimaryButton label="Save ride changes" loading={busy} onPress={() => void save()} />
+      <SecondaryButton label="Close edit form" disabled={busy} onPress={() => setEditing(false)} />
+    </View>
+  );
+}
+
 function rideTitle(ride: { kind: RideKind; direction: RideDirection; area: string }) {
   return `${ride.kind === 'offer' ? 'Seats offered' : 'Ride needed'}, ${RIDE_DIRECTION_LABELS[ride.direction].toLowerCase()}, near ${ride.area}`;
 }
@@ -306,6 +378,10 @@ function RidesPanel({ orgId, eventId, teamId }: Props) {
           {!ride.updatedByYou && ride.kind === 'need' ? <Text style={styles.copy}>{`Last changed by another guardian (version ${ride.revision}).`}</Text> : null}
           {ride.status === 'cancelled' ? <Text style={styles.state}>Cancelled</Text> : null}
           {ride.status === 'open' && ride.canEdit ? (
+            <RideEditForm ride={ride} busy={busy} onSave={(input) => run(`edit:${ride.rideId}:${ride.revision}:${JSON.stringify(input)}`,
+              (requestId) => saveRideRequest(orgId, eventId, teamId, ride.revision, { rideId: ride.rideId, ...input }, requestId), 'Ride updated.', 'Could not update the ride.')} />
+          ) : null}
+          {ride.status === 'open' && ride.canEdit ? (
             <SecondaryButton label={`Cancel ${ride.kind === 'offer' ? 'offer' : 'request'} ${RIDE_DIRECTION_LABELS[ride.direction].toLowerCase()} near ${ride.area}`} disabled={busy}
               onPress={() => void run(`cancel:${ride.rideId}:${ride.revision}`, (requestId) => saveRideRequest(orgId, eventId, teamId, ride.revision, { rideId: ride.rideId, action: 'cancel' }, requestId),
                 'Ride cancelled.', 'Could not cancel the ride.')} />
@@ -316,26 +392,13 @@ function RidesPanel({ orgId, eventId, teamId }: Props) {
       {!cancelled ? <>
         <Text style={styles.subheading}>Find a match</Text>
         {data.matches.length === 0 ? <Text style={styles.copy}>No other families have shared a matching ride yet.</Text> : null}
-        {data.matches.map((match) => {
-          const own = candidates(match)[0];
-          const formKey = `match:${match.rideId}`;
-          return (
-            <View key={match.rideId} style={styles.card}>
-              <Text style={styles.title}>{rideTitle(match)}</Text>
-              <Text style={styles.copy}>{rideSeatsLabel(match.kind, match.seats)}</Text>
-              {!own ? <Text style={styles.copy}>{match.kind === 'offer' ? 'Add a matching ride request first.' : 'Add a matching seat offer first.'}</Text> : null}
-              {own && consenting !== formKey ? (
-                <SecondaryButton label={match.kind === 'offer' ? `Ask for seats near ${match.area}` : `Offer to drive near ${match.area}`} disabled={busy} onPress={() => setConsenting(formKey)} />
-              ) : null}
-              {own && consenting === formKey ? (
-                <ConsentForm busy={busy} submitLabel="Send and share my details after confirmation" onClose={() => setConsenting(null)}
-                  onSubmit={(consent) => void run(`${formKey}:${own.rideId}:${JSON.stringify(consent)}`,
-                    (requestId) => confirmRideArrangement(orgId, eventId, teamId, target(match, own), consent, requestId),
-                    'Sent. Details are shared after the other adult confirms.', 'Could not send the ride request.')} />
-              ) : null}
-            </View>
-          );
-        })}
+        {data.matches.map((match) => (
+          <MatchCard key={match.rideId} match={match} candidates={candidates(match)} busy={busy} open={consenting === `match:${match.rideId}`}
+            onOpen={() => setConsenting(`match:${match.rideId}`)} onClose={() => setConsenting(null)}
+            onSubmit={(own, consent) => void run(`match:${match.rideId}:${own.rideId}:${JSON.stringify(consent)}`,
+              (requestId) => confirmRideArrangement(orgId, eventId, teamId, target(match, own), consent, requestId),
+              'Sent. Details are shared after the other adult confirms.', 'Could not send the ride request.')} />
+        ))}
         <RideForm data={data} busy={busy} onSave={(input) => run(`create:${JSON.stringify(input)}`,
           (requestId) => saveRideRequest(orgId, eventId, teamId, 0, input, requestId), 'Saved.', 'Could not save the ride.')} />
       </> : null}

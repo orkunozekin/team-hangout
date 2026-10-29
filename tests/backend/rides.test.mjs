@@ -168,10 +168,14 @@ test("opt-in discovery is sanitized and contacts reach only the two consenting a
   // No contact, pickup note or alias appears in public views, ride records or outbox intents.
   const exposed = JSON.stringify([await view("p39-gb"), coordinator, await ride(offerId), await ride(needId), await arrangement(arrangementId), await outbox()]);
   for (const secret of ["synthetic-p39", "Synthetic pickup"]) assert.equal(exposed.includes(secret), false, secret);
+  // One notice asks the driver to confirm the proposal, one tells the guardian it was confirmed.
   const intents = await outbox();
-  assert.equal(intents.length, 1);
-  assert.equal(intents[0].templateKey, "rideArrangementChanged");
-  assert.deepEqual(intents[0].audience.recipients, [{ uid: "p39-ga", accessSources: [{ kind: "household", teamId, participantId: "p39-a" }] }]);
+  assert.equal(intents.length, 2);
+  assert.ok(intents.every((row) => row.templateKey === "rideArrangementChanged"));
+  assert.deepEqual(intents.map((row) => row.audience.recipients).sort((a, b) => a[0].uid.localeCompare(b[0].uid)), [
+    [{ uid: "p39-coach", accessSources: [{ kind: "team", teamId }] }],
+    [{ uid: "p39-ga", accessSources: [{ kind: "household", teamId, participantId: "p39-a" }] }],
+  ]);
   assert.equal(JSON.stringify(intents).includes("Adult"), false);
 });
 
@@ -208,7 +212,7 @@ test("duplicate confirmations replay without reserving twice", async () => {
   assert.equal((await consent("p39-coach", { arrangementId: proposed.arrangementId })).state, "confirmed");
   assert.equal((await consent("p39-ga", { arrangementId: proposed.arrangementId })).state, "confirmed");
   assert.equal((await ride(offerId)).seatsReserved, 1);
-  assert.equal((await outbox()).length, 1);
+  assert.equal((await outbox()).length, 2);
 });
 
 test("guardian unlinking between request and confirmation blocks the ride and later contact access", async () => {
@@ -262,8 +266,10 @@ test("revoking consent frees seats, deletes contacts and notifies the other part
   assert.equal((await consent("p39-ga", { arrangementId })).state, "cancelled");
   await domain(consent("p39-ga2", { arrangementId }), "RIDE_NOT_ELIGIBLE");
   const cancelled = (await outbox()).filter((row) => row.audience.recipients[0].uid === "p39-coach");
-  assert.equal(cancelled.length, 1);
+  // The proposal notice plus one cancellation notice.
+  assert.equal(cancelled.length, 2);
   assert.deepEqual(cancelled[0].audience.recipients[0].accessSources, [{ kind: "team", teamId }]);
+  assert.equal(needRow.updatedBy, "p39-ga");
   // Unrelated adults cannot revoke; the designated coordinator can end an arrangement.
   const next = await consent("p39-ga", { offerId, needId });
   await deny(revoke("p39-gb", next.arrangementId));
@@ -315,10 +321,20 @@ test("ride notifications carry generic copy and skip a party who lost access", a
   for (const row of (await db.collection(`organizations/${scope.orgId}/outbox`).get()).docs) await worker.expandNotificationIntent(scope.orgId, row.id);
   const inbox = async (uid) => (await db.collection(`users/${uid}/notifications`).where("orgId", "==", scope.orgId).get()).docs.map((row) => row.data());
   const coach = await inbox("p39-coach");
-  assert.equal(coach.length, 1);
-  assert.deepEqual([coach[0].title, coach[0].body], ["Ride update", "Open Team Hangout for current details."]);
+  assert.equal(coach.length, 2);
+  for (const row of coach) assert.deepEqual([row.title, row.body], ["Ride update", "Open Team Hangout for current details."]);
   assert.equal(JSON.stringify(coach).includes("synthetic-"), false);
   // The rider's guardian link was revoked before the cancellation intent expanded.
   assert.equal((await inbox("p39-ga")).length, 0);
   for (const uid of ["p39-coach", "p39-ga"]) await db.recursiveDelete(db.collection(`users/${uid}/notifications`));
+});
+
+test("a driver's proposal notifies the guardian who saved the request", async () => {
+  const { rideId: offerId } = await offer("p39-coach");
+  const { rideId: needId } = await need("p39-gb", ["p39-b"]);
+  const { state } = await consent("p39-coach", { offerId, needId });
+  assert.equal(state, "pending");
+  assert.deepEqual((await outbox()).map((row) => row.audience.recipients), [[{ uid: "p39-gb", accessSources: [{ kind: "household", teamId, participantId: "p39-b" }] }]]);
+  const invite = (await view("p39-gb")).arrangements[0];
+  assert.deepEqual([invite.awaitingYou, invite.counterpartAlias, invite.participants], [true, "Adult coach", ["Synthetic p39-b"]]);
 });

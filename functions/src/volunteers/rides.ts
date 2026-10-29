@@ -138,12 +138,13 @@ function notify(tx: Transaction, row: Data, arrangementId: string, next: number,
   });
 }
 
-function flush(tx: Transaction, rows: (Loaded | null)[], uid: string, now: Timestamp) {
+/** Arrangement side effects bump the revision but keep updatedBy, which names the adult who last saved the ride. */
+function flush(tx: Transaction, rows: (Loaded | null)[], now: Timestamp) {
   for (const row of rows) {
     if (!row?.changed) continue;
     row.data.revision += 1;
     tx.update(row.ref, { activeCount: row.data.activeCount ?? null, seatsReserved: row.data.seatsReserved ?? null,
-      activeArrangementId: row.data.activeArrangementId ?? null, revision: row.data.revision, updatedAt: now, updatedBy: uid });
+      activeArrangementId: row.data.activeArrangementId ?? null, revision: row.data.revision, updatedAt: now });
   }
 }
 
@@ -217,7 +218,7 @@ export const saveRideRequest = command('saveRideRequest', data => {
       const need = kind === 'need' ? self : loaded.get(row.needId) ?? null;
       if (offer) closeArrangement(tx, doc.ref, row, offer, need, uid, kind === 'offer' ? 'driver' : 'rider', event, now);
     }
-    flush(tx, [...loaded.values()], uid, now);
+    flush(tx, [...loaded.values()], now);
     const next = current!.revision + 1;
     tx.update(ref, { status: 'cancelled', discoverable: false, activeArrangementId: null, activeCount: self.data.activeCount ?? null,
       seatsReserved: self.data.seatsReserved ?? null, revision: next, cancelledAt: now, updatedAt: now, updatedBy: uid });
@@ -324,6 +325,11 @@ export const confirmRideArrangement = command('confirmRideArrangement', data => 
     tx.set(ref.collection('contacts').doc(uid), contact);
     tx.update(offerRef, { activeCount: offer!.activeCount + 1, revision: offer!.revision + 1, updatedAt: now });
     tx.update(needRef, { activeArrangementId: ref.id, revision: need!.revision + 1, updatedAt: now });
+    // The other side must consent, so it hears about the proposal. A driver's proposal reaches the guardian who last
+    // saved the request; the worker rechecks that guardian's household access before anything is delivered.
+    notify(tx, side! === 'rider'
+      ? { orgId: team.orgId, eventId: data.eventId, teamId: data.teamId, driverUid: offer!.ownerUid, driverSource: driverSource(driver, data.teamId) }
+      : { orgId: team.orgId, eventId: data.eventId, teamId: data.teamId, riderUid: need!.updatedBy, riderSource }, ref.id, 1, uid, event, now);
     return { requestId: data.requestId, revision: 1, state: 'pending', arrangementId: ref.id };
   }
   if (arrangement.state !== 'pending') fail('RIDE_ARRANGEMENT_CLOSED', 'This ride arrangement was cancelled.');
@@ -372,7 +378,7 @@ export const revokeRideConsent = command('revokeRideConsent', data => {
   const need: Loaded | null = needDoc.exists ? { ref: needDoc.ref, data: { ...needDoc.data() } } : null;
   const now = Timestamp.now();
   closeArrangement(tx, ref, row!, offer, need, uid, by!, eventDoc.data() ?? {}, now);
-  flush(tx, offerDoc.exists ? [offer, need] : [need], uid, now);
+  flush(tx, offerDoc.exists ? [offer, need] : [need], now);
   return { requestId: data.requestId, revision: row!.revision + 1, state: 'cancelled', arrangementId: ref.id };
 });
 
