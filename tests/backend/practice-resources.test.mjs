@@ -238,7 +238,13 @@ test("plans snapshot versions, keep private notes private and block withdrawn or
   await domain(saveResource("p313-editor", { resourceId: other.resourceId, expectedRevision: current.revision + 1 }), "PRACTICE_RESOURCE_WITHDRAWN");
   assert.equal((await coachList("p313-coach")).items.some((row) => row.resourceId === other.resourceId), false);
   // Expiry of the recorded permission behaves like withdrawal for the plan already holding it.
-  await db.doc(`organizations/${scope.orgId}/practiceResources/${drill.resourceId}`).update({ "published.rights.expiresAt": Timestamp.fromMillis(Date.now() - 1000) });
+  // Simulate time passing beyond the recorded end of the version this plan holds.
+  const planRef = db.doc(`events/${eventId}/practicePlans/${teamId}`);
+  const stored = (await planRef.get()).data();
+  await planRef.update({ items: stored.items.map((row) => ({ ...row, rightsExpiresAt: Timestamp.fromMillis(Date.now() - 1000) })) });
+  const viewRef = planRef.collection("views").doc("household");
+  const view = (await viewRef.get()).data();
+  await viewRef.update({ items: view.items.map((row) => ({ ...row, rightsExpiresAt: Timestamp.fromMillis(Date.now() - 1000) })) });
   coach = await getPlan("p313-coach");
   assert.equal(coach.items[0].notice, "expired");
   const expiredView = await getPlan("p313-guardian", "p313-a");
@@ -252,4 +258,26 @@ test("plans snapshot versions, keep private notes private and block withdrawn or
   assert.equal((await getPlan("p313-guardian", "p313-a")).state, "unpublished");
   const notes = (await db.doc(`events/${eventId}/practicePlans/${teamId}/notes/plan`).get()).exists;
   assert.equal(notes, false);
+});
+
+test("a kept older version stays bound to its own permission after a newer version is cleared", async () => {
+  const expiresAt = new Date(Date.now() + 6000).toISOString();
+  const saved = await saveResource("p313-editor", { rightsExtra: { expiresAt } });
+  const approved = await approve("p313-reviewer", saved.resourceId, saved.revision);
+  const planned = await savePlan("p313-coach", 0, [{ resourceId: saved.resourceId, version: 1, plannedMinutes: 10 }]);
+  const published = await plan("p313-coach", planned.revision, { action: "publish" });
+  // Version 2 replaces the text with permission that does not expire.
+  const edit = await saveResource("p313-editor", { resourceId: saved.resourceId, expectedRevision: approved.revision, title: "Cleared rewrite" });
+  await approve("p313-reviewer", saved.resourceId, edit.revision);
+  assert.equal((await getPlan("p313-coach")).items[0].notice, "superseded");
+  await new Promise((resolve) => setTimeout(resolve, Math.max(0, Date.parse(expiresAt) - Date.now()) + 500));
+  assert.equal((await getPlan("p313-coach")).items[0].notice, "expired");
+  const household = await getPlan("p313-guardian", "p313-a");
+  assert.deepEqual(household.items[0], { title: "Passing gates", plannedMinutes: 10, notice: "expired" });
+  await domain(plan("p313-coach", published.revision, { action: "publish" }), "PRACTICE_RESOURCE_UNAVAILABLE");
+  await domain(savePlan("p313-coach", published.revision, [{ resourceId: saved.resourceId, version: 1, plannedMinutes: 12 }]), "PRACTICE_RESOURCE_UNAVAILABLE");
+  // Switching to the cleared version is allowed.
+  const switched = await savePlan("p313-coach", published.revision, [{ resourceId: saved.resourceId, version: 2, plannedMinutes: 12 }]);
+  assert.equal((await getPlan("p313-coach")).items[0].title, "Cleared rewrite");
+  assert.equal(switched.state, "published");
 });

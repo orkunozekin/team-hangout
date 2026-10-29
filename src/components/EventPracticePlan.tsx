@@ -30,10 +30,13 @@ function message(error: unknown, fallback: string) {
 }
 
 type Props = { orgId: string; eventId: string; teamId: string };
-type Draft = { resourceId: string; version: number; title: string; ageMin: number; ageMax: number; minutes: string; notice: PlanItem['notice'] };
+type Draft = Pick<PlanItem, 'resourceId' | 'version' | 'title' | 'ageMin' | 'ageMax' | 'equipment' | 'instructions' | 'safetyNotes' | 'attribution'>
+  & { minutes: string; notice: PlanItem['notice'] };
 
+/** Keeps the saved version's guidance so the coach can run the activity from the plan. */
 const toDraft = (item: PlanItem | CoachResource, minutes: number): Draft => ({
   resourceId: item.resourceId, version: item.version, title: item.title, ageMin: item.ageMin, ageMax: item.ageMax,
+  equipment: item.equipment, instructions: item.instructions, safetyNotes: item.safetyNotes, attribution: item.attribution,
   minutes: String(minutes), notice: 'notice' in item ? item.notice ?? null : null,
 });
 
@@ -160,6 +163,10 @@ function CoachPanel({ orgId, eventId, teamId, data, reload }: Props & { data: Co
           <Text style={styles.title}>{`${index + 1}. ${item.title}`}</Text>
           <Text style={styles.copy}>{`${ageLabel(item)} · Version ${item.version}`}</Text>
           {item.notice ? <Text accessibilityRole="alert" style={styles.warning}>{NOTICE_LABELS[item.notice]}</Text> : null}
+          {item.equipment.length ? <Text style={styles.copy}>{`Equipment: ${item.equipment.join(', ')}`}</Text> : null}
+          <Text style={styles.copy}>{item.instructions}</Text>
+          <Text style={styles.copy}>{`Safety: ${item.safetyNotes}`}</Text>
+          {item.attribution ? <Text style={styles.copy}>{`Source: ${item.attribution}`}</Text> : null}
           <TextField accessibilityLabel={`Minutes for ${item.title}`} value={item.minutes} onChangeText={(minutes) => update(index, { minutes })} keyboardType="number-pad" maxLength={3} />
           <SecondaryButton label={`Remove ${item.title}`} disabled={busy} onPress={() => setItems((rows) => rows.filter((_, i) => i !== index))} />
         </View>

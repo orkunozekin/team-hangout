@@ -25,9 +25,10 @@ const blank: Form = {
   title: "", objectives: "", ageMin: "", ageMax: "", durationMinutes: "", equipment: "", instructions: "", safetyNotes: "",
   origin: "original", owner: "", allowedUses: "", attribution: "", evidence: "", licenseUrl: "", expiresOn: "", derivativesAllowed: false,
 };
+/** Inverse of fromForm: the stored instant is the start of the day after the last permitted day. */
 const localDate = (iso: string | null) => {
   if (!iso) return "";
-  const at = new Date(iso);
+  const at = new Date(Date.parse(iso) - 1);
   return `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}`;
 };
 function toForm(detail: ResourceDetail | null): Form {

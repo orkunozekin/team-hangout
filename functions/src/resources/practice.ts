@@ -377,7 +377,10 @@ export const savePracticePlan = command('savePracticePlan', planEnvelope, async 
   const kept = new Map(((current?.items ?? []) as Data[]).map(item => [`${item.resourceId}:${item.version}`, item]));
   const blocked = items.filter(item => {
     const resource = found.get(item.resourceId);
-    if (!resource || resource.programId !== scope.programId || availability(resource, nowMs) !== 'available') return true;
+    if (!resource || resource.programId !== scope.programId) return true;
+    // Saved snapshots carry their version's permission end; a new item is checked against the live published rights.
+    const state = notice(resource, kept.get(`${item.resourceId}:${item.version}`) ?? item, nowMs);
+    if (state === 'withdrawn' || state === 'expired') return true;
     // A new activity must use the current published version; a kept one may keep its older snapshot.
     return data.action === 'save' && !kept.has(`${item.resourceId}:${item.version}`) && resource.published.version !== item.version;
   }).map(item => item.resourceId);
@@ -387,7 +390,8 @@ export const savePracticePlan = command('savePracticePlan', planEnvelope, async 
       const previous = kept.get(`${item.resourceId}:${item.version}`);
       if (previous) return { ...previous, plannedMinutes: item.plannedMinutes };
       const { content, rights, version } = found.get(item.resourceId)!.published;
-      return { resourceId: item.resourceId, version, ...content, attribution: rights.attribution ?? null, plannedMinutes: item.plannedMinutes };
+      // The snapshot keeps its own version's permission end so a later version cannot extend it.
+      return { resourceId: item.resourceId, version, ...content, attribution: rights.attribution ?? null, rightsExpiresAt: rights.expiresAt ?? null, plannedMinutes: item.plannedMinutes };
     });
     tx.set(ref, {
       schemaVersion: 2, orgId: scope.orgId, programId: scope.programId, seasonId: scope.seasonId, eventId: data.eventId,
@@ -408,6 +412,7 @@ export const savePracticePlan = command('savePracticePlan', planEnvelope, async 
       items: items.map(item => ({
         resourceId: item.resourceId, version: item.version, title: item.title, objectives: item.objectives, plannedMinutes: item.plannedMinutes,
         equipment: item.equipment, instructions: item.instructions, safetyNotes: item.safetyNotes, attribution: item.attribution ?? null,
+        rightsExpiresAt: item.rightsExpiresAt ?? null,
       })),
       publicationRevision: publication.publicationRevision, publishedAt: now,
     });
@@ -422,8 +427,11 @@ export const savePracticePlan = command('savePracticePlan', planEnvelope, async 
 /** Notice for a referenced resource that can no longer be assigned; its instructions are no longer shown to households. */
 function notice(resource: Data | undefined, item: Data, now: number) {
   const state = availability(resource, now);
-  if (state === 'available') return resource!.published.version === item.version ? null : 'superseded';
-  return state === 'unpublished' ? 'withdrawn' : state;
+  if (state === 'withdrawn' || state === 'unpublished') return 'withdrawn';
+  // The referenced version's own permission governs, even when a newer version is cleared.
+  if (expired({ expiresAt: item.rightsExpiresAt }, now)) return 'expired';
+  if (resource!.published.version !== item.version) return 'superseded';
+  return state === 'expired' ? 'expired' : null;
 }
 
 export const getEventPracticePlan = readCommand(data => {

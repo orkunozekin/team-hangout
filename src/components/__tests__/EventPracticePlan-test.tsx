@@ -53,6 +53,10 @@ test('a coach filters by age, sees the empty state, adds a resource and saves a 
   expect(await screen.findByText('Rondo')).toBeTruthy();
   await fireEvent.press(screen.getByRole('button', { name: 'Add Passing gates' }));
   expect(screen.getByRole('button', { name: 'Passing gates is in the plan' })).toBeTruthy();
+  // The coach sees the activity's steps, equipment and safety guidance in the plan.
+  expect(screen.getByText('Synthetic steps.')).toBeTruthy();
+  expect(screen.getByText('Equipment: Cones')).toBeTruthy();
+  expect(screen.getByText('Safety: Synthetic spacing.')).toBeTruthy();
   await fireEvent.changeText(screen.getByLabelText('Private coach note'), ' Private ');
   await fireEvent.press(screen.getByRole('button', { name: 'Save practice plan' }));
   await waitFor(() => expect(save).toHaveBeenCalledWith('o', 'e', 't', 0,
