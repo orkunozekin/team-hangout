@@ -2,8 +2,9 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text as NativeText, type TextProps, View } from 'react-native';
 
 import type { AttendanceCounts, ReportRun } from '../../shared/reports';
-import { formatRate, REPORT_STATE_LABELS, reportStatusNote } from '../../shared/reports';
-import { getReportRun, listTeamReports, reportRequestId, requestTeamAttendanceReport } from '../firebase/reports';
+import { formatRate, REPORT_EXPORT_NOTE, REPORT_STATE_LABELS, reportStatusNote } from '../../shared/reports';
+import { exportReport, getReportRun, listTeamReports, reportRequestId, requestTeamAttendanceReport } from '../firebase/reports';
+import { clearReportExports, shareReportCsv } from '../lib/reportExport';
 import { colors, radius, spacing, type } from '../theme/theme';
 import { SecondaryButton } from './ui';
 
@@ -22,6 +23,7 @@ function explain(error: unknown) {
   if (domainCode(error) === 'REPORTS_DISABLED') return 'Reports are not enabled for this organization.';
   if (errorCode(error) === 'functions/permission-denied') return 'Team summaries are available to this team’s coaches.';
   if (domainCode(error) === 'REPORT_QUEUE_FULL') return 'Several reports are already calculating. Try again shortly.';
+  if (domainCode(error) === 'REPORT_NOT_COMPLETE') return 'Only a complete summary can be exported.';
   return 'The summary could not be loaded. Try again.';
 }
 
@@ -56,7 +58,17 @@ export function TeamReportSummary({ orgId, programId, seasonId, teamId }: { orgI
   const request = useRef(0);
   const polls = useRef(0);
   const pending = useRef<{ key: string; id: string } | null>(null);
-  useEffect(() => () => { live.current = false; }, []);
+  const [exporting, setExporting] = useState(false);
+  const [exportNote, setExportNote] = useState('');
+  const exportSeq = useRef(0);
+  const shownRun = useRef<string | null>(null);
+  shownRun.current = run?.runId ?? null;
+  // Files from an interrupted earlier share are removed when the summary opens and closes.
+  useEffect(() => {
+    live.current = true;
+    clearReportExports();
+    return () => { live.current = false; clearReportExports(); };
+  }, []);
   const current = (seq: number) => live.current && seq === request.current;
 
   const show = useCallback(async (runId: string) => {
@@ -96,6 +108,7 @@ export function TeamReportSummary({ orgId, programId, seasonId, teamId }: { orgI
   const update = async () => {
     setBusy(true);
     setError('');
+    setExportNote('');
     const today = new Date();
     const from = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 29);
     const dates = { fromDate: localDay(from), toDate: localDay(today) };
@@ -114,6 +127,34 @@ export function TeamReportSummary({ orgId, programId, seasonId, teamId }: { orgI
     }
   };
 
+  const exportCsv = async (runId: string) => {
+    const seq = ++exportSeq.current;
+    const still = () => live.current && seq === exportSeq.current && shownRun.current === runId;
+    setExporting(true);
+    setExportNote('');
+    setError('');
+    try {
+      const file = await exportReport(orgId, runId);
+      // A response for a run that is no longer shown is dropped rather than shared.
+      if (!still()) return;
+      let outcome;
+      try {
+        outcome = await shareReportCsv(file, 'Share attendance summary');
+      } catch {
+        if (still()) setError('The CSV could not be shared. Try again.');
+        return;
+      }
+      if (!still()) return;
+      setExportNote(outcome === 'unavailable'
+        ? 'Sharing is not available on this device.'
+        : `Share sheet closed. ${file.rowCount} team ${file.rowCount === 1 ? 'row' : 'rows'}${file.stale ? ' from a stale snapshot' : ''}; the temporary file was deleted.`);
+    } catch (reason) {
+      if (still()) setError(explain(reason));
+    } finally {
+      if (live.current && seq === exportSeq.current) setExporting(false);
+    }
+  };
+
   const note = run ? reportStatusNote(run) : null;
   return (
     <View style={styles.section} accessibilityLabel="Team attendance summary">
@@ -125,7 +166,14 @@ export function TeamReportSummary({ orgId, programId, seasonId, teamId }: { orgI
         <>
           <Text style={styles.copy}>{`${run.filters.fromDate} to ${run.filters.toDate} (${run.interval.timeZone}) · ${REPORT_STATE_LABELS[run.state]}${run.stale ? ', stale' : ''}`}</Text>
           {note ? <Text accessibilityRole="alert" style={run.state === 'failed' ? styles.error : styles.pending}>{note}</Text> : null}
-          {run.state === 'complete' && run.summary ? <Summary run={run} /> : null}
+          {run.state === 'complete' && run.summary ? (
+            <>
+              <Summary run={run} />
+              <Text style={styles.copy}>{REPORT_EXPORT_NOTE}</Text>
+              {exportNote ? <Text accessibilityRole="alert" style={styles.copy}>{exportNote}</Text> : null}
+              <SecondaryButton label={exporting ? 'Preparing CSV...' : 'Share CSV'} onPress={() => void exportCsv(run.runId)} disabled={exporting} />
+            </>
+          ) : null}
         </>
       ) : null}
       {loaded ? <SecondaryButton label={busy ? 'Requesting...' : 'Update last 30 days'} onPress={() => void update()} disabled={busy} /> : null}

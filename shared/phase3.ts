@@ -7,6 +7,7 @@ export type Phase3Capability =
   | "playingTime.manage"
   | "practicePlans.manage"
   | "practiceResources.manage"
+  | "reports.export"
   | "reports.viewOrganization"
   | "reports.viewTeam"
   | "results.finalize"
@@ -200,6 +201,8 @@ export function resolvePhase3Capabilities(
     result.add("competition.manage");
     result.add("results.finalize");
     result.add("reports.viewOrganization");
+    // Exports carry the same aggregate rows as the view, never participant-level records.
+    result.add("reports.export");
     result.add("practiceResources.manage");
     if (admin) result.add("rollover.manage");
   }
@@ -217,6 +220,7 @@ export function resolvePhase3Capabilities(
       result.add("playingTime.manage");
       result.add("practicePlans.manage");
       result.add("reports.viewTeam");
+      result.add("reports.export");
       result.add("results.propose");
       result.add("volunteers.manage");
     }

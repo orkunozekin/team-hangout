@@ -12,6 +12,7 @@ import {
   AttendanceEventInput, AvailabilityVersion, BookingInput, RecordedAttendance, reduceAttendance, reduceFacility,
   REPORT_REDUCER_VERSION, ReportInputError, reportInterval, ResourceInput,
 } from './reducers';
+import { REPORT_EXPORT_VERSION, reportCsv } from './csv';
 
 const db = () => getFirestore();
 /** Filter and output contract version. */
@@ -590,6 +591,31 @@ export const getReportRun = readCommand(data => {
   });
   const lastPosition = rows.docs.at(-1)?.data().position;
   return { run: publicRun(run), rows: items, nextCursor: rows.size === ROW_PAGE && lastPosition < run.rowCount ? String(lastPosition) : null };
+});
+
+/**
+ * Export uses the same live grant check as viewing (reports.export follows reports.viewOrganization and
+ * reports.viewTeam), is rechecked on every call, and serializes only the rows of the attempt that completed
+ * the run. Rows are aggregate counts; the CSV columns are an allowlist, so nothing else stored can leak.
+ */
+export const exportReport = readCommand(data => {
+  keys(data, ['orgId', 'runId']);
+  return { orgId: id(data.orgId, 'orgId'), runId: id(data.runId, 'runId') };
+}, async (tx, data, uid) => {
+  const run = await loadRun(tx, data.orgId, data.runId);
+  await authorize(tx, data.orgId, uid, run.filters);
+  if (run.state !== 'complete' || !Number.isSafeInteger(run.completedAttempt)) {
+    throw new HttpsError('failed-precondition', 'Only a complete report can be exported.', { domainCode: 'REPORT_NOT_COMPLETE' });
+  }
+  const prefix = rowId(run.completedAttempt, 0).slice(0, 3);
+  const rows = await tx.get(runRef(data.orgId, data.runId).collection('rows').orderBy(FieldPath.documentId())
+    .startAfter(prefix).endBefore(`${prefix.slice(0, 2)}.`).limit(REPORT_LIMITS.rows + 1));
+  // A file must match its snapshot exactly; a short or oversized read is never exported.
+  if (rows.size !== run.rowCount || rows.size > REPORT_LIMITS.rows) {
+    throw new HttpsError('unavailable', 'This report could not be exported. Try again.', { domainCode: 'REPORT_EXPORT_UNAVAILABLE' });
+  }
+  const file = reportCsv({ ...publicRun(run), completedAt: iso(run.completedAt), sourceCutoff: iso(run.sourceCutoff) }, rows.docs.map(doc => doc.data()));
+  return { runId: run.runId, kind: run.kind, exportVersion: REPORT_EXPORT_VERSION, stale: run.stale === true, mimeType: 'text/csv', ...file };
 });
 
 /**

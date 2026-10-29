@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { createRequire } from "node:module";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 const require = createRequire(new URL("../../functions/package.json", import.meta.url));
 const { initializeApp, deleteApp } = require("firebase-admin/app");
@@ -110,6 +110,19 @@ test("staff run an attendance report, see missingness and denominators, then reb
   // The stale snapshot keeps its recorded figures.
   await expect(summary).toContainText("4 of 6");
   await capture(page, "reports-attendance-stale");
+  // The CSV is the stale snapshot as recorded, labeled stale, with its run, versions and filters.
+  const downloading = page.waitForEvent("download");
+  await detail.getByRole("button", { name: "Download CSV" }).click();
+  const download = await downloading;
+  expect(download.suggestedFilename()).toMatch(/^team-hangout-attendance-2026-04-01-to-2026-04-30-[A-Za-z0-9_-]+\.csv$/);
+  const csv = await readFile((await download.path())!, "utf8");
+  for (const line of ['"stale","true"', '"staleReason","attendanceCorrected"', '"filter.programId","youth-soccer"', '"filter.fromDate","2026-04-01"', '"timeZone","America/Chicago"', '"exportVersion","1"']) {
+    expect(csv).toContain(line);
+  }
+  expect(csv).toContain('"summary","","All teams","9","3","1","2","1","1","1"');
+  expect(csv).not.toContain("Synthetic h1");
+  await expect(detail.getByText(/^Downloaded team-hangout-attendance-.* with 2 rows plus the summary, from a stale snapshot\.$/)).toBeVisible();
+  await capture(page, "reports-export-download");
   await detail.getByRole("button", { name: "Rebuild from current records" }).click();
   const rebuilt = page.getByRole("region", { name: "Report detail" });
   await expect(rebuilt.getByRole("status")).toContainText("Complete.", { timeout: 30000 });

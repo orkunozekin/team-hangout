@@ -108,6 +108,7 @@ test("named capabilities remain scoped and revocation removes coaching authority
       "coaching.manage",
       "playingTime.manage",
       "practicePlans.manage",
+      "reports.export",
       "reports.viewTeam",
       "results.propose",
       "volunteers.manage",
@@ -118,6 +119,7 @@ test("named capabilities remain scoped and revocation removes coaching authority
     [
       "competition.manage",
       "practiceResources.manage",
+      "reports.export",
       "reports.viewOrganization",
       "results.finalize",
       "rollover.manage",
@@ -128,6 +130,7 @@ test("named capabilities remain scoped and revocation removes coaching authority
     [
       "competition.manage",
       "practiceResources.manage",
+      "reports.export",
       "reports.viewOrganization",
       "results.finalize",
     ],

@@ -240,6 +240,48 @@ test("team coaches see only their team, and staff need program scope", async () 
   await assert.rejects(request("r10-admin", { ...march, fromDate: "2026-01-01", toDate: "2027-01-02" }), { code: "functions/invalid-argument" });
 });
 
+test("exports serialize only a complete snapshot through the same live grants, neutralizing formulas", async () => {
+  const exportOf = (uid, runId) => call(uid, "exportReport", { orgId, runId });
+  const queued = await request("r10-admin", march);
+  await assert.rejects(exportOf("r10-admin", queued.runId), (error) => error.code === "functions/failed-precondition" && error.details?.domainCode === "REPORT_NOT_COMPLETE");
+  const run = await built(queued.runId);
+  // Stored rows may carry more than the allowlisted columns; a spreadsheet formula in a label is neutralized.
+  const rowRef = db.doc(`${runPath(queued.runId)}/rows/${String(run.completedAttempt).padStart(2, "0")}-0001`);
+  const original = (await rowRef.get()).data();
+  await rowRef.update({ label: "=HYPERLINK(\"https://example.test\")", displayName: "Synthetic p1", notes: "Private note", contact: "guardian@example.test" });
+  const file = await exportOf("r10-admin", queued.runId);
+  assert.equal(file.runId, queued.runId);
+  assert.equal(file.rowCount, run.rowCount);
+  assert.equal(file.mimeType, "text/csv");
+  assert.match(file.fileName, /^team-hangout-attendance-2026-03-01-to-2026-03-31-/);
+  for (const line of [`"runId","${queued.runId}"`, '"reportVersion","1"', '"filter.programId","r10-program"', '"filter.teamId",""', '"intervalStartsAt","2026-03-01T05:00:00.000Z"', '"stale","false"']) {
+    assert.ok(file.csv.includes(line), line);
+  }
+  assert.ok(file.csv.includes('"\'=HYPERLINK(""https://example.test"")"'));
+  assert.ok(file.csv.includes('"summary","","All teams","9","2","1","2","1","1","2"'));
+  assert.ok(!/Synthetic p|Private note|guardian@example/.test(file.csv), "restricted fields never reach the file");
+  await rowRef.set(original);
+
+  // Coaches export their own team run only; revoked, captain, other-program and foreign users are denied.
+  const teamRun = await request("r10-coach", { ...march, teamId: "r10-a" });
+  await built(teamRun.runId);
+  assert.equal((await exportOf("r10-coach", teamRun.runId)).rowCount, 1);
+  await deny(exportOf("r10-coach", queued.runId));
+  for (const uid of ["r10-captain", "r10-revoked", "r10-other-staff", "r10-foreign"]) await deny(exportOf(uid, teamRun.runId));
+  await db.doc("teamMembers/r10-a_r10-coach").update({ status: "revoked" });
+  await deny(exportOf("r10-coach", teamRun.runId));
+  await db.doc("teamMembers/r10-a_r10-coach").update({ status: "active" });
+
+  // A range with no events exports the summary and no rows; a file never disagrees with its snapshot.
+  const empty = await request("r10-admin", { ...march, fromDate: "2026-02-01", toDate: "2026-02-02" });
+  const emptyRun = await built(empty.runId);
+  const emptyFile = await exportOf("r10-admin", empty.runId);
+  assert.equal(emptyFile.rowCount, emptyRun.rowCount);
+  assert.ok(emptyFile.csv.includes('"rowKind","teamId","team"'));
+  await db.doc(runPath(empty.runId)).update({ rowCount: emptyRun.rowCount + 1 });
+  await assert.rejects(exportOf("r10-admin", empty.runId), (error) => error.code === "functions/unavailable" && error.details?.domainCode === "REPORT_EXPORT_UNAVAILABLE");
+});
+
 test("a correction marks the snapshot stale and a rebuild produces a new run without editing the old one", async () => {
   const { runId } = await request("r10-admin", march);
   const first = await built(runId);

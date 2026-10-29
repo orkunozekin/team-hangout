@@ -56,10 +56,22 @@ export type ReportRun = {
 export type ReportRow =
   | ({ kind: "team"; teamId: string; label: string } & AttendanceCounts)
   | ({ kind: "resource"; resourceId: string; label: string } & FacilityCounts);
+/** A complete run serialized server-side; columns are versioned and figures come only from the snapshot. */
+export type ReportExport = {
+  runId: string;
+  kind: ReportKind;
+  exportVersion: number;
+  stale: boolean;
+  mimeType: "text/csv";
+  fileName: string;
+  csv: string;
+  rowCount: number;
+};
 export type ReportCommands = {
   requestReport: { input: { requestId: string; orgId: string; filters: ReportFilters }; output: { runId: string; state: ReportState } };
   rebuildReport: { input: { requestId: string; orgId: string; runId: string }; output: { runId: string; state: ReportState } };
   getReportRun: { input: { orgId: string; runId: string; cursor?: string | null }; output: { run: ReportRun; rows: ReportRow[]; nextCursor: string | null } };
+  exportReport: { input: { orgId: string; runId: string }; output: ReportExport };
   listReportRuns: {
     input: { orgId: string; programId?: string | null; teamId?: string | null; cursor?: string | null };
     output: { items: ReportRun[]; nextCursor: string | null };
@@ -108,3 +120,5 @@ export function reportStatusNote(run: Pick<ReportRun, "state" | "stale" | "stale
   if (run.stale) return "Source records changed after this report was calculated. Rebuild it to see current figures; this snapshot stays as recorded.";
   return null;
 }
+
+export const REPORT_EXPORT_NOTE = "Exports contain aggregate counts only. Participant names, contacts and coaching notes are never included.";
