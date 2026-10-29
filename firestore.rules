@@ -147,6 +147,8 @@ service cloud.firestore {
     // live orgAdmin or assigned programStaff grants, and proposeResult/getEventResults recheck the active side coach.
     // Results, rules versions and history are backend-written. Step 6 standings generations and rows are backend-written by
     // the rebuild worker and read only through getStandings/getEventStandings, which recheck staff or team viewer access.
+    // Step 7 bracket nodes and bracket history are backend-written by publishBracket/linkBracketEvent/finalizeResult/
+    // correctResult/correctBracket and read only through getBracket/getEventBracket.
     match /organizations/{orgId}/competitions/{competitionId}/{document=**} {
       allow read, write: if false;
     }

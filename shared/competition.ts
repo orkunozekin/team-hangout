@@ -150,6 +150,95 @@ export type EventStandings = {
   standings: StandingsView | null;
 };
 
+/** Keep aligned with functions/src/competition/bracket.ts and brackets.ts. A bye has no match, score, attendance or booking. */
+export type BracketNodeState = "bye" | "waiting" | "ready" | "scheduled" | "decided";
+export type BracketTeam = { teamId: string; name: string; seed: number | null };
+export type BracketNodeView = {
+  nodeId: string;
+  round: number;
+  index: number;
+  state: BracketNodeState;
+  bye: boolean;
+  teams: (BracketTeam | null)[];
+  eventId: string | null;
+  eventStartsAt: string | null;
+  /** The linked match began but has no final winner yet (delayed or void result). */
+  winnerPending: boolean;
+  winnerTeamId: string | null;
+  /** Played matches a reviewed correction invalidated. Their results stay in history. */
+  voidedPlays: { eventId: string; winnerTeamId: string | null; voidedAt: string }[];
+};
+export type BracketView = {
+  competitionId: string;
+  name: string;
+  format: CompetitionFormat;
+  bracketRevision: number;
+  bracket: {
+    bracketId: string;
+    size: number;
+    rounds: number;
+    teamCount: number;
+    source: { competitionId: string; name: string; generationId: string; sourceRevision: number } | null;
+    override: { reason: string } | null;
+    publishedAt: string;
+    updatedAt: string;
+  } | null;
+  nodes: BracketNodeView[];
+};
+export type BracketPreview = {
+  competitionId: string;
+  bracketRevision: number;
+  published: boolean;
+  locked: boolean;
+  source: { competitionId: string; name: string; generationId: string; sourceRevision: number } | null;
+  previewHash: string;
+  blocked: "SEED_ORDER_REQUIRED" | "SEED_TIE_UNRESOLVED" | null;
+  unresolvedTies: { teamId: string; name: string }[][];
+  seeds: { seed: number; teamId: string; name: string }[];
+  nodes: BracketNodeView[];
+};
+export type BracketCorrectionPreview = {
+  eventId: string;
+  resultRevision: number;
+  bracketRevision: number;
+  rounds: number;
+  nodeId: string | null;
+  previousWinnerTeamId: string | null;
+  winnerTeamId: string | null;
+  affected: { nodeId: string; round: number; index: number; eventId: string | null; winnerTeamId: string | null; started: boolean }[];
+  invalidatedNodeIds: string[];
+  requiresConfirmation: boolean;
+};
+export type EventBracket = {
+  orgId: string;
+  eventId: string;
+  teamId: string;
+  competitions: { competitionId: string; name: string }[];
+  bracket: BracketView | null;
+};
+type SeedOverride = { teamIds: string[]; reason: string } | null;
+
+export function roundLabel(round: number, rounds: number): string {
+  if (round === rounds) return "Final";
+  if (round === rounds - 1) return "Semifinals";
+  if (round === rounds - 2) return "Quarterfinals";
+  return `Round ${round}`;
+}
+
+/** Plain-language status for one bracket game. */
+export function bracketNodeStatus(node: BracketNodeView, names: (teamId: string) => string): string {
+  const replay = node.voidedPlays.length && node.state !== "decided"
+    ? ` ${node.voidedPlays.length === 1 ? "A played match was" : `${node.voidedPlays.length} played matches were`} invalidated by a reviewed correction; this game needs a new match.`
+    : "";
+  switch (node.state) {
+    case "bye": return `${names(node.winnerTeamId!)} advances on a bye. No game is played.`;
+    case "decided": return `${names(node.winnerTeamId!)} advanced.`;
+    case "waiting": return `Waiting for earlier winners.${replay}`;
+    case "ready": return `Both teams known. No match linked yet.${replay}`;
+    case "scheduled": return node.winnerPending ? "Winner unresolved. Waiting for a final result." : "Match linked.";
+  }
+}
+
 type Envelope<P> = { requestId: string; orgId: string; resourceId: string; expectedRevision: number; payload: P };
 export type CompetitionCommands = {
   saveCompetitionRules: {
@@ -170,6 +259,18 @@ export type CompetitionCommands = {
   listCompetitions: { input: { orgId: string; programId: string }; output: { competitions: CompetitionSummary[] } };
   getCompetition: { input: { orgId: string; competitionId: string; cursor?: string }; output: CompetitionDetail };
   getStandings: { input: { orgId: string; competitionId: string; generationId?: string; cursor?: string }; output: StandingsView };
+  previewBracket: { input: { orgId: string; competitionId: string; sourceCompetitionId: string | null; seedOverride: SeedOverride }; output: BracketPreview };
+  publishBracket: {
+    input: Envelope<{ sourceCompetitionId: string | null; generationId: string | null; sourceRevision: number | null; seedOverride: SeedOverride; previewHash: string }>;
+    output: { requestId: string; revision: number; state: "published"; bracketId: string; operationId: string };
+  };
+  linkBracketEvent: { input: Envelope<{ nodeId: string; eventId: string }>; output: { requestId: string; revision: number; state: "scheduled" | "decided"; operationId: string } };
+  getBracket: { input: { orgId: string; competitionId: string }; output: BracketView };
+  previewBracketCorrection: { input: { orgId: string; competitionId: string; eventId: string; result: ResultValues }; output: BracketCorrectionPreview };
+  correctBracket: {
+    input: Envelope<{ eventId: string; resultRevision: number; result: ResultValues; reason: string; invalidatedNodeIds: string[] }>;
+    output: ResultMutation & { bracketRevision?: number };
+  };
 };
 
 export const STANDINGS_STATUS_LABELS: Record<StandingsStatus, string> = {

@@ -771,3 +771,20 @@ button { overflow-wrap: anywhere; }
 .pilot-flag { border: 1px solid #d5e2dc; border-radius: 999px; padding: 8px 12px; background: white; }
 .pilot-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 .pilot-actions label { display: flex; gap: 8px; align-items: center; min-height: 44px; }
+
+.bracket { display: flex; gap: 16px; overflow-x: auto; padding-bottom: 8px; }
+.bracket-round { min-width: 220px; flex: 1 0 220px; }
+.bracket-round h3 { margin: 0 0 8px; font-size: 1rem; }
+.bracket-round > ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; justify-content: space-around; gap: 12px; height: calc(100% - 32px); }
+.bracket-node { border: 1px solid #d0d5dd; border-radius: 8px; padding: 10px; background: #fff; }
+.bracket-node.bye { border-style: dashed; }
+.bracket-node.pending { border-color: #b54708; }
+.bracket-node.decided { border-color: #027a48; }
+.bracket-teams { list-style: none; margin: 0; padding: 0; }
+.bracket-teams li { padding: 2px 0; }
+.bracket-teams li.winner { font-weight: 700; }
+.bracket-teams .seed { display: inline-block; min-width: 1.6em; font-size: 0.8rem; color: #475467; }
+.bracket-status { margin: 6px 0 0; font-size: 0.9rem; }
+.bracket-node form { margin-top: 8px; }
+.seed-order li { margin: 4px 0; }
+.bracket-impact { margin-top: 12px; }

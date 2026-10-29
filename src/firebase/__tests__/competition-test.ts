@@ -7,7 +7,7 @@ jest.mock("firebase/functions", () => ({
 jest.mock("../commands", () => ({
   runCommand: (...args: unknown[]) => mockRun(...args),
 }));
-import { getEventResults, getEventStandings, proposeResult } from "../competition";
+import { getEventBracket, getEventResults, getEventStandings, proposeResult } from "../competition";
 
 test("event results read only the event and coaching team", async () => {
   mockRead.mockResolvedValue({ data: { competitions: [] } });
@@ -33,4 +33,13 @@ test("event standings send only the viewer scope and optional paging pins", asyn
   expect(mockRead).toHaveBeenLastCalledWith({ eventId: "e", teamId: "t" });
   await getEventStandings("e", "t", { competitionId: "c", generationId: "g", cursor: "0050" });
   expect(mockRead).toHaveBeenLastCalledWith({ eventId: "e", teamId: "t", competitionId: "c", generationId: "g", cursor: "0050" });
+});
+
+test("event bracket reads only the event, team and optional competition", async () => {
+  mockRead.mockResolvedValue({ data: { competitions: [], bracket: null } });
+  await getEventBracket("e", "t");
+  expect(mockCallable).toHaveBeenLastCalledWith(expect.anything(), "getEventBracket");
+  expect(mockRead).toHaveBeenLastCalledWith({ eventId: "e", teamId: "t" });
+  await getEventBracket("e", "t", "c");
+  expect(mockRead).toHaveBeenLastCalledWith({ eventId: "e", teamId: "t", competitionId: "c" });
 });
