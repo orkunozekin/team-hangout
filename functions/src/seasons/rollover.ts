@@ -7,6 +7,7 @@ import { command, Data, id, invalid, keys, object, text } from '../commandSuppor
 import { readCommand } from '../participants/policy';
 import { denied, hierarchy, staffScope } from '../operations/access';
 import { audit } from '../organizations/commands';
+import { accountAvailable } from '../accountAccess';
 
 const db = () => getFirestore();
 /** Preview contract version; part of every preview hash. */
@@ -37,7 +38,7 @@ const rejected = (code: string, message: string): never => { throw new HttpsErro
 
 function localDate(value: unknown, field: string): string {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)
-    || new Date(`${value}T00:00:00.000Z`).toISOString().slice(0, 10) !== value) invalid(`Invalid ${field}.`);
+    || !Number.isFinite(Date.parse(`${value}T00:00:00.000Z`)) || new Date(`${value}T00:00:00.000Z`).toISOString().slice(0, 10) !== value) invalid(`Invalid ${field}.`);
   return value as string;
 }
 function normalize(data: Data) {
@@ -221,10 +222,12 @@ export const listRolloverJobs = readCommand(data => {
 
 /** The worker acts for the job's current actor, so a revoked grant or disabled feature stops it at the next chunk. */
 async function actorStillAllowed(tx: Transaction, job: Data) {
+  // An account being deleted loses access at once, before its organization grant is cleaned up.
+  const available = await accountAvailable(tx, job.actorUid).then(() => true, () => false);
   const [org, member, program] = await tx.getAll(db().doc(`organizations/${job.orgId}`),
     db().doc(`organizations/${job.orgId}/members/${job.actorUid}`), db().doc(`organizations/${job.orgId}/programs/${job.programId}`));
   const grant = member.data();
-  if (org.data()?.features?.rollover !== true || org.data()?.features?.organizationV2 !== true || grant?.status !== 'active'
+  if (!available || org.data()?.features?.rollover !== true || org.data()?.features?.organizationV2 !== true || grant?.status !== 'active'
     || grant.orgId !== job.orgId || !Array.isArray(grant.roles) || !grant.roles.includes('orgAdmin')) {
     throw new RolloverStop('ROLLOVER_ACCESS_REVOKED', 'The administrator who started this rollover no longer has access. Another administrator can resume it.');
   }

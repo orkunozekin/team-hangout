@@ -63,6 +63,15 @@ test.beforeAll(async () => {
     await db.doc(`teams/${id}`).set({ ...meta, status, orgId, programId, seasonId: "fall", divisionId, name, sport: "soccer", inviteCode: null });
   }
   await db.doc(`teamMembers/hawks_${owner}`).set({ ...meta, orgId, teamId: "hawks", userId: owner, roles: ["coach"] });
+  // Twenty newer completed jobs push the stopped one onto the second page of the list.
+  for (let n = 0; n < 20; n++) {
+    await db.doc(`organizations/${orgId}/rolloverJobs/done-${n}`).set({
+      schemaVersion: 2, revision: 2, orgId, jobId: `done-${n}`, programId, sourceSeasonId: "fall", targetSeasonId: `old-${n}`, state: "complete",
+      target: { name: `Archive ${n}`, startsOn: "2026-12-01", endsOn: "2027-02-28" }, previewHash: "1".repeat(64),
+      counts: { divisions: 1, excludedDivisions: 0, teams: 1, excludedTeams: 0 }, created: { divisions: 1, teams: 1 }, chunkCount: 1, nextChunk: 1,
+      attempts: 1, createdAt: Timestamp.fromDate(new Date(Date.UTC(2026, 9, 2 + n))), failure: null,
+    });
+  }
   // An earlier rollover that stopped after its first checkpoint when its administrator lost access.
   await db.doc(`organizations/${orgId}/rolloverJobs/stopped`).set({
     schemaVersion: 2, revision: 1, orgId, jobId: "stopped", programId, sourceSeasonId: "fall", targetSeasonId: "hidden", state: "failed",

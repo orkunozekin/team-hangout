@@ -129,6 +129,7 @@ test("rollover callables require a live organization administrator in the same t
   }
   await domain(call("r12-off-admin", "previewRollover", { ...input("Off"), orgId: "r12-off" }), "ROLLOVER_DISABLED");
   await assert.rejects(call("r12-admin", "previewRollover", input("Bad", ["r12-not-in-season"])), { code: "functions/invalid-argument" });
+  await assert.rejects(call("r12-admin", "previewRollover", { ...input("Bad"), target: { ...target("Bad"), startsOn: "2027-13-01" } }), { code: "functions/invalid-argument" });
 });
 
 test("preview lists exclusions and never-copied records; a source edit rejects the stale preview", async () => {
@@ -256,6 +257,24 @@ test("revoking the running administrator stops the job visibly until another adm
     assert.equal((await db.collection("teams").where("seasonId", "==", job.targetSeasonId).get()).size, 201);
   } finally {
     await db.doc(`organizations/${orgId}/members/r12-admin-2`).update({ status: "active" });
+    await triggers(true);
+  }
+});
+
+test("an acting administrator whose account is being deleted stops the job", async () => {
+  await triggers(false);
+  try {
+    const preview = await call("r12-admin-2", "previewRollover", input("Late 2027"));
+    const { job } = await commit("r12-admin-2", preview, "Late 2027");
+    // Deletion removes app access before the organization grant is cleaned up.
+    await db.doc("accountDeletionJobs/r12-admin-2").set({ uid: "r12-admin-2", state: "pending" });
+    assert.equal((await worker.runRolloverJob(orgId, job.jobId)).state, "failed");
+    const row = (await db.doc(`organizations/${orgId}/rolloverJobs/${job.jobId}`).get()).data();
+    assert.equal(row.failure.code, "ROLLOVER_ACCESS_REVOKED");
+    assert.equal(row.nextChunk, 0);
+    assert.equal((await db.collection("teams").where("seasonId", "==", job.targetSeasonId).get()).size, 0);
+  } finally {
+    await db.doc("accountDeletionJobs/r12-admin-2").delete();
     await triggers(true);
   }
 });

@@ -75,9 +75,10 @@ export function Rollover({ services, orgId }: { services: BrowserServices; orgId
   const loadJobs = useCallback(async () => {
     const seq = ++listSeq.current;
     try {
-      const page = await services.call("listRolloverJobs", { orgId });
+      // Every page, so an older stopped job keeps its Resume action.
+      const items = await allPages((cursor) => services.call("listRolloverJobs", { orgId, ...(cursor ? { cursor } : {}) }));
       // A slower earlier response never replaces a newer one.
-      if (seq === listSeq.current) setJobs(page.items);
+      if (seq === listSeq.current) setJobs(items);
     } catch (reason) {
       if (seq === listSeq.current) setError(message(reason));
     }
