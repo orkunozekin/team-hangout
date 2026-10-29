@@ -6,10 +6,10 @@ Turn the approved [product direction](../plans/product-plan.md#phase-3-coaching-
 
 | Field | Value |
 | --- | --- |
-| Status | in progress, Step 2 implemented locally |
+| Status | in review, Step 2 implemented in PR #50 |
 | Last updated | 2026-10-28 |
 | Source baseline | Team Hangout `0fade5c03a011e9c6a519844d381f098c2760b32` from `main` after Step 1 merged |
-| Related PR / branch | [PR #49](https://github.com/orkunozekin/team-hangout/pull/49) merged; Step 2 on `codex/phase-3-step-2` with PR pending |
+| Related PR / branch | [PR #49](https://github.com/orkunozekin/team-hangout/pull/49) merged; [PR #50](https://github.com/orkunozekin/team-hangout/pull/50) on `codex/phase-3-step-2` |
 | Dependencies | Phase 1 organization/participant/season authorization and Phase 2 canonical events, attendance, facilities, communications |
 | Commercial status | Business model selection pending; no feature paywall, fee, or entitlement approved |
 | Next implementation step | Review Step 2 only; Step 3 has not started |
@@ -290,7 +290,7 @@ Planning executed the 11 reference geometry/marker tests described above. Step 1
 
 ### Remaining work
 
-Step 2 is implemented locally and awaiting its regular PR, required GitHub Codex review, final-head CI and coordinator merge decision. Do not start Step 3 until Step 2 is merged and the user explicitly requests it. Each later explicit “implement the next step” request selects the next numbered incomplete step, not the whole phase.
+Step 2 is implemented in PR #50 and awaiting required GitHub Codex review, final-head CI and coordinator merge decision. Do not start Step 3 until Step 2 is merged and the user explicitly requests it. Each later explicit “implement the next step” request selects the next numbered incomplete step, not the whole phase.
 
 ### Blockers and risks
 
