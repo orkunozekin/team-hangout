@@ -95,7 +95,9 @@ function PublishedLineup({ eventId, teamId, participantId }: { eventId: string; 
       .catch((e) => {
         if (!live) return;
         const { kind, message } = lineupError(e);
-        setError(kind === 'denied' ? 'Lineup access is unavailable for this team.' : message.replace('Not saved. ', ''));
+        setError(kind === 'denied'
+          ? 'Lineup access is unavailable for this team.'
+          : kind === 'offline' ? 'Lineup unavailable while offline. Reconnect and reopen the lineup.' : message);
       });
     return () => { live = false; };
   }, [eventId, teamId, participantId]);

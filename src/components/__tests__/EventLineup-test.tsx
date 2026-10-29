@@ -138,3 +138,9 @@ test('unpublished lineups stay hidden and a denied coach falls back to the famil
   expect(await screen.findByText('The coach has not published a lineup for this event.')).toBeTruthy();
   expect(view).toHaveBeenCalledWith('e', 't', undefined);
 });
+
+test('an offline family view explains the outage without draft language', async () => {
+  view.mockRejectedValue({ code: 'functions/unavailable' });
+  await open({ canCoach: false, initiallyOpen: true });
+  expect(await screen.findByText('Lineup unavailable while offline. Reconnect and reopen the lineup.')).toBeTruthy();
+});
