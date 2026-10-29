@@ -542,9 +542,11 @@ export const reportAttendanceChanged = onDocumentWritten('events/{eventId}/atten
     writtenAt(event.data?.after.exists ? event.data.after : undefined, event.time));
 });
 
-/** Closures are created once when applied and never edited. */
-export const reportClosureChanged = onDocumentCreated('organizations/{orgId}/closures/{closureId}', async event => {
-  const row = event.data?.data();
+/** Applying a closure writes one schedule operation; the closure itself is never edited afterwards. */
+export const reportClosureChanged = onDocumentCreated('organizations/{orgId}/scheduleOperations/{operationId}', async event => {
+  const operation = event.data?.data();
+  if (operation?.action !== 'facilityClosure' || typeof operation.closureId !== 'string') return;
+  const row = (await db().doc(`organizations/${event.params.orgId}/closures/${operation.closureId}`).get()).data();
   if (!row || typeof row.facilityId !== 'string' || typeof row.startsAt !== 'string' || typeof row.endsAt !== 'string') return;
   await markReportsStale(event.params.orgId, 'facility', row.startsAt, row.endsAt, run => run.facilityId === row.facilityId, 'closureChanged', writtenAt(event.data, event.time));
 });

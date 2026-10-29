@@ -275,6 +275,8 @@ test("facility run matches the hand calculation for closures, conflicts, shared 
   const closure = db.doc(`organizations/${orgId}/closures/r10-closure-2`);
   await closure.set({ schemaVersion: 2, orgId, facilityId: "r10-f1", resourceIds: ["r10-r2"], status: "applied", revision: 1,
     startsAt: "2026-03-08T12:00:00.000Z", endsAt: "2026-03-08T13:00:00.000Z", reason: "Synthetic repair" });
+  await db.doc(`organizations/${orgId}/scheduleOperations/closure_r10-closure-2`).set({ schemaVersion: 2, orgId, operationId: "closure_r10-closure-2",
+    closureId: "r10-closure-2", action: "facilityClosure", startsAt: "2026-03-08T12:00:00.000Z", endsAt: "2026-03-08T13:00:00.000Z", state: "committed" });
   const stale = await settled(runId, (row) => row.stale === true);
   assert.equal(stale.staleReason, "closureChanged");
   await closure.delete();
