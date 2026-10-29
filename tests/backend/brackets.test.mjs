@@ -260,4 +260,10 @@ test("corrections clear unstarted descendants automatically and block started on
   assert.equal(audit.every((row) => row.reason === "Referee sheet corrected"), true);
   const view = await bracket("p37-four");
   assert.equal(view.nodes.find((row) => row.nodeId === "r2-01").voidedPlays.length, 1);
+
+  // Correcting back restores the invalidated pairing, but the voided final cannot be relinked to declare a winner.
+  await correct("correctResult", "p37-four", "p37-q1", played(0, 2));
+  assert.deepEqual((await node("p37-four", "r2-01")).teamIds, [D, B]);
+  await domain(link("p37-four", "r2-01", "p37-final"), "BRACKET_EVENT_VOIDED");
+  assert.equal((await node("p37-four", "r2-01")).winnerTeamId, null);
 });

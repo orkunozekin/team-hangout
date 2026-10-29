@@ -250,6 +250,10 @@ export const linkBracketEvent = command('linkBracketEvent', normalizeLinkBracket
   if (!node.teamIds[0] || !node.teamIds[1]) domain('BRACKET_NODE_WAITING', 'Both teams must be known before a match is linked.');
   if (node.winnerTeamId) domain('BRACKET_NODE_DECIDED', 'This game already has a winner. Correct its result instead.');
   if (node.eventId === data.eventId) domain('NO_CHANGE', 'This match is already linked.', 'invalid-argument');
+  // A match a reviewed correction invalidated must be replayed; relinking it would restore its old winner.
+  if (((row!.voidedPlays ?? []) as Data[]).some(play => play.eventId === data.eventId)) {
+    domain('BRACKET_EVENT_VOIDED', 'A reviewed correction invalidated this match for this game. Link a replay instead.');
+  }
   const { event, sides } = await competitionMatch(tx, competition, data.eventId);
   if (!node.teamIds.includes(sides.homeTeamId) || !node.teamIds.includes(sides.awayTeamId)) {
     domain('BRACKET_EVENT_MISMATCH', 'Link a match between the two teams in this bracket game.');

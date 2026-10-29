@@ -48,6 +48,7 @@ function LinkMatch({ services, orgId, detail, view, node, names, onDenied, onSav
 }) {
   const teamIds = node.teams.map((team) => team?.teamId);
   const candidates = detail.matches.filter((row) => row.eventId !== node.eventId && row.status !== "cancelled"
+    && !node.voidedPlays.some((play) => play.eventId === row.eventId)
     && teamIds.includes(row.homeTeamId) && teamIds.includes(row.awayTeamId));
   const [eventId, setEventId] = useState("");
   if (!candidates.length) return node.eventId ? null : <p className="muted">No match between these teams on the loaded results page.</p>;
