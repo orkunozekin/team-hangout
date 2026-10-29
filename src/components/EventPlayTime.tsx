@@ -54,6 +54,7 @@ function substitutions(actions: PlayActionRecord[]): Substitution[] {
 }
 
 const IN_PROGRESS = ['running', 'paused', 'periodBreak'];
+const REFRESH_MS = 30_000;
 
 function PlayTimePanel({ orgId, eventId, teamId }: { orgId: string; eventId: string; teamId: string }) {
   const [session, setSession] = useState<PlaySession | null>(null);
@@ -68,6 +69,8 @@ function PlayTimePanel({ orgId, eventId, teamId }: { orgId: string; eventId: str
   const [correcting, setCorrecting] = useState<Substitution | null>(null);
   const [correctedTime, setCorrectedTime] = useState('');
   const [correctedIn, setCorrectedIn] = useState('');
+  const [correctedOut, setCorrectedOut] = useState('');
+  const [older, setOlder] = useState<{ actions: PlayActionRecord[]; before: number | null } | null>(null);
   const [reason, setReason] = useState('');
 
   const load = useCallback(async () => {
@@ -79,10 +82,11 @@ function PlayTimePanel({ orgId, eventId, teamId }: { orgId: string; eventId: str
       setNow(Date.now());
       setStale(false);
       setLeaving(null);
+      setOlder(null);
       setError(null);
     } catch (e) {
       const failure = playError(e);
-      setError(failure);
+      setError(failure.kind === 'offline' ? { kind: 'offline', message: 'Playing time could not be refreshed. Reconnect, then reload.' } : failure);
       if (failure.kind === 'offline') setStale(true);
     } finally {
       setBusy(false);
@@ -90,6 +94,36 @@ function PlayTimePanel({ orgId, eventId, teamId }: { orgId: string; eventId: str
   }, [eventId, teamId]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // Read-only refresh so another coach's actions appear and a lost connection is labeled stale.
+  const inGame = !!session && IN_PROGRESS.includes(session.status);
+  useEffect(() => {
+    if (!inGame) return undefined;
+    const timer = setInterval(() => {
+      getPlaySession(eventId, teamId)
+        .then((result) => {
+          setSession(result);
+          setReceivedAt(Date.now());
+          setNow(Date.now());
+          setStale(false);
+          setOlder(null);
+        })
+        .catch(() => setStale(true));
+    }, REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [inGame, eventId, teamId]);
+
+  const loadOlder = async (before: number) => {
+    setBusy(true);
+    try {
+      const page = await getPlaySession(eventId, teamId, before);
+      setOlder((current) => ({ actions: [...(current?.actions ?? []), ...page.actions], before: page.olderBeforeSequence }));
+    } catch (e) {
+      setError(playError(e).kind === 'offline' ? { kind: 'offline', message: 'Earlier actions could not load. Reconnect, then try again.' } : playError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   // Render-only tick while visible and running. It never writes; background resume recomputes from the anchor.
   const running = session?.status === 'running' && !stale;
@@ -142,7 +176,8 @@ function PlayTimePanel({ orgId, eventId, teamId }: { orgId: string; eventId: str
   const counting = session.status === 'running' || session.status === 'paused';
   const onField = new Set(counting ? active?.participantIds ?? [] : []);
   const bench = session.roster.filter((entry) => entry.available && !active?.participantIds.includes(entry.participantId));
-  const subs = substitutions(session.actions);
+  const subs = substitutions([...session.actions, ...(older?.actions ?? [])]);
+  const olderCursor = older ? older.before : session.olderBeforeSequence;
   const extra = elapsed - session.elapsedMs;
   const correctionMs = parseGameClock(correctedTime);
   const periodLabel = session.periodCount ? ` · Period ${session.currentPeriod} of ${session.periodCount}` : '';
@@ -155,7 +190,7 @@ function PlayTimePanel({ orgId, eventId, teamId }: { orgId: string; eventId: str
         {`${STATUS_LABELS[session.status]}${periodLabel} · ${formatGameClock(elapsed)}`}
       </Text>
       {stale ? (
-        <Text style={styles.badge}>{`Offline. Showing the last acknowledged clock from ${new Date(receivedAt).toLocaleTimeString()}. Actions are not recorded until you reconnect.`}</Text>
+        <Text style={styles.badge}>{`Offline or not refreshed. Showing the last confirmed clock from ${new Date(receivedAt).toLocaleTimeString()}. Actions are not recorded until you reconnect.`}</Text>
       ) : null}
 
       {session.status === 'notStarted' ? (
@@ -227,7 +262,7 @@ function PlayTimePanel({ orgId, eventId, teamId }: { orgId: string; eventId: str
 
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error.message}</Text> : null}
       {status && !error ? <Text accessibilityLiveRegion="polite" style={styles.copy}>{status}</Text> : null}
-      {error ? <SecondaryButton label="Reload latest clock" onPress={() => void load()} /> : null}
+      <SecondaryButton label="Reload latest clock" disabled={busy} onPress={() => void load()} />
 
       <Text style={styles.subheading}>Totals</Text>
       {session.totals.length ? session.totals.map((row) => (
@@ -248,19 +283,27 @@ function PlayTimePanel({ orgId, eventId, teamId }: { orgId: string; eventId: str
               setCorrecting(sub);
               setCorrectedTime(formatGameClock(sub.atElapsedMs));
               setCorrectedIn(sub.inParticipantId);
+              setCorrectedOut(sub.outParticipantId);
               setReason('');
             }} />
           ) : null}
         </View>
       ))}
+      {olderCursor ? <SecondaryButton label="Show earlier actions" disabled={busy} onPress={() => void loadOlder(olderCursor)} /> : null}
       {correcting ? (
         <View style={styles.correction}>
-          <Text style={styles.subheading}>{`Correct: ${nameOf(correcting.outParticipantId)} left`}</Text>
+          <Text style={styles.subheading}>{`Correct substitution at ${formatGameClock(correcting.atElapsedMs)}`}</Text>
           <FieldLabel>Game time (m:ss)</FieldLabel>
           <TextField accessibilityLabel="Corrected game time" value={correctedTime} onChangeText={setCorrectedTime} />
+          <FieldLabel>Who left</FieldLabel>
+          <View style={styles.wrap}>
+            {session.roster.map((entry) => (
+              <Chip key={entry.participantId} label={`Left: ${entry.displayName}`} text={entry.displayName} selected={correctedOut === entry.participantId} onPress={() => setCorrectedOut(entry.participantId)} />
+            ))}
+          </View>
           <FieldLabel>Who entered</FieldLabel>
           <View style={styles.wrap}>
-            {session.roster.filter((entry) => entry.participantId !== correcting.outParticipantId).map((entry) => (
+            {session.roster.filter((entry) => entry.participantId !== correctedOut).map((entry) => (
               <Chip key={entry.participantId} label={`Entered: ${entry.displayName}`} text={entry.displayName} selected={correctedIn === entry.participantId} onPress={() => setCorrectedIn(entry.participantId)} />
             ))}
           </View>
@@ -270,10 +313,10 @@ function PlayTimePanel({ orgId, eventId, teamId }: { orgId: string; eventId: str
           <PrimaryButton
             label="Save correction"
             loading={busy}
-            disabled={!reason.trim() || correctionMs === null}
+            disabled={!reason.trim() || correctionMs === null || !correctedIn || correctedIn === correctedOut}
             onPress={() => void record({
               kind: 'correct', targetSequence: correcting.sequence, atElapsedMs: correctionMs!,
-              outParticipantId: correcting.outParticipantId, inParticipantId: correctedIn, reason: reason.trim(),
+              outParticipantId: correctedOut, inParticipantId: correctedIn, reason: reason.trim(),
             }, 'Correction recorded.')}
           />
           <SecondaryButton label="Cancel correction" onPress={() => setCorrecting(null)} />

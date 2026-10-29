@@ -1,4 +1,5 @@
 import {
+  actionsToFinalize,
   applyPlayAction,
   initialLedger,
   ledgerTotals,
@@ -163,4 +164,43 @@ test('illegal clock transitions and malformed actions are rejected', () => {
 test('a corrupted ledger exceeding measured duration fails closed', () => {
   const state = { ...initialLedger(), elapsedMs: 10, intervals: { a: [{ from: 0, to: 20 }] } };
   code(() => ledgerTotals(state), 'INVALID_ACTION');
+});
+
+test('earlier states are not mutated when intervals merge across a period break', () => {
+  const states = [initialLedger()];
+  for (const action of seq([
+    { kind: 'start', atElapsedMs: 0, periodCount: 2, units: soccer },
+    { kind: 'endPeriod', atElapsedMs: 100 },
+    { kind: 'start', atElapsedMs: 100 },
+    { kind: 'endPeriod', atElapsedMs: 200 },
+  ])) states.push(applyPlayAction(states[states.length - 1], action));
+  expect(states[2].intervals.a).toEqual([{ from: 0, to: 100 }]);
+  expect(states[4].intervals.a).toEqual([{ from: 0, to: 200 }]);
+});
+
+test('the action limit always leaves room to end every period and finalize', () => {
+  const started = replayPlayLedger(seq([{ kind: 'start', atElapsedMs: 0, periodCount: 2, units: soccer }]));
+  expect(actionsToFinalize(started)).toBe(4);
+  const near = { ...started, sequence: MAX_PLAY_ACTIONS - 4 };
+  code(() => applyPlayAction(near, { kind: 'pause', atElapsedMs: 0, sequence: MAX_PLAY_ACTIONS - 3 }), 'ACTION_LIMIT');
+  let state = near;
+  for (const kind of ['endPeriod', 'start', 'endPeriod', 'finalize'] as const) {
+    state = applyPlayAction(state, { kind, atElapsedMs: 0, sequence: state.sequence + 1 });
+  }
+  expect(state.status).toBe('finalized');
+  expect(state.sequence).toBe(MAX_PLAY_ACTIONS);
+  expect(actionsToFinalize(state)).toBe(0);
+});
+
+test('affected participants include those from an earlier correction of the same substitution', () => {
+  const actions = seq([
+    { kind: 'start', atElapsedMs: 0, periodCount: 1, units: soccer },
+    { kind: 'substitute', atElapsedMs: 100, unitId: 'starting', outParticipantId: 'b', inParticipantId: 'c' },
+    { kind: 'correct', atElapsedMs: 200, targetSequence: 2, reason: 'First fix', corrected: { atElapsedMs: 100, outParticipantId: 'b', inParticipantId: 'd' } },
+  ]);
+  const { affectedParticipantIds } = replayWithCorrection(actions, {
+    sequence: 4, kind: 'correct', atElapsedMs: 300, targetSequence: 2, reason: 'Second fix',
+    corrected: { atElapsedMs: 100, outParticipantId: 'b', inParticipantId: 'e' },
+  });
+  expect(affectedParticipantIds).toEqual(['b', 'd', 'e']);
 });

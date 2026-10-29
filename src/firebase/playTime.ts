@@ -3,9 +3,13 @@ import { functions } from "./config";
 import { runCommand } from "./commands";
 import type { PlayActionPayload, PlayMutationResult, PlaySession } from "../../shared/playTime";
 
-export async function getPlaySession(eventId: string, teamId: string): Promise<PlaySession> {
+export async function getPlaySession(eventId: string, teamId: string, beforeSequence?: number): Promise<PlaySession> {
   return (
-    await httpsCallable<Record<string, unknown>, PlaySession>(functions, "getPlaySession")({ eventId, teamId })
+    await httpsCallable<Record<string, unknown>, PlaySession>(functions, "getPlaySession")({
+      eventId,
+      teamId,
+      ...(beforeSequence ? { beforeSequence } : {}),
+    })
   ).data;
 }
 

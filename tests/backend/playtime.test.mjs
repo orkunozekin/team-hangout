@@ -241,3 +241,21 @@ test("starting requires a saved lineup with every participant still rostered", a
   await domain(finalize("p34-coach", 0), "SESSION_NOT_STARTED");
   assert.equal((await storedActions()).length, 0);
 });
+
+test("history pages by sequence so every earlier action stays reachable", async () => {
+  await act("p34-coach", 0, { kind: "start", periodCount: 1 });
+  let revision = 1;
+  for (let i = 0; i < 26; i += 1) {
+    await act("p34-coach", revision++, { kind: "pause" });
+    await act("p34-coach", revision++, { kind: "resume" });
+  }
+  const first = await read("p34-coach");
+  assert.equal(first.actions.length, 50);
+  assert.equal(first.actions[0].sequence, 53);
+  assert.equal(first.olderBeforeSequence, 4);
+  const older = await call("p34-coach", "getPlaySession", { eventId, teamId, beforeSequence: first.olderBeforeSequence });
+  assert.deepEqual(older.actions.map((a) => a.sequence), [3, 2, 1]);
+  assert.equal(older.olderBeforeSequence, null);
+  await assert.rejects(call("p34-coach", "getPlaySession", { eventId, teamId, beforeSequence: 1 }), { code: "functions/invalid-argument" });
+  await deny(call("p34-guardian", "getPlaySession", { eventId, teamId, beforeSequence: 4 }));
+});

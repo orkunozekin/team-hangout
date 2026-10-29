@@ -14,6 +14,8 @@ test("playing-time reads name only the event and team", async () => {
   expect(await getPlaySession("e", "t")).toEqual({ status: "notStarted" });
   expect(mockCallable).toHaveBeenLastCalledWith(expect.anything(), "getPlaySession");
   expect(mockRead).toHaveBeenLastCalledWith({ eventId: "e", teamId: "t" });
+  await getPlaySession("e", "t", 51);
+  expect(mockRead).toHaveBeenLastCalledWith({ eventId: "e", teamId: "t", beforeSequence: 51 });
 });
 
 test("playing-time mutations use the Phase 3 envelope and never send a client clock", async () => {

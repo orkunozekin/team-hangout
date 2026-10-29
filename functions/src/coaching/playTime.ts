@@ -200,14 +200,19 @@ export const finalizePlaySession = command('finalizePlaySession', data => {
 });
 
 export const getPlaySession = readCommand(data => {
-  keys(data, ['eventId', 'teamId']);
-  return { eventId: id(data.eventId, 'eventId'), teamId: id(data.teamId, 'teamId') };
+  keys(data, ['eventId', 'teamId', 'beforeSequence']);
+  if (data.beforeSequence !== undefined && (!Number.isSafeInteger(data.beforeSequence) || data.beforeSequence < 2)) invalid('Invalid history cursor.');
+  return { eventId: id(data.eventId, 'eventId'), teamId: id(data.teamId, 'teamId'), beforeSequence: data.beforeSequence ?? null };
 }, async (tx, data, uid) => {
   const ctx = await playContext(tx, data, uid, false);
+  // Newest first, paged by sequence so every earlier substitution stays reachable for correction.
+  let page = ctx.ref.collection('actions').orderBy('sequence', 'desc');
+  if (data.beforeSequence) page = page.where('sequence', '<', data.beforeSequence);
   const [lineupDoc, recent] = await Promise.all([
     tx.get(db().doc(`events/${data.eventId}/coaching/${data.teamId}`)),
-    tx.get(ctx.ref.collection('actions').orderBy('sequence', 'desc').limit(RECENT_ACTIONS)),
+    tx.get(page.limit(RECENT_ACTIONS)),
   ]);
+  const oldest = recent.docs[recent.docs.length - 1]?.data().sequence as number | undefined;
   const roster = await rosterFor(tx, ctx.scope.orgId, data.teamId);
   const now = Timestamp.now();
   const elapsedMs = elapsedNow(ctx.session, ctx.ledger, now);
@@ -223,6 +228,7 @@ export const getPlaySession = readCommand(data => {
       .sort((a, b) => b.ms - a.ms || a.displayName.localeCompare(b.displayName)),
     roster: [...roster.values()].sort((a, b) => a.displayName.localeCompare(b.displayName)),
     actions: recent.docs.map(doc => ({ ...(doc.data().action as PlayAction), period: doc.data().period })),
+    olderBeforeSequence: recent.size === RECENT_ACTIONS && oldest! > 1 ? oldest! : null,
     finalizedAt: ctx.session?.finalizedAt ?? null,
   };
 });

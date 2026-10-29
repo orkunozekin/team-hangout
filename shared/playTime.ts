@@ -36,8 +36,10 @@ export type PlaySession = {
   serverNow: string;
   totals: { participantId: string; displayName: string; ms: number }[];
   roster: LineupRosterEntry[];
-  /** Most recent first, at most 50. */
+  /** Most recent first, at most 50 per page. */
   actions: PlayActionRecord[];
+  /** Pass as beforeSequence to load the next older page, or null when the history is complete. */
+  olderBeforeSequence: number | null;
   finalizedAt: string | null;
 };
 

@@ -23,7 +23,7 @@ const session = (patch: Partial<PlaySession> = {}): PlaySession => ({
   status: 'running', periodCount: 2, currentPeriod: 1, activeUnitId: 'starting',
   units: [{ unitId: 'starting', participantIds: ['a', 'b'] }], elapsedMs: 125_000, serverNow: '2026-12-20T23:05:00.000Z',
   totals: [{ participantId: 'a', displayName: 'Avery Stone', ms: 125_000 }, { participantId: 'b', displayName: 'Blake Rivers', ms: 60_000 }],
-  roster, actions: [], finalizedAt: null, ...patch,
+  roster, actions: [], olderBeforeSequence: null, finalizedAt: null, ...patch,
 });
 const open = async () => {
   await render(<EventPlayTime orgId="o" eventId="e" teamId="t" />);
@@ -58,10 +58,10 @@ test('the running clock renders from its anchor without writes, and on-field tot
   read.mockResolvedValue(session());
   await open();
   expect(await screen.findByText('Clock running · Period 1 of 2 · 2:05')).toBeTruthy();
-  await act(async () => { jest.advanceTimersByTime(65_000); });
-  expect(screen.getByText('Clock running · Period 1 of 2 · 3:10')).toBeTruthy();
-  expect(screen.getByText('3:10')).toBeTruthy();
-  expect(screen.getByText('2:05')).toBeTruthy();
+  await act(async () => { jest.advanceTimersByTime(25_000); });
+  expect(screen.getByText('Clock running · Period 1 of 2 · 2:30')).toBeTruthy();
+  expect(screen.getByText('2:30')).toBeTruthy();
+  expect(screen.getByText('1:25')).toBeTruthy();
   expect(record).not.toHaveBeenCalled();
   expect(read).toHaveBeenCalledTimes(1);
 });
@@ -86,14 +86,14 @@ test('offline writes are not claimed as recorded and the last acknowledged clock
   record.mockRejectedValueOnce(Object.assign(new Error('offline'), { code: 'functions/unavailable' }));
   await open();
   await fireEvent.press(await screen.findByRole('button', { name: 'Pause clock' }));
-  expect(await screen.findByRole('alert')).toHaveTextContent(/Not recorded.*nothing was queued/);
-  expect(screen.getByText(/Offline\. Showing the last acknowledged clock/)).toBeTruthy();
+  expect(await screen.findByRole('alert')).toHaveTextContent(/may not have been recorded, and nothing was queued/);
+  expect(screen.getByText(/Offline or not refreshed\. Showing the last confirmed clock/)).toBeTruthy();
   expect(screen.queryByText('Clock paused.')).toBeNull();
   await act(async () => { jest.advanceTimersByTime(30_000); });
   // The stale clock freezes rather than implying live acknowledgment.
   expect(screen.getByText('Clock running · Period 1 of 2 · 2:05')).toBeTruthy();
   await fireEvent.press(screen.getByRole('button', { name: 'Reload latest clock' }));
-  await waitFor(() => expect(screen.queryByText(/Offline\./)).toBeNull());
+  await waitFor(() => expect(screen.queryByText(/Offline or not refreshed/)).toBeNull());
 });
 
 test('a stale coach revision explains the conflict', async () => {
@@ -120,11 +120,14 @@ test('corrections need a reason, show corrected history and name affected partic
   await fireEvent.changeText(screen.getByLabelText('Corrected game time'), '3:3');
   expect(screen.getByText('Enter the time as minutes:seconds.')).toBeTruthy();
   await fireEvent.changeText(screen.getByLabelText('Corrected game time'), '3:30');
-  await fireEvent.press(screen.getByRole('button', { name: 'Entered: Avery Stone' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Left: Avery Stone' }));
+  // The leaving participant cannot also be the one entering.
+  expect(screen.queryByRole('button', { name: 'Entered: Avery Stone' })).toBeNull();
+  await fireEvent.press(screen.getByRole('button', { name: 'Entered: Blake Rivers' }));
   await fireEvent.changeText(screen.getByLabelText('Correction reason'), ' Scorer sheet ');
   await fireEvent.press(screen.getByRole('button', { name: 'Save correction' }));
   await waitFor(() => expect(record).toHaveBeenCalledWith('o', 'e', 't', 3, {
-    kind: 'correct', targetSequence: 2, atElapsedMs: 210_000, outParticipantId: 'b', inParticipantId: 'a', reason: 'Scorer sheet',
+    kind: 'correct', targetSequence: 2, atElapsedMs: 210_000, outParticipantId: 'a', inParticipantId: 'b', reason: 'Scorer sheet',
   }));
   expect(await screen.findByText('Correction recorded. Review playing time for Avery Stone, Blake Rivers.')).toBeTruthy();
 });
@@ -154,4 +157,29 @@ test('a finalized ledger is locked and a failed load can retry', async () => {
   expect(await screen.findByText('Final totals are locked.')).toBeTruthy();
   expect(screen.queryByRole('button', { name: /Correct substitution/ })).toBeNull();
   expect(screen.queryByRole('button', { name: /Sub out/ })).toBeNull();
+});
+
+test('a read-only refresh shows another coach\'s change and marks a lost connection stale', async () => {
+  jest.useFakeTimers({ now: new Date('2026-12-20T23:05:00Z') });
+  read.mockResolvedValueOnce(session())
+    .mockResolvedValueOnce(session({ status: 'paused', revision: 4, elapsedMs: 150_000 }))
+    .mockRejectedValueOnce(Object.assign(new Error('offline'), { code: 'functions/unavailable' }));
+  await open();
+  expect(await screen.findByText('Clock running · Period 1 of 2 · 2:05')).toBeTruthy();
+  await act(async () => { jest.advanceTimersByTime(30_000); });
+  expect(screen.getByText('Clock paused · Period 1 of 2 · 2:30')).toBeTruthy();
+  await act(async () => { jest.advanceTimersByTime(30_000); });
+  expect(screen.getByText(/Offline or not refreshed/)).toBeTruthy();
+  expect(record).not.toHaveBeenCalled();
+});
+
+test('earlier substitutions stay reachable for correction through history pages', async () => {
+  const sub = (sequence: number, atElapsedMs: number) => ({ sequence, kind: 'substitute' as const, period: 1, atElapsedMs, unitId: 'starting', outParticipantId: 'b', inParticipantId: 'c' });
+  read.mockResolvedValueOnce(session({ actions: [sub(60, 600_000)], olderBeforeSequence: 60 }))
+    .mockResolvedValueOnce(session({ actions: [sub(2, 30_000)], olderBeforeSequence: null }));
+  await open();
+  await fireEvent.press(await screen.findByRole('button', { name: 'Show earlier actions' }));
+  await waitFor(() => expect(read).toHaveBeenLastCalledWith('e', 't', 60));
+  expect(await screen.findByRole('button', { name: 'Correct substitution at 0:30' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Show earlier actions' })).toBeNull();
 });

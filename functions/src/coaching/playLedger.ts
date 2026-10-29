@@ -43,7 +43,7 @@ export const MAX_PERIODS = 8;
 export const MAX_PLAY_ACTIONS = 600;
 
 export class PlayLedgerError extends Error {
-  constructor(public readonly code: 'ILLEGAL_TRANSITION' | 'INVALID_ACTION' | 'CORRECTION_CONFLICT', message: string) {
+  constructor(public readonly code: 'ILLEGAL_TRANSITION' | 'INVALID_ACTION' | 'CORRECTION_CONFLICT' | 'ACTION_LIMIT', message: string) {
     super(message);
     this.name = 'PlayLedgerError';
   }
@@ -69,6 +69,14 @@ function unitOf(state: LedgerState, unitId: unknown): PlayUnit {
   return state.units.find(unit => unit.unitId === unitId) ?? bad('Unknown unit.');
 }
 
+/** Structural actions still needed to end every period and finalize. Reserved so a busy game can always lock its totals. */
+export function actionsToFinalize(state: LedgerState): number {
+  const laterPeriods = 2 * (state.periodCount - state.currentPeriod);
+  if (state.status === 'running' || state.status === 'paused') return laterPeriods + 2;
+  if (state.status === 'periodBreak') return laterPeriods + 1;
+  return state.status === 'ended' ? 1 : 0;
+}
+
 const inProgress = (state: LedgerState) => ['running', 'paused', 'periodBreak'].includes(state.status);
 
 /** Applies one effective action. Corrections must already be folded in by effectiveActions. */
@@ -85,7 +93,7 @@ export function applyPlayAction(state: LedgerState, action: PlayAction): LedgerS
     units: state.units.map(unit => ({ ...unit, participantIds: [...unit.participantIds] })),
     periods: state.periods.map(period => ({ ...period })),
     openSince: { ...state.openSince },
-    intervals: Object.fromEntries(Object.entries(state.intervals).map(([id, list]) => [id, [...list]])),
+    intervals: Object.fromEntries(Object.entries(state.intervals).map(([id, list]) => [id, list.map(interval => ({ ...interval }))])),
     elapsedMs: at,
     sequence: action.sequence,
   };
@@ -165,6 +173,9 @@ export function applyPlayAction(state: LedgerState, action: PlayAction): LedgerS
     else list.push({ from, to: at });
   }
   for (const id of after) if (!before.has(id)) next.openSince[id] = at;
+  if (next.sequence + actionsToFinalize(next) > MAX_PLAY_ACTIONS) {
+    throw new PlayLedgerError('ACTION_LIMIT', 'This game reached its action limit. End the remaining periods and finalize.');
+  }
   return next;
 }
 
@@ -191,7 +202,6 @@ export function replayPlayLedger(actions: PlayAction[]): LedgerState {
 
 /** Replays with a proposed correction, reporting which participants a coach must review. */
 export function replayWithCorrection(actions: PlayAction[], correction: PlayAction) {
-  const target = actions[(correction.targetSequence ?? 0) - 1];
   let state: LedgerState;
   try {
     state = replayPlayLedger([...actions, correction]);
@@ -201,7 +211,12 @@ export function replayWithCorrection(actions: PlayAction[], correction: PlayActi
     }
     throw error;
   }
-  const affected = new Set([target.outParticipantId!, target.inParticipantId!, correction.corrected!.outParticipantId, correction.corrected!.inParticipantId]);
+  // Compare against the previous effective version, which may itself be corrected, plus any changed total.
+  const previous = effectiveActions(actions)[correction.targetSequence! - 1];
+  const affected = new Set([previous.outParticipantId!, previous.inParticipantId!, correction.corrected!.outParticipantId, correction.corrected!.inParticipantId]);
+  const before = ledgerTotals(replayPlayLedger(actions), state.elapsedMs);
+  const after = ledgerTotals(state);
+  for (const id of new Set([...Object.keys(before), ...Object.keys(after)])) if (before[id] !== after[id]) affected.add(id);
   return { state, affectedParticipantIds: [...affected].sort() };
 }
 

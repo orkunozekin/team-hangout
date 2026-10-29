@@ -19,8 +19,10 @@ test('game clock formatting and correction parsing round-trip', () => {
   expect(parseGameClock('abc')).toBeNull();
 });
 
-test('play errors never claim an offline action was recorded', () => {
-  expect(playError({ code: 'functions/unavailable' })).toEqual({ kind: 'offline', message: expect.stringContaining('nothing was queued') });
+test('a lost response reports an unknown outcome rather than success or failure', () => {
+  expect(playError({ code: 'functions/unavailable' })).toEqual({ kind: 'offline', message: expect.stringContaining('may not have been recorded, and nothing was queued') });
+  expect(playError({ code: 'functions/deadline-exceeded' }).message).toContain('Reload the clock to confirm');
+  expect(playError({ message: 'Limit', details: { domainCode: 'ACTION_LIMIT' } })).toEqual({ kind: 'illegal', message: 'Limit' });
   expect(playError({ code: 'functions/aborted', details: { domainCode: 'STALE_REVISION' } }).kind).toBe('conflict');
   expect(playError({ details: { domainCode: 'PARTICIPANT_UNAVAILABLE' } }).kind).toBe('unavailable');
   expect(playError({ details: { domainCode: 'LINEUP_NOT_SAVED' } }).message).toBe('Save a lineup before starting the clock.');

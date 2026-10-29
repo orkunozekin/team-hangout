@@ -41,7 +41,8 @@ export type PlayErrorKind = 'offline' | 'conflict' | 'unavailable' | 'illegal' |
 export function playError(error: unknown): { kind: PlayErrorKind; message: string } {
   const e = error as { code?: string; message?: string; details?: { domainCode?: string } };
   if (['functions/unavailable', 'functions/deadline-exceeded', 'functions/internal'].includes(e.code ?? '')) {
-    return { kind: 'offline', message: 'Not recorded. You appear to be offline, and nothing was queued. Showing the last acknowledged clock.' };
+    // A lost response does not prove the write failed. Nothing is queued; a reload confirms the outcome.
+    return { kind: 'offline', message: 'Connection lost. This action may not have been recorded, and nothing was queued. Reload the clock to confirm before trying again.' };
   }
   const code = e.details?.domainCode;
   if (code === 'STALE_REVISION') {
@@ -53,7 +54,7 @@ export function playError(error: unknown): { kind: PlayErrorKind; message: strin
   if (code === 'LINEUP_NOT_SAVED') {
     return { kind: 'illegal', message: 'Save a lineup before starting the clock.' };
   }
-  if (code === 'CORRECTION_CONFLICT' || code === 'ILLEGAL_TRANSITION' || code === 'SESSION_FINALIZED') {
+  if (code === 'CORRECTION_CONFLICT' || code === 'ILLEGAL_TRANSITION' || code === 'SESSION_FINALIZED' || code === 'ACTION_LIMIT') {
     return { kind: 'illegal', message: e.message || 'That action is not available now. Reload the latest clock.' };
   }
   if (e.code === 'functions/permission-denied') {
