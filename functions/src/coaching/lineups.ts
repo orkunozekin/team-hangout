@@ -13,7 +13,7 @@ const ROSTER_LIMIT = 200;
 const NOTE_MAX = 2000;
 const privateState = { state: 'private', sourceRevision: null, publishedAt: null, publicationRevision: 0 };
 
-function unavailable(participantIds: string[]): never {
+export function unavailable(participantIds: string[]): never {
   throw new HttpsError('failed-precondition', 'A lineup participant is no longer on the roster. Replace them before saving.',
     { domainCode: 'PARTICIPANT_UNAVAILABLE', participantIds });
 }
@@ -27,7 +27,7 @@ async function canonicalEvent(tx: Transaction, eventId: string, teamId: string, 
 }
 
 /** Coaching capability is an active coach assignment for this team. Staff, captains, guardians and platform roles do not qualify. */
-async function coachingEvent(tx: Transaction, eventId: string, teamId: string, uid: string, writing: boolean) {
+export async function coachingEvent(tx: Transaction, eventId: string, teamId: string, uid: string, writing: boolean) {
   const coach = (await tx.get(db().doc(`teamMembers/${teamId}_${uid}`))).data();
   if (coach?.teamId !== teamId || coach.userId !== uid || coach.status !== 'active'
     || !Array.isArray(coach.roles) || !coach.roles.includes('coach')) denied();
@@ -37,7 +37,7 @@ async function coachingEvent(tx: Transaction, eventId: string, teamId: string, u
 }
 
 type RosterEntry = { participantId: string; displayName: string; available: boolean };
-async function rosterFor(tx: Transaction, orgId: string, teamId: string): Promise<Map<string, RosterEntry>> {
+export async function rosterFor(tx: Transaction, orgId: string, teamId: string): Promise<Map<string, RosterEntry>> {
   const snap = await tx.get(db().collection(`teams/${teamId}/roster`).orderBy(FieldPath.documentId()).limit(ROSTER_LIMIT + 1));
   if (snap.size > ROSTER_LIMIT) {
     throw new HttpsError('resource-exhausted', `Lineups support at most ${ROSTER_LIMIT} roster entries. Ask your administrator to split the team.`);
@@ -60,7 +60,7 @@ async function rosterFor(tx: Transaction, orgId: string, teamId: string): Promis
   }));
 }
 
-function referenced(lineup: Data | undefined): string[] {
+export function referenced(lineup: Data | undefined): string[] {
   if (!lineup) return [];
   return [...new Set([
     ...(lineup.units as Data[]).flatMap(unit => (unit.slots as Data[]).map(slot => slot.participantId as string)),
@@ -73,7 +73,7 @@ function coordinate(value: unknown): number {
   return Math.round(Math.min(1, Math.max(0, value as number)) * 10000) / 10000;
 }
 
-function envelope(data: Data, payloadFields: string[]) {
+export function envelope(data: Data, payloadFields: string[]) {
   keys(data, ['requestId', 'orgId', 'resourceId', 'expectedRevision', 'payload']);
   const payload = object(data.payload);
   keys(payload, payloadFields);

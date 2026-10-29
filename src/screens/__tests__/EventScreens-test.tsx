@@ -10,6 +10,7 @@ jest.mock('../../firebase/events', () => ({ getEvent: jest.fn(), createCanonical
 jest.mock('../../firebase/availability', () => ({ getEventAvailability: jest.fn().mockRejectedValue(new Error('Unavailable')) }));
 jest.mock('../../firebase/attendance', () => ({ getEventAttendance: jest.fn().mockRejectedValue(new Error('Unavailable')) }));
 jest.mock('../../firebase/lineups', () => ({ getLineup: jest.fn().mockResolvedValue({ orgId: 'org', eventId: 'event', teamId: 'team', revision: 0, sportPresetId: null, presetVersion: null, units: [], bench: [], note: '', roster: [], unavailableParticipantIds: [], publication: { state: 'private', sourceRevision: null, publishedAt: null }, updatedAt: null }), getLineupView: jest.fn(), saveLineup: jest.fn(), publishLineup: jest.fn(), lineupRequestId: () => 'id' }));
+jest.mock('../../firebase/playTime', () => ({ getPlaySession: jest.fn(), recordPlayAction: jest.fn(), finalizePlaySession: jest.fn() }));
 jest.mock('../../firebase/teams', () => ({ getTeam: jest.fn() }));
 jest.mock('../../lib/gameDayCache', () => ({
   loadCachedEvent: jest.fn(), saveCachedEvent: jest.fn(), clearGameDayCache: jest.fn(),
@@ -54,6 +55,17 @@ test('canonical event detail offers the team lineup entry without loading it unt
   await fireEvent.press(await screen.findByText('Team lineup'));
   expect(await screen.findByText(/No active roster participants yet/)).toBeTruthy();
   expect(getLineup).toHaveBeenCalledWith('shared', membership.teamId);
+});
+test('canonical event detail offers playing time only to coaches and loads nothing until opened', async () => {
+  const { getPlaySession } = jest.requireMock('../../firebase/playTime');
+  (getEvent as jest.Mock).mockResolvedValue({ ...event, orgId: 'org' });
+  const view = await render(<EventDetailScreen userId="user-a" cacheScope="a" membership={{ ...membership, role: 'coach' }} navigation={navigation} route={{ params: { eventId: 'shared' } } as any} />);
+  expect(await screen.findByText('Playing time')).toBeTruthy();
+  expect(getPlaySession).not.toHaveBeenCalled();
+  await view.unmount();
+  await render(<EventDetailScreen userId="user-a" cacheScope="a" membership={{ ...membership, role: 'player' }} navigation={navigation} route={{ params: { eventId: 'shared' } } as any} />);
+  await screen.findByText('Team lineup');
+  expect(screen.queryByText('Playing time')).toBeNull();
 });
 test('published event detail opens the event conversation for the event organization', async () => {
   (getEvent as jest.Mock).mockResolvedValue({ ...event, orgId: 'org' });
