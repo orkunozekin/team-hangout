@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import EventStandings from '../EventStandings';
 import { getEventStandings } from '../../firebase/competition';
 import type { EventStandings as Data, StandingsRow, StandingsView } from '../../../shared/competition';
@@ -80,4 +80,22 @@ test('empty, unconfirmed and failed loads explain the state without inventing a 
   await fireEvent.press(screen.getByRole('button', { name: 'Retry loading standings' }));
   expect(await screen.findByText('Standings appear after league rules are confirmed.')).toBeTruthy();
   expect(screen.queryByText('No complete table yet.')).toBeNull();
+});
+
+test('an outdated page response never appends to a newer table and paging cannot overlap', async () => {
+  let resolvePage: (value: Data) => void = () => {};
+  read.mockResolvedValueOnce(data(view({ nextCursor: '0002', rows: view().rows.slice(0, 2) })))
+    .mockImplementationOnce(() => new Promise<Data>((resolve) => { resolvePage = resolve; }))
+    .mockResolvedValueOnce(data(view({ name: 'Spring League', nextCursor: null, rows: view().rows.slice(0, 2) })));
+  await open();
+  await fireEvent.press(await screen.findByRole('button', { name: 'Show more teams' }));
+  // A second tap while the page is in flight does not request it again.
+  await fireEvent.press(screen.getByRole('button', { name: 'Show more teams' }));
+  expect(read).toHaveBeenCalledTimes(2);
+  await fireEvent.press(screen.getByRole('button', { name: 'Refresh standings' }));
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Show more teams' })).toBeNull());
+  resolvePage(data(view({ rows: view().rows.slice(2), nextCursor: '0003' })));
+  await waitFor(() => expect(read).toHaveBeenCalledTimes(3));
+  expect(screen.queryByText('Owls')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Show more teams' })).toBeNull();
 });

@@ -44,20 +44,24 @@ function StandingsPanel({ eventId, teamId }: { eventId: string; teamId: string }
   const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(false);
   const live = useRef(true);
+  // Every load or page request takes a sequence number; only the latest one may change what is shown.
+  const request = useRef(0);
   useEffect(() => () => { live.current = false; }, []);
+  const current = (seq: number) => live.current && seq === request.current;
 
   const load = useCallback(async (competitionId?: string) => {
+    const seq = ++request.current;
     setLoading(true);
     setError('');
     try {
       const value = await getEventStandings(eventId, teamId, competitionId ? { competitionId } : {});
-      if (!live.current) return;
+      if (!current(seq)) return;
       setData(value);
       setRows(value.standings?.rows ?? []);
     } catch {
-      if (live.current) setError('Standings could not be loaded.');
+      if (current(seq)) setError('Standings could not be loaded.');
     } finally {
-      if (live.current) setLoading(false);
+      if (current(seq)) setLoading(false);
     }
   }, [eventId, teamId]);
 
@@ -65,18 +69,19 @@ function StandingsPanel({ eventId, teamId }: { eventId: string; teamId: string }
 
   const standings = data?.standings ?? null;
   const more = async () => {
-    if (!standings?.generation || !standings.nextCursor) return;
+    if (loading || !standings?.generation || !standings.nextCursor) return;
     const cursor = standings.nextCursor;
+    const seq = ++request.current;
     setLoading(true);
     setError('');
     try {
       // Pinned to the generation already shown so pages never mix two tables.
       const value = await getEventStandings(eventId, teamId, { competitionId: standings.competitionId, generationId: standings.generation.generationId, cursor });
-      if (!live.current) return;
-      setRows((current) => [...current, ...(value.standings?.rows ?? [])]);
-      setData((current) => current && value.standings ? { ...current, standings: { ...current.standings!, nextCursor: value.standings.nextCursor } } : current);
+      if (!current(seq)) return;
+      setRows((shown) => [...shown, ...(value.standings?.rows ?? [])]);
+      setData((shown) => shown && value.standings ? { ...shown, standings: { ...shown.standings!, nextCursor: value.standings.nextCursor } } : shown);
     } catch (reason) {
-      if (!live.current) return;
+      if (!current(seq)) return;
       if (domainCode(reason) === 'STANDINGS_CHANGED') {
         setNotice('Standings were updated. Showing the latest table from the top.');
         await load(standings.competitionId);
@@ -84,7 +89,7 @@ function StandingsPanel({ eventId, teamId }: { eventId: string; teamId: string }
       }
       setError('More standings could not be loaded.');
     } finally {
-      if (live.current) setLoading(false);
+      if (current(seq)) setLoading(false);
     }
   };
 
@@ -125,7 +130,7 @@ function StandingsPanel({ eventId, teamId }: { eventId: string; teamId: string }
         {standings.generation ? <>
           <Text style={styles.copy}>{`From ${standings.generation.countedResults} final results. Tied teams share a rank; list order inside a tie is not a ranking.`}</Text>
           {rows.map((row) => <Row key={row.teamId} row={row} ownTeamId={teamId} names={names} />)}
-          {standings.nextCursor ? <SecondaryButton label="Show more teams" onPress={() => void more()} /> : null}
+          {standings.nextCursor ? <SecondaryButton label="Show more teams" disabled={loading} onPress={() => void more()} /> : null}
         </> : standings.status !== 'unconfirmed' ? <Text style={styles.copy}>No complete table yet.</Text> : null}
         <SecondaryButton label="Refresh standings" onPress={() => { setNotice(''); void load(standings.competitionId); }} />
       </> : null}

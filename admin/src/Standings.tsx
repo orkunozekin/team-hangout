@@ -20,18 +20,23 @@ export function Standings({ services, orgId, competitionId, onDenied }: { servic
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
   const refreshes = useRef(0);
+  // Only the latest request may replace the shown table, so a slow page cannot overwrite a newer refresh.
+  const request = useRef(0);
   // The parent passes a new handler each render; keep it out of the load dependencies so loading runs once per key.
   const denied = useRef(onDenied);
   denied.current = onDenied;
 
   const load = useCallback(async (page: { generationId: string; cursor: string } | null = null) => {
+    const seq = ++request.current;
     setLoading(true);
     setError("");
     try {
       const value = await services.call("getStandings", { orgId, competitionId, ...(page ?? {}) });
+      if (seq !== request.current) return;
       setView(value);
       setCursor(page?.cursor ?? null);
     } catch (reason) {
+      if (seq !== request.current) return;
       if (errorCode(reason).includes("permission-denied")) denied.current(reason);
       else if (page && (reason as { details?: { domainCode?: string } }).details?.domainCode === "STANDINGS_CHANGED") {
         setNotice("Standings were updated while paging. Showing the latest table from the top.");
@@ -40,7 +45,7 @@ export function Standings({ services, orgId, competitionId, onDenied }: { servic
         return;
       } else setError(message(reason));
     } finally {
-      setLoading(false);
+      if (seq === request.current) setLoading(false);
     }
   }, [services, orgId, competitionId]);
 
@@ -118,7 +123,7 @@ export function Standings({ services, orgId, competitionId, onDenied }: { servic
         <button type="button" disabled={loading} onClick={() => { refreshes.current = 0; setNotice(""); void load(); }}>Refresh</button>
         {cursor && <button type="button" onClick={() => void load()}>First page</button>}
         {generation && view?.nextCursor && (
-          <button type="button" onClick={() => void load({ generationId: generation.generationId, cursor: view.nextCursor! })}>Next page</button>
+          <button type="button" disabled={loading} onClick={() => void load({ generationId: generation.generationId, cursor: view.nextCursor! })}>Next page</button>
         )}
       </div>
     </section>

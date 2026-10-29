@@ -271,3 +271,29 @@ test("capped-size load probe: 256 teams and 4,096 final results, pinned paging a
   for (let i = 1; i < seen.length; i++) assert.ok(seen[i].rank >= seen[i - 1].rank);
   await domain(call("p36-manager", "getStandings", { orgId: scope.orgId, competitionId, generationId: "p36-unknown", cursor: "0050" }), "STANDINGS_CHANGED");
 });
+
+test("abandoned builds are swept on schedule without touching complete or recent generations", async () => {
+  await league("p36-sweep", fixture.slice(0, 2));
+  const competition = await settled("p36-sweep");
+  const generationsRef = db.collection(`${path("p36-sweep")}/generations`);
+  const old = Timestamp.fromMillis(Date.now() - 20 * 60 * 1000);
+  const stuck = generationsRef.doc("p36-stuck");
+  const recent = generationsRef.doc("p36-recent");
+  await stuck.set({ schemaVersion: 2, state: "building", startedAt: old });
+  await stuck.collection("rows").doc("0001").set({ position: 1 });
+  await recent.set({ schemaVersion: 2, state: "building", startedAt: Timestamp.now() });
+  await recent.collection("rows").doc("0001").set({ position: 1 });
+  // Make the active generation look old too; only building generations are swept.
+  const activeRef = generationsRef.doc(competition.activeGeneration.generationId);
+  await activeRef.update({ startedAt: old });
+  assert.ok(await worker.sweepAbandonedBuilds() >= 1);
+  assert.equal((await stuck.get()).data().state, "failed");
+  assert.equal((await stuck.collection("rows").count().get()).data().count, 0);
+  assert.equal((await recent.get()).data().state, "building");
+  assert.equal((await recent.collection("rows").count().get()).data().count, 1);
+  assert.equal((await activeRef.get()).data().state, "complete");
+  assert.equal((await activeRef.collection("rows").count().get()).data().count, 4);
+  const view = await call("p36-manager", "getStandings", { orgId: scope.orgId, competitionId: "p36-sweep" });
+  assert.equal(view.status, "current");
+  await recent.update({ state: "failed" });
+});

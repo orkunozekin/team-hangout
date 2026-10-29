@@ -77,15 +77,37 @@ async function readFinals(competition: FirebaseFirestore.DocumentReference, gene
   return { finals, reads };
 }
 
-async function cleanupAbandoned(competition: FirebaseFirestore.DocumentReference) {
-  const building = await competition.collection('generations').where('state', '==', 'building').limit(20).get();
+/**
+ * Marks a build failed and deletes its rows only while it is still building. A generation that a transaction already
+ * made complete (or superseded) is never touched, so a late error cannot destroy a published table.
+ */
+async function failBuild(generation: FirebaseFirestore.DocumentReference, failure: string, startedBefore?: number) {
+  const failed = await db().runTransaction(async tx => {
+    const row = (await tx.get(generation)).data();
+    if (row?.state !== 'building') return false;
+    if (startedBefore !== undefined && !(row.startedAt instanceof Timestamp && row.startedAt.toMillis() <= startedBefore)) return false;
+    tx.update(generation, { state: 'failed', failure, finishedAt: Timestamp.now() });
+    return true;
+  });
+  if (failed) await deleteRows(generation);
+}
+
+/** Builds left `building` by a crashed worker, found across all competitions so cleanup never depends on a later rebuild. */
+export async function sweepAbandonedBuilds(limit = 50) {
   const cutoff = Date.now() - ABANDONED_AFTER_MS;
-  for (const doc of building.docs) {
-    const startedAt = doc.data().startedAt;
-    if (!(startedAt instanceof Timestamp) || startedAt.toMillis() > cutoff) continue;
-    await doc.ref.update({ state: 'failed', failure: 'abandoned', finishedAt: Timestamp.now() });
-    await deleteRows(doc.ref);
+  const stuck = await db().collectionGroup('generations').where('state', '==', 'building')
+    .where('startedAt', '<=', Timestamp.fromMillis(cutoff)).orderBy('startedAt').limit(limit).get();
+  let swept = 0;
+  for (const doc of stuck.docs) {
+    if (doc.ref.parent.parent?.parent.id !== 'competitions') continue;
+    try {
+      await failBuild(doc.ref, 'abandoned', cutoff);
+      swept += 1;
+    } catch {
+      // Retried on the next scheduled run.
+    }
   }
+  return swept;
 }
 
 export type BuildOutcome = {
@@ -124,6 +146,7 @@ export async function buildStandings(orgId: string, competitionId: string,
       schemaVersion: 2, orgId, competitionId, generationId: generation.id, state: 'building', ...key,
       reducerVersion: STANDINGS_REDUCER_VERSION, startedAt: Timestamp.now(), checkpoint: { resultsRead: 0, rowsWritten: 0 },
     });
+    let activation: Awaited<ReturnType<typeof activate>>;
     try {
       const { finals, reads } = await readFinals(ref, generation);
       const teamIds = [...competition.teamIds as string[]].sort();
@@ -145,25 +168,24 @@ export async function buildStandings(orgId: string, competitionId: string,
       });
       const outputDigest = digest(table.rows);
       if (hooks.beforeActivate) await hooks.beforeActivate(generation.id);
-      const activation = await db().runTransaction(async tx => activate(tx, ref, generation, key, {
+      activation = await db().runTransaction(async tx => activate(tx, ref, generation, key, {
         rowCount: table.rows.length, countedResults: table.countedResults, unresolvedTies: table.unresolvedTies,
         inputDigest, outputDigest, sourceUpdatedAt: competition.sourceUpdatedAt ?? null,
         stats: { resultReads: reads, teamReads: teams.length, durationMs: Date.now() - started },
       }));
-      if (activation.state === 'activated') {
-        for (const evicted of activation.evicted) await deleteRows(ref.collection('generations').doc(evicted));
-        await cleanupAbandoned(ref);
-        return done('activated', generation.id);
-      }
-      await deleteRows(generation);
-      if (activation.state === 'duplicate') return done('current', activation.generationId);
-      outcome.discarded += 1;
+      if (activation.state !== 'activated') await deleteRows(generation);
     } catch (error) {
       // Never leave a partial build readable; the pending marker stays set so reconciliation retries.
-      await generation.update({ state: 'failed', failure: error instanceof Error ? error.name : 'unknown', finishedAt: Timestamp.now() }).catch(() => {});
-      await deleteRows(generation).catch(() => {});
+      await failBuild(generation, error instanceof Error ? error.name : 'unknown').catch(() => {});
       throw error;
     }
+    if (activation.state === 'activated') {
+      // Cleanup after activation is best effort and outside the build's failure handling: the new table is published.
+      for (const evicted of activation.evicted) await deleteRows(ref.collection('generations').doc(evicted)).catch(() => {});
+      return done('activated', generation.id);
+    }
+    if (activation.state === 'duplicate') return done('current', activation.generationId);
+    outcome.discarded += 1;
   }
   return done('retrying', null);
 }
@@ -234,7 +256,7 @@ export async function reconcilePendingStandings(limit = 25, olderThanMs = 60_000
       failed += 1;
     }
   }
-  return { scanned: pending.size, rebuilt, failed };
+  return { scanned: pending.size, rebuilt, failed, swept: await sweepAbandonedBuilds() };
 }
 
 export const reconcileStandings = onSchedule({ schedule: 'every 10 minutes', timeoutSeconds: 540, memory: '512MiB' }, async () => {
