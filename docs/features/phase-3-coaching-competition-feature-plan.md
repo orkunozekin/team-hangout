@@ -6,10 +6,10 @@ Turn the approved [product direction](../plans/product-plan.md#phase-3-coaching-
 
 | Field | Value |
 | --- | --- |
-| Status | in progress, Step 1 implemented and awaiting review |
+| Status | in review, Step 1 implemented in PR #49 |
 | Last updated | 2026-10-28 |
 | Source baseline | Team Hangout `9b5fbc545e9602eef6b08db1d8a0078a34a0731c` from `main` |
-| Related PR / branch | `codex/phase-3-step-1`; PR pending creation |
+| Related PR / branch | [PR #49](https://github.com/orkunozekin/team-hangout/pull/49) on `codex/phase-3-step-1` |
 | Dependencies | Phase 1 organization/participant/season authorization and Phase 2 canonical events, attendance, facilities, communications |
 | Commercial status | Business model selection pending; no feature paywall, fee, or entitlement approved |
 | Next implementation step | Review and merge Step 1 only; Step 2 has not started |
