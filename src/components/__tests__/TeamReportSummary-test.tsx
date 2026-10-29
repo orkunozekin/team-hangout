@@ -1,17 +1,22 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import { TeamReportSummary } from '../TeamReportSummary';
-import { getReportRun, listTeamReports, requestTeamAttendanceReport } from '../../firebase/reports';
+import { exportReport, getReportRun, listTeamReports, requestTeamAttendanceReport } from '../../firebase/reports';
+import { clearReportExports, shareReportCsv } from '../../lib/reportExport';
 import type { AttendanceCounts, ReportRun } from '../../../shared/reports';
 
 let mockIds = 0;
 jest.mock('../../firebase/reports', () => ({
+  exportReport: jest.fn(),
   getReportRun: jest.fn(),
   listTeamReports: jest.fn(),
   requestTeamAttendanceReport: jest.fn(),
   reportRequestId: () => `request-${++mockIds}`,
 }));
+jest.mock('../../lib/reportExport', () => ({ clearReportExports: jest.fn(), shareReportCsv: jest.fn() }));
 const list = listTeamReports as jest.Mock;
+const exportCsv = exportReport as jest.Mock;
+const share = shareReportCsv as jest.Mock;
 const read = getReportRun as jest.Mock;
 const request = requestTeamAttendanceReport as jest.Mock;
 
@@ -99,4 +104,57 @@ test('explains denied and disabled reports without showing figures', async () =>
   await mount();
   await screen.findByText('Reports are not enabled for this organization.');
   expect(screen.queryByText('Presence rate')).toBeNull();
+});
+
+const csvFile = { runId: 'r1', kind: 'attendance', exportVersion: 1, stale: false, mimeType: 'text/csv', fileName: 'r1.csv', csv: 'x', rowCount: 1 };
+
+test('shares the complete snapshot as CSV, reports the closed sheet and clears temporary files', async () => {
+  list.mockResolvedValue({ items: [run()], nextCursor: null });
+  exportCsv.mockResolvedValue(csvFile);
+  share.mockResolvedValue('closed');
+  const view = await mount();
+  await screen.findByText('90%');
+  expect(screen.getByText(/aggregate counts only/)).toBeTruthy();
+  await fireEvent.press(screen.getByText('Share CSV'));
+  await screen.findByText('Share sheet closed. 1 team row; the temporary file was deleted.');
+  expect(exportCsv).toHaveBeenCalledWith('o', 'r1');
+  expect(share).toHaveBeenCalledWith(csvFile, 'Share attendance summary');
+  await view.unmount();
+  expect(clearReportExports).toHaveBeenCalledTimes(2);
+});
+
+test('sharing unavailable, export denial and calculating runs never open a share sheet', async () => {
+  list.mockResolvedValue({ items: [run()], nextCursor: null });
+  exportCsv.mockResolvedValueOnce({ ...csvFile, stale: true }).mockResolvedValueOnce(csvFile).mockRejectedValueOnce({ code: 'functions/permission-denied' });
+  share.mockResolvedValueOnce('unavailable').mockRejectedValueOnce(new Error('write failed'));
+  await mount();
+  await screen.findByText('90%');
+  await fireEvent.press(screen.getByText('Share CSV'));
+  await screen.findByText('Sharing is not available on this device.');
+  await fireEvent.press(screen.getByText('Share CSV'));
+  await screen.findByText('The CSV could not be shared. Try again.');
+  await fireEvent.press(screen.getByText('Share CSV'));
+  await screen.findByText('Team summaries are available to this team’s coaches.');
+  expect(share).toHaveBeenCalledTimes(2);
+  list.mockResolvedValue({ items: [run({ state: 'building', summary: null })], nextCursor: null });
+  await mount();
+  await screen.findByText(/still calculating/);
+  expect(screen.queryByText('Share CSV')).toBeNull();
+});
+
+test('an export response for a run that is no longer shown is dropped', async () => {
+  list.mockResolvedValue({ items: [run()], nextCursor: null });
+  let resolveExport: (value: unknown) => void = () => {};
+  exportCsv.mockImplementation(() => new Promise(resolve => { resolveExport = resolve; }));
+  request.mockResolvedValue({ runId: 'r2', state: 'complete' });
+  read.mockResolvedValue({ run: run({ runId: 'r2' }), rows: [], nextCursor: null });
+  await mount();
+  await screen.findByText('90%');
+  await fireEvent.press(screen.getByText('Share CSV'));
+  await fireEvent.press(screen.getByText('Update last 30 days'));
+  await screen.findByText('90%');
+  expect(read).toHaveBeenLastCalledWith('o', 'r2');
+  resolveExport(csvFile);
+  await screen.findByText('Share CSV');
+  expect(share).not.toHaveBeenCalled();
 });

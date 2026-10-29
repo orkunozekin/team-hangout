@@ -24,3 +24,8 @@ export async function listTeamReports(orgId: string, teamId: string): Promise<Ou
 export async function getReportRun(orgId: string, runId: string): Promise<Out<"getReportRun">> {
   return (await httpsCallable<Record<string, unknown>, Out<"getReportRun">>(functions, "getReportRun")({ orgId, runId })).data;
 }
+
+/** Server-built CSV of a complete run; the server rechecks the export grant on every call. */
+export async function exportReport(orgId: string, runId: string): Promise<Out<"exportReport">> {
+  return (await httpsCallable<Record<string, unknown>, Out<"exportReport">>(functions, "exportReport")({ orgId, runId })).data;
+}

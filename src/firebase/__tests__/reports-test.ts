@@ -11,7 +11,7 @@ jest.mock("firebase/firestore", () => ({
 jest.mock("../commands", () => ({
   runCommand: (...args: unknown[]) => mockRun(...args),
 }));
-import { getReportRun, listTeamReports, reportRequestId, requestTeamAttendanceReport } from "../reports";
+import { exportReport, getReportRun, listTeamReports, reportRequestId, requestTeamAttendanceReport } from "../reports";
 
 test("report reads name only the organization and the team or run", async () => {
   mockRead.mockResolvedValue({ data: { items: [], nextCursor: null } });
@@ -20,6 +20,9 @@ test("report reads name only the organization and the team or run", async () => 
   expect(mockRead).toHaveBeenLastCalledWith({ orgId: "o", teamId: "t" });
   await getReportRun("o", "r");
   expect(mockCallable).toHaveBeenLastCalledWith(expect.anything(), "getReportRun");
+  expect(mockRead).toHaveBeenLastCalledWith({ orgId: "o", runId: "r" });
+  await exportReport("o", "r");
+  expect(mockCallable).toHaveBeenLastCalledWith(expect.anything(), "exportReport");
   expect(mockRead).toHaveBeenLastCalledWith({ orgId: "o", runId: "r" });
 });
 

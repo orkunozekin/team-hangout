@@ -4,6 +4,7 @@ import type { Facility } from "../../shared/facilities";
 import {
   formatMinutes,
   formatRate,
+  REPORT_EXPORT_NOTE,
   REPORT_FORMULAS,
   REPORT_STATE_LABELS,
   reportStatusNote,
@@ -119,6 +120,9 @@ function RunDetail({ services, orgId, runId, names, onRebuilt, onChanged }: { se
   const request = useRef(0);
   const refreshes = useRef(0);
   const rebuildId = useRef<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [downloaded, setDownloaded] = useState("");
+  const exportSeq = useRef(0);
   const changed = useRef(onChanged);
   changed.current = onChanged;
   const shown = useRef("");
@@ -141,9 +145,16 @@ function RunDetail({ services, orgId, runId, names, onRebuilt, onChanged }: { se
   useEffect(() => {
     refreshes.current = 0;
     rebuildId.current = null;
+    exportSeq.current += 1;
+    setExporting(false);
+    setDownloaded("");
     setRun(null);
     setRows([]);
     void load();
+    // Switching runs remounts this detail, so a pending export from the old run must never download.
+    return () => {
+      exportSeq.current += 1;
+    };
   }, [load]);
 
   useEffect(() => {
@@ -179,6 +190,32 @@ function RunDetail({ services, orgId, runId, names, onRebuilt, onChanged }: { se
     }
   };
 
+  const download = async () => {
+    const seq = ++exportSeq.current;
+    setExporting(true);
+    setDownloaded("");
+    setError("");
+    try {
+      const file = await services.call("exportReport", { orgId, runId });
+      // A response for a run that is no longer selected is dropped.
+      if (seq !== exportSeq.current) return;
+      const url = URL.createObjectURL(new Blob([file.csv], { type: "text/csv;charset=utf-8" }));
+      try {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = file.fileName;
+        link.click();
+      } finally {
+        setTimeout(() => URL.revokeObjectURL(url), 0);
+      }
+      setDownloaded(`Downloaded ${file.fileName} with ${file.rowCount} ${file.rowCount === 1 ? "row" : "rows"} plus the summary${file.stale ? ", from a stale snapshot" : ""}.`);
+    } catch (reason) {
+      if (seq === exportSeq.current) setError(message(reason));
+    } finally {
+      if (seq === exportSeq.current) setExporting(false);
+    }
+  };
+
   if (!run) return <section className="panel" aria-busy="true"><h2>Report</h2>{error ? <p className="error" role="alert">{error}</p> : <p className="muted">Loading report.</p>}</section>;
   const note = reportStatusNote(run);
   const tz = run.interval.timeZone;
@@ -204,7 +241,10 @@ function RunDetail({ services, orgId, runId, names, onRebuilt, onChanged }: { se
         <summary>How these figures are calculated</summary>
         <ul>{REPORT_FORMULAS[run.kind].map((line) => <li key={line}>{line}</li>)}</ul>
       </details>
+      {run.state === "complete" && <p className="muted">{REPORT_EXPORT_NOTE}</p>}
+      {downloaded && <p className="notice" aria-live="polite">{downloaded}</p>}
       <div className="actions">
+        {run.state === "complete" && <button type="button" disabled={exporting} onClick={() => void download()}>{exporting ? "Preparing CSV" : "Download CSV"}</button>}
         {nextCursor && <button type="button" onClick={() => void load(nextCursor)}>More rows</button>}
         <button type="button" onClick={() => { refreshes.current = 0; void load(); }}>Refresh</button>
         {(run.state === "complete" || run.state === "failed") && <button type="button" className="primary" disabled={busy} onClick={() => void rebuild()}>Rebuild from current records</button>}
