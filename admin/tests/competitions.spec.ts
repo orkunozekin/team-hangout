@@ -6,6 +6,11 @@ const require = createRequire(new URL("../../functions/package.json", import.met
 const { initializeApp, deleteApp } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
 const { getFirestore, Timestamp } = require("firebase-admin/firestore");
+/** Synthetic starting draft for tests; not league policy. */
+const draftRules = {
+  rulesSchemaVersion: 1, points: { win: 3, draw: 1, loss: 0, forfeitWin: 3, forfeitLoss: 0 }, allowDraws: true, forfeitScore: { winner: 1, loser: 0 },
+  countedOutcomes: ["played", "forfeit"], tieBreakers: ["tablePoints", "headToHeadPoints", "scoreDifferential", "scoresFor", "wins"], scoreDifferentialCap: null, knockoutDeciders: [],
+};
 if (
   process.env.ADMIN_EMULATOR_TESTS !== "1" ||
   process.env.GCLOUD_PROJECT !== "demo-team-hangout" ||
@@ -142,4 +147,52 @@ test("a knockout competition rejects a tied score without a permitted decider", 
   await page.getByLabel("Decided by").selectOption("penalties");
   await page.getByRole("button", { name: "Finalize result" }).click();
   await expect(results.getByText("Final: 1-1, Hawks won on penalties")).toBeVisible();
+});
+
+test("standings show one complete table with a shared-rank tie and label updating and stale states", async ({ page }) => {
+  const meta = { schemaVersion: 2, revision: 1, status: "active", createdAt: Timestamp.now(), updatedAt: Timestamp.now() };
+  await db.doc("teams/bears").set({ ...meta, ...scope, name: "Bears", sport: null, inviteCode: "BEARSXXX" });
+  const competitionId = "spring-table";
+  const ref = db.doc(`organizations/${orgId}/competitions/${competitionId}`);
+  const teamIds = ["bears", "foxes", "hawks", "owls"];
+  // Hand calculation: Foxes and Hawks 4 points, +2, 4 scored, 1 win and never met, so they share rank 1. Bears 3, Owls 1.
+  const games = [["hawks", 3, "owls", 1], ["foxes", 3, "owls", 1], ["bears", 2, "owls", 2], ["hawks", 1, "bears", 1], ["foxes", 1, "bears", 1]] as const;
+  for (const [i, [home, homeScore, away, awayScore]] of games.entries()) {
+    await ref.collection("results").doc(`table-${i}`).set({
+      schemaVersion: 2, orgId, competitionId, eventId: `table-${i}`, homeTeamId: home, awayTeamId: away, status: "final", revision: 1,
+      final: { outcome: "played", homeScore, awayScore, forfeitingTeamId: null, winnerTeamId: homeScore > awayScore ? home : homeScore < awayScore ? away : null, decider: null, appliedRulesVersion: 1 },
+    });
+  }
+  const rules = { ...draftRules, scoreDifferentialCap: 5 };
+  await ref.set({
+    ...meta, orgId, competitionId, ...scope, name: "Spring Table", format: "league", teamIds, state: "active", sourceRevision: games.length,
+    finalResultCount: games.length, draftRules: rules, activeRules: rules, activeRulesVersion: 1, rulesVersionCount: 1,
+    sourceUpdatedAt: Timestamp.now(), standingsPendingSince: Timestamp.now(),
+  });
+  await page.goto(`/organizations/${orgId}/competition?program=${scope.programId}`);
+  await login(page);
+  await page.getByRole("button", { name: "Spring Table" }).click();
+  const standings = page.getByRole("region", { name: "Standings" });
+  await expect(standings.getByText("Up to date")).toBeVisible({ timeout: 20000 });
+  const rows = standings.getByRole("row");
+  await expect(rows.nth(1)).toContainText("T-1Foxes");
+  await expect(rows.nth(2)).toContainText("T-1Hawks");
+  await expect(rows.nth(3)).toContainText("3Bears");
+  await expect(rows.nth(4)).toContainText("4Owls");
+  await expect(rows.nth(2)).toContainText("Tied with Foxes; all tie-breakers exhausted");
+  await expect(standings.getByText(/1 unresolved tie; tied teams share a rank/)).toBeVisible();
+  await capture(page, "competition-standings-shared-tie");
+
+  // The rebuild itself is proven in backend suites; here the response status is rewritten to exercise the labels.
+  for (const [status, text] of [["updating", "Updating. Showing the last complete table."], ["stale", "Update delayed."]] as const) {
+    await page.route("**/getStandings", async (route) => {
+      const response = await route.fetch();
+      const body = await response.json();
+      await route.fulfill({ response, json: { result: { ...body.result, status } } });
+    });
+    await standings.getByRole("button", { name: "Refresh" }).click();
+    await expect(standings.getByText(new RegExp(`^${text.replace(/\./g, "\\.")}`))).toBeVisible();
+    await expect(standings.getByRole("row")).toHaveCount(5);
+    await page.unroute("**/getStandings");
+  }
 });

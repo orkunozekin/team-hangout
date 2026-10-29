@@ -372,6 +372,17 @@ td {
 tr:last-child td {
   border-bottom: 0;
 }
+tbody th[scope="row"] {
+  font-size: inherit;
+  color: inherit;
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+  background: transparent;
+}
+tr.tied td:first-child {
+  font-weight: 600;
+}
 td strong {
   font-weight: 600;
 }

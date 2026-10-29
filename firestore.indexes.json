@@ -1,6 +1,20 @@
 {
   "indexes": [
     {
+      "collectionGroup": "generations",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "state",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "startedAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "rsvpReminders",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
@@ -800,6 +814,16 @@
     }
   ],
   "fieldOverrides": [
+    {
+      "collectionGroup": "competitions",
+      "fieldPath": "standingsPendingSince",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    },
     {
       "collectionGroup": "outbox",
       "fieldPath": "state",

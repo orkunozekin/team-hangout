@@ -5,6 +5,7 @@ import EventAvailability from "../components/EventAvailability";
 import EventLineup from "../components/EventLineup";
 import EventPlayTime from "../components/EventPlayTime";
 import EventResult from "../components/EventResult";
+import EventStandings from "../components/EventStandings";
 import React, {
   useCallback,
   useEffect,
@@ -267,6 +268,7 @@ export default function EventDetailScreen({
         {!cached && event.schemaVersion === 2 && event.orgId ? <EventLineup key={`lineup:${event.id}:${membership.teamId}`} orgId={event.orgId} eventId={event.id} teamId={membership.teamId} canCoach={membership.role === 'coach'} /> : null}
         {!cached && event.schemaVersion === 2 && event.orgId && membership.role === 'coach' ? <EventPlayTime key={`playtime:${event.id}:${membership.teamId}`} orgId={event.orgId} eventId={event.id} teamId={membership.teamId} /> : null}
         {!cached && event.schemaVersion === 2 && event.orgId && event.type === 'match' && membership.role === 'coach' ? <EventResult key={`result:${event.id}:${membership.teamId}`} eventId={event.id} teamId={membership.teamId} /> : null}
+        {!cached && event.schemaVersion === 2 && event.orgId && event.type === 'match' ? <EventStandings key={`standings:${event.id}:${membership.teamId}`} eventId={event.id} teamId={membership.teamId} /> : null}
         {event.history?.length ? <>
           <Text style={styles.row}>Schedule history{event.historyHasMore ? ' (latest 20)' : ''}</Text>
           {event.history.map(row => <Text key={row.revision} style={styles.row}>

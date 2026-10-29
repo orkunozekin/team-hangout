@@ -21,6 +21,11 @@ const LIST_LIMIT = 100;
 const VERSION_PAGE = 20;
 const FORMATS: CompetitionFormat[] = ['league', 'knockout'];
 
+/** Marks standings as needing a rebuild inside the source transaction. Keeps the earliest pending time for stale detection. */
+export function pendingSince(competition: Data | undefined, now: Timestamp): Timestamp {
+  return competition?.standingsPendingSince instanceof Timestamp ? competition.standingsPendingSince : now;
+}
+
 function domain(code: string, message: string, transport: 'failed-precondition' | 'invalid-argument' | 'resource-exhausted' = 'failed-precondition'): never {
   throw new HttpsError(transport, message, { domainCode: code });
 }
@@ -137,6 +142,8 @@ export const saveCompetitionRules = command('saveCompetitionRules', normalizeCom
     });
   }
   const nextRevision = (current?.revision ?? 0) + 1;
+  // A new rules version or team set changes the standings inputs; Step 6 rebuilds and clears the marker.
+  const standingsChanged = !!activeRules && (activeRulesVersion !== (current?.activeRulesVersion ?? null) || !current || teamsChanged);
   tx.set(ref, {
     ...(current ?? {
       schemaVersion: 2, orgId: data.orgId, competitionId: data.competitionId, programId: data.programId, seasonId: data.seasonId,
@@ -144,6 +151,7 @@ export const saveCompetitionRules = command('saveCompetitionRules', normalizeCom
     }),
     name: data.name, teamIds: data.teamIds, draftRules: data.rules,
     activeRulesVersion, rulesVersionCount, activeRules,
+    standingsPendingSince: standingsChanged ? pendingSince(current, now) : current?.standingsPendingSince ?? null,
     revision: nextRevision, updatedAt: now, updatedBy: uid,
   });
   return {
@@ -285,10 +293,11 @@ async function scorerContext(tx: Transaction, data: Data, uid: string, writing: 
 }
 
 function bumpSource(tx: Transaction, competition: Data, finalDelta: number, uid: string, now: Timestamp) {
-  // Every finalization or correction advances the source revision that Step 6 standings rebuild from.
+  // Every finalization or correction advances the source revision that standings generations rebuild from.
   const sourceRevision = (competition.sourceRevision ?? 0) + 1;
   tx.update(competitionRef(competition.orgId, competition.competitionId), {
     sourceRevision, finalResultCount: (competition.finalResultCount ?? 0) + finalDelta, sourceUpdatedAt: now, sourceUpdatedBy: uid,
+    standingsPendingSince: pendingSince(competition, now),
   });
   return sourceRevision;
 }
