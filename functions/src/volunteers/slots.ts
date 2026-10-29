@@ -124,27 +124,32 @@ export const saveVolunteerSlot = command('saveVolunteerSlot', data => {
   return { requestId: data.requestId, revision: next, state: 'open', slotId: ref.id };
 });
 
-/** A guardian grant with the given right for a participant actively rostered on this team, never the participant's own account. */
-async function guardianParticipant(tx: Transaction, orgId: string, teamId: string, uid: string, right: 'respond' | 'viewSchedule') {
+/** Participants actively rostered on this team for whom the caller holds the given guardian right. Never the participant's own account. */
+export async function guardianParticipants(tx: Transaction, orgId: string, teamId: string, uid: string, right: 'respond' | 'viewSchedule') {
   const org = (await tx.get(db().doc(`organizations/${orgId}`))).data();
-  if (org?.schemaVersion !== 2 || org.features?.households !== true) return null;
+  if (org?.schemaVersion !== 2 || org.features?.households !== true) return [];
   const grants = await tx.get(db().collectionGroup('guardians').where('orgId', '==', orgId).where('userId', '==', uid).where('status', '==', 'active').limit(11));
   if (grants.size > 10) throw new HttpsError('resource-exhausted', 'Ask your organization to review household access.');
   const ids = grants.docs.filter(doc => {
     const grant = doc.data();
     return doc.ref.path === `organizations/${orgId}/participants/${grant.participantId}/guardians/${uid}` && grant.permissions?.[right] === true;
   }).map(doc => doc.data().participantId as string);
-  if (!ids.length) return null;
+  if (!ids.length) return [];
   const sources = await tx.getAll(...ids.flatMap(participantId => [
     db().doc(`organizations/${orgId}/participants/${participantId}`), db().doc(`teams/${teamId}/roster/${participantId}`),
   ]));
-  return ids.find((participantId, i) => {
+  return ids.flatMap((participantId, i) => {
     const person = sources[i * 2].data();
     const roster = sources[i * 2 + 1].data();
     return person?.schemaVersion === 2 && person.status === 'active' && (person.orgId == null || person.orgId === orgId)
       && person.linkedUserId !== uid && roster?.schemaVersion === 2 && roster.orgId === orgId
-      && roster.participantId === participantId && roster.status === 'active';
-  }) ?? null;
+      && roster.participantId === participantId && roster.status === 'active'
+      ? [{ participantId, displayName: typeof person.displayName === 'string' ? person.displayName : 'Participant' }] : [];
+  });
+}
+
+async function guardianParticipant(tx: Transaction, orgId: string, teamId: string, uid: string, right: 'respond' | 'viewSchedule') {
+  return (await guardianParticipants(tx, orgId, teamId, uid, right))[0]?.participantId ?? null;
 }
 
 /**
@@ -245,7 +250,7 @@ export const releaseVolunteerSlot = command('releaseVolunteerSlot', data => {
 });
 
 /** Team viewers, plus households of an actively rostered participant who are not team members. */
-async function teamViewerOrGuardian(tx: Transaction, eventId: string, teamId: string, uid: string) {
+export async function teamViewerOrGuardian(tx: Transaction, eventId: string, teamId: string, uid: string) {
   try {
     return await teamViewer(tx, eventId, teamId, null, uid);
   } catch (error) {

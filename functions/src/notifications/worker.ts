@@ -29,6 +29,7 @@ function safeCopy(intent: Data) {
     'event:edit': 'Event updated', 'event:postpone': 'Event postponed', 'event:cancel': 'Event cancelled',
     'event:reschedule': 'Schedule changed', 'event:complete': 'Event completed', eventPostponed: 'Event postponed',
     facilityClosure: 'Facility closed', schedulePublished: 'Schedule published', rsvpReminder: 'RSVP reminder', volunteerSlotCancelled: 'Volunteer slot cancelled',
+    rideArrangementChanged: 'Ride update',
   };
   return { title: labels[intent.templateKey] ?? 'Team update', body: 'Open Team Hangout for current details.' };
 }
@@ -41,6 +42,18 @@ function add(map: Map<string, AccessSource[]>, uid: unknown, source: AccessSourc
 }
 
 async function resolveRecipients(tx: Transaction, intent: Data) {
+  if (intent.audience?.mode === 'explicit' && intent.templateKey === 'rideArrangementChanged') {
+    // Ride parties are named explicitly and each must still hold the recorded team or household access.
+    const listed = intent.audience.recipients;
+    if (!Array.isArray(listed) || listed.length > 2) throw new Error('NOTIFICATION_AUDIENCE_TOO_LARGE');
+    const recipients = new Map<string, AccessSource[]>();
+    for (const entry of listed) {
+      if (typeof entry?.uid !== 'string' || !Array.isArray(entry.accessSources) || entry.accessSources.length !== 1
+        || !['team', 'household'].includes(entry.accessSources[0]?.kind)) throw new Error('NOTIFICATION_AUDIENCE_STALE');
+      if (await hasNotificationAccess(tx, intent.orgId, entry.uid, entry.accessSources)) recipients.set(entry.uid, entry.accessSources);
+    }
+    return recipients;
+  }
   if (intent.audience?.mode === 'explicit') {
     const recipients = new Map<string, AccessSource[]>();
     for (const recipient of await recheckExplicitRecipients(tx, intent)) recipients.set(recipient.uid, recipient.accessSources);
