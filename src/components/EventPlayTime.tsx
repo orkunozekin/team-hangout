@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text as NativeText, type TextProps, View } from 'react-native';
 
 import type { PlayActionPayload, PlayActionRecord, PlaySession } from '../../shared/playTime';
@@ -56,6 +56,52 @@ function substitutions(actions: PlayActionRecord[]): Substitution[] {
 const IN_PROGRESS = ['running', 'paused', 'periodBreak'];
 const REFRESH_MS = 30_000;
 
+type CorrectionDraft = { atElapsedMs: number; outParticipantId: string; inParticipantId: string; reason: string };
+
+/** Owns its draft so the panel's one-second clock tick never re-renders the inputs mid-keystroke. */
+const CorrectionForm = memo(function CorrectionForm({ substitution, roster, busy, onSave, onCancel }: {
+  substitution: Substitution;
+  roster: PlaySession['roster'];
+  busy: boolean;
+  onSave: (draft: CorrectionDraft) => void;
+  onCancel: () => void;
+}) {
+  const [correctedTime, setCorrectedTime] = useState(() => formatGameClock(substitution.atElapsedMs));
+  const [correctedOut, setCorrectedOut] = useState(substitution.outParticipantId);
+  const [correctedIn, setCorrectedIn] = useState(substitution.inParticipantId);
+  const [reason, setReason] = useState('');
+  const correctionMs = parseGameClock(correctedTime);
+  return (
+    <View style={styles.correction}>
+      <Text style={styles.subheading}>{`Correct substitution at ${formatGameClock(substitution.atElapsedMs)}`}</Text>
+      <FieldLabel>Game time (m:ss)</FieldLabel>
+      <TextField accessibilityLabel="Corrected game time" value={correctedTime} onChangeText={setCorrectedTime} />
+      <FieldLabel>Who left</FieldLabel>
+      <View style={styles.wrap}>
+        {roster.map((entry) => (
+          <Chip key={entry.participantId} label={`Left: ${entry.displayName}`} text={entry.displayName} selected={correctedOut === entry.participantId} onPress={() => setCorrectedOut(entry.participantId)} />
+        ))}
+      </View>
+      <FieldLabel>Who entered</FieldLabel>
+      <View style={styles.wrap}>
+        {roster.filter((entry) => entry.participantId !== correctedOut).map((entry) => (
+          <Chip key={entry.participantId} label={`Entered: ${entry.displayName}`} text={entry.displayName} selected={correctedIn === entry.participantId} onPress={() => setCorrectedIn(entry.participantId)} />
+        ))}
+      </View>
+      <FieldLabel>Reason</FieldLabel>
+      <TextField accessibilityLabel="Correction reason" maxLength={PLAY_CORRECTION_REASON_MAX} value={reason} onChangeText={setReason} placeholder="Required for the audit history" />
+      {correctionMs === null ? <Text style={styles.error}>Enter the time as minutes:seconds.</Text> : null}
+      <PrimaryButton
+        label="Save correction"
+        loading={busy}
+        disabled={!reason.trim() || correctionMs === null || !correctedIn || correctedIn === correctedOut}
+        onPress={() => onSave({ atElapsedMs: correctionMs!, outParticipantId: correctedOut, inParticipantId: correctedIn, reason: reason.trim() })}
+      />
+      <SecondaryButton label="Cancel correction" onPress={onCancel} />
+    </View>
+  );
+});
+
 function PlayTimePanel({ orgId, eventId, teamId }: { orgId: string; eventId: string; teamId: string }) {
   const [session, setSession] = useState<PlaySession | null>(null);
   const [receivedAt, setReceivedAt] = useState(0);
@@ -67,11 +113,10 @@ function PlayTimePanel({ orgId, eventId, teamId }: { orgId: string; eventId: str
   const [periodCount, setPeriodCount] = useState(2);
   const [leaving, setLeaving] = useState<string | null>(null);
   const [correcting, setCorrecting] = useState<Substitution | null>(null);
-  const [correctedTime, setCorrectedTime] = useState('');
-  const [correctedIn, setCorrectedIn] = useState('');
-  const [correctedOut, setCorrectedOut] = useState('');
   const [older, setOlder] = useState<{ actions: PlayActionRecord[]; before: number | null } | null>(null);
-  const [reason, setReason] = useState('');
+  const saveCorrectionRef = useRef<(draft: CorrectionDraft) => void>(() => undefined);
+  const saveCorrection = useCallback((draft: CorrectionDraft) => saveCorrectionRef.current(draft), []);
+  const cancelCorrection = useCallback(() => setCorrecting(null), []);
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -167,6 +212,9 @@ function PlayTimePanel({ orgId, eventId, teamId }: { orgId: string; eventId: str
   };
   const record = (action: PlayActionPayload, message: string) =>
     mutate(() => recordPlayAction(orgId, eventId, teamId, session.revision, action), message);
+  saveCorrectionRef.current = (draft) => {
+    if (correcting) void record({ kind: 'correct', targetSequence: correcting.sequence, ...draft }, 'Correction recorded.');
+  };
 
   const elapsed = estimateElapsedMs(session, receivedAt, stale ? receivedAt : now);
   const preset = session.sportPresetId ? getSportPreset(session.sportPresetId) : null;
@@ -179,7 +227,6 @@ function PlayTimePanel({ orgId, eventId, teamId }: { orgId: string; eventId: str
   const subs = substitutions([...session.actions, ...(older?.actions ?? [])]);
   const olderCursor = older ? older.before : session.olderBeforeSequence;
   const extra = elapsed - session.elapsedMs;
-  const correctionMs = parseGameClock(correctedTime);
   const periodLabel = session.periodCount ? ` · Period ${session.currentPeriod} of ${session.periodCount}` : '';
 
   return (
@@ -279,48 +326,13 @@ function PlayTimePanel({ orgId, eventId, teamId }: { orgId: string; eventId: str
             {`P${sub.period} ${formatGameClock(sub.atElapsedMs)} · ${nameOf(sub.inParticipantId)} in for ${nameOf(sub.outParticipantId)}${sub.corrected ? ' (corrected)' : ''}`}
           </Text>
           {session.status !== 'finalized' ? (
-            <Chip label={`Correct substitution at ${formatGameClock(sub.atElapsedMs)}`} text="Correct" onPress={() => {
-              setCorrecting(sub);
-              setCorrectedTime(formatGameClock(sub.atElapsedMs));
-              setCorrectedIn(sub.inParticipantId);
-              setCorrectedOut(sub.outParticipantId);
-              setReason('');
-            }} />
+            <Chip label={`Correct substitution at ${formatGameClock(sub.atElapsedMs)}`} text="Correct" onPress={() => setCorrecting(sub)} />
           ) : null}
         </View>
       ))}
       {olderCursor ? <SecondaryButton label="Show earlier actions" disabled={busy} onPress={() => void loadOlder(olderCursor)} /> : null}
       {correcting ? (
-        <View style={styles.correction}>
-          <Text style={styles.subheading}>{`Correct substitution at ${formatGameClock(correcting.atElapsedMs)}`}</Text>
-          <FieldLabel>Game time (m:ss)</FieldLabel>
-          <TextField accessibilityLabel="Corrected game time" value={correctedTime} onChangeText={setCorrectedTime} />
-          <FieldLabel>Who left</FieldLabel>
-          <View style={styles.wrap}>
-            {session.roster.map((entry) => (
-              <Chip key={entry.participantId} label={`Left: ${entry.displayName}`} text={entry.displayName} selected={correctedOut === entry.participantId} onPress={() => setCorrectedOut(entry.participantId)} />
-            ))}
-          </View>
-          <FieldLabel>Who entered</FieldLabel>
-          <View style={styles.wrap}>
-            {session.roster.filter((entry) => entry.participantId !== correctedOut).map((entry) => (
-              <Chip key={entry.participantId} label={`Entered: ${entry.displayName}`} text={entry.displayName} selected={correctedIn === entry.participantId} onPress={() => setCorrectedIn(entry.participantId)} />
-            ))}
-          </View>
-          <FieldLabel>Reason</FieldLabel>
-          <TextField accessibilityLabel="Correction reason" maxLength={PLAY_CORRECTION_REASON_MAX} value={reason} onChangeText={setReason} placeholder="Required for the audit history" />
-          {correctionMs === null ? <Text style={styles.error}>Enter the time as minutes:seconds.</Text> : null}
-          <PrimaryButton
-            label="Save correction"
-            loading={busy}
-            disabled={!reason.trim() || correctionMs === null || !correctedIn || correctedIn === correctedOut}
-            onPress={() => void record({
-              kind: 'correct', targetSequence: correcting.sequence, atElapsedMs: correctionMs!,
-              outParticipantId: correctedOut, inParticipantId: correctedIn, reason: reason.trim(),
-            }, 'Correction recorded.')}
-          />
-          <SecondaryButton label="Cancel correction" onPress={() => setCorrecting(null)} />
-        </View>
+        <CorrectionForm key={correcting.sequence} substitution={correcting} roster={session.roster} busy={busy} onSave={saveCorrection} onCancel={cancelCorrection} />
       ) : null}
     </View>
   );
