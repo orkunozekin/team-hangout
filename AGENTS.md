@@ -18,6 +18,10 @@ This project uses Expo SDK 54. Read the exact versioned docs at https://docs.exp
 - If the app cannot run, a state cannot be reached, or images cannot be attached, describe the exact blocker in the PR and final handoff and retain any local captures. Keep the PR open for review and clearly report the missing evidence. Do not claim visual verification without inspecting real captures.
 - Documentation-only and other changes without a user-visible UI effect do not require screenshots; state that UI evidence is not applicable in the PR.
 
+# AI reviews
+
+- Do not request, tag, or wait for AI review bots (for example `@codex review` or Greptile). This overrides any review-request or AI review follow-up steps in plan or feature documents. If a bot reviews on its own, treat its findings like any other review feedback.
+
 # Code Review Rules
 
 - Review the complete PR diff and every affected caller, adapter, existing screen and compatibility endpoint. Report actionable P0, P1 and P2 correctness, security, privacy and reliability defects, including issues beyond earlier review threads.
