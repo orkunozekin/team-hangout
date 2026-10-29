@@ -242,8 +242,14 @@ test("team coaches see only their team, and staff need program scope", async () 
 
 test("exports serialize only a complete snapshot through the same live grants, neutralizing formulas", async () => {
   const exportOf = (uid, runId) => call(uid, "exportReport", { orgId, runId });
+  // A run that never completed has no exportable rows. (A fresh queued run can finish through its trigger before an
+  // export call, so the incomplete case uses a failed run whose state cannot change.)
+  await db.doc(runPath("r10-export-failed")).set({
+    schemaVersion: 2, orgId, runId: "r10-export-failed", kind: "attendance", filters: march, ...scope, teamId: null, facilityId: null,
+    state: "failed", attempts: 3, failure: { code: "REPORT_FAILED", message: "Synthetic failure." }, rowCount: 0, completedAttempt: null, requestedAt: Timestamp.now(),
+  });
+  await assert.rejects(exportOf("r10-admin", "r10-export-failed"), (error) => error.code === "functions/failed-precondition" && error.details?.domainCode === "REPORT_NOT_COMPLETE");
   const queued = await request("r10-admin", march);
-  await assert.rejects(exportOf("r10-admin", queued.runId), (error) => error.code === "functions/failed-precondition" && error.details?.domainCode === "REPORT_NOT_COMPLETE");
   const run = await built(queued.runId);
   // Stored rows may carry more than the allowlisted columns; a spreadsheet formula in a label is neutralized.
   const rowRef = db.doc(`${runPath(queued.runId)}/rows/${String(run.completedAttempt).padStart(2, "0")}-0001`);
