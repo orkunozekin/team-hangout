@@ -143,6 +143,8 @@ service cloud.firestore {
       match /rideArrangements/{arrangementId}/{document=**} {
         allow read, write: if false;
       }
+      // Step 13 practice plans are callable-only: savePracticePlan rechecks the live coach assignment and resource
+      // availability, private notes sit in a separate document, and households read only the published view.
       match /practicePlans/{teamId}/{document=**} {
         allow read, write: if false;
       }
@@ -167,7 +169,11 @@ service cloud.firestore {
     match /organizations/{orgId}/rolloverJobs/{jobId}/{document=**} {
       allow read, write: if false;
     }
+    // Step 13 resources are callable-only. Reviewer designations are recorded by organization operators outside the app.
     match /organizations/{orgId}/practiceResources/{resourceId}/{document=**} {
+      allow read, write: if false;
+    }
+    match /organizations/{orgId}/resourceReviewers/{uid} {
       allow read, write: if false;
     }
 

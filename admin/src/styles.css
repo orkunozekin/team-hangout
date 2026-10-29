@@ -804,3 +804,14 @@ button { overflow-wrap: anywhere; }
 .rollover .rollover-failure { color: #9b2c2c; }
 .rollover .rollover-excluded { columns: 2; margin: 0 0 16px; }
 .rollover .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+.practice .report-form { flex-wrap: wrap; align-items: flex-end; }
+.practice .report-form label { min-width: 160px; }
+.practice .report-form button { flex: none; }
+.practice .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+.practice fieldset { border-top: 1px solid #d9e2dc; padding-top: 12px; margin-bottom: 12px; }
+.practice legend { font-weight: 600; padding-right: 8px; }
+.practice textarea { font: inherit; width: 100%; max-width: 720px; min-height: 72px; padding: 12px; border: 1px solid #b7c8bf; border-radius: 7px; resize: vertical; }
+.practice .checkbox { flex-direction: row; align-items: center; justify-content: flex-start; gap: 10px; }
+.practice .checkbox input { width: auto; flex: none; margin: 0; }
+.practice .practice-review { border: 1px solid #d9e2dc; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; }
+.practice tr[aria-current="true"] th { text-decoration: underline; }
