@@ -8,6 +8,7 @@ export const SCHEDULE_PUBLICATION_SUITE = 'tests/backend/schedule-publication.te
 
 export const OPERATIONS_SUITES = [
   'tests/backend/contracts.test.mjs',
+  'tests/backend/phase3-contracts.test.mjs',
   'tests/backend/operation-helpers.test.mjs',
   'tests/backend/operational-events.test.mjs',
   'tests/backend/availability.test.mjs',

@@ -112,6 +112,43 @@ service cloud.firestore {
         && resource.data.deletedAt == null;
       // Update Team Hangout: event writes now require revisioned callable commands.
       allow create, update, delete: if false;
+
+      // Phase 3 private and derived records remain server-only until their owning step adds
+      // a callable plus live scoped authorization. A platform role or parent event read is not access.
+      match /coaching/{teamId}/{document=**} {
+        allow read, write: if false;
+      }
+      match /lineupViews/{teamId}/{document=**} {
+        allow read, write: if false;
+      }
+      match /playSessions/{teamId}/{document=**} {
+        allow read, write: if false;
+      }
+      match /volunteerSlots/{slotId}/{document=**} {
+        allow read, write: if false;
+      }
+      match /rideRequests/{requestId}/{document=**} {
+        allow read, write: if false;
+      }
+      match /rideArrangements/{arrangementId}/{document=**} {
+        allow read, write: if false;
+      }
+      match /practicePlans/{teamId}/{document=**} {
+        allow read, write: if false;
+      }
+    }
+
+    match /organizations/{orgId}/competitions/{competitionId}/{document=**} {
+      allow read, write: if false;
+    }
+    match /organizations/{orgId}/reportRuns/{runId}/{document=**} {
+      allow read, write: if false;
+    }
+    match /organizations/{orgId}/rolloverJobs/{jobId}/{document=**} {
+      allow read, write: if false;
+    }
+    match /organizations/{orgId}/practiceResources/{resourceId}/{document=**} {
+      allow read, write: if false;
     }
 
     match /organizations/{orgId}/rsvpReminders/{reminderId} {

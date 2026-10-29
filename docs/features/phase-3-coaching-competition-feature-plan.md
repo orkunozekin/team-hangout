@@ -6,13 +6,13 @@ Turn the approved [product direction](../plans/product-plan.md#phase-3-coaching-
 
 | Field | Value |
 | --- | --- |
-| Status | planned |
-| Last updated | 2026-10-10 |
-| Source baseline | Team Hangout `d66e89b`, inspected locally |
-| Related PR / branch | Planning PR recorded by coordinating agent |
+| Status | in progress, Step 1 implemented and awaiting review |
+| Last updated | 2026-10-28 |
+| Source baseline | Team Hangout `9b5fbc545e9602eef6b08db1d8a0078a34a0731c` from `main` |
+| Related PR / branch | `codex/phase-3-step-1`; PR pending creation |
 | Dependencies | Phase 1 organization/participant/season authorization and Phase 2 canonical events, attendance, facilities, communications |
 | Commercial status | Business model selection pending; no feature paywall, fee, or entitlement approved |
-| Next implementation step | Step 1 only, after dependency contracts pass its entry checks |
+| Next implementation step | Review and merge Step 1 only; Step 2 has not started |
 
 Read the [phase index and common evidence standard](../plans/phase-plans.md), [Phase 1 foundations plan](phase-1-foundations-feature-plan.md), and [Phase 2 operations plan](phase-2-league-operations-feature-plan.md) before implementation.
 
@@ -251,7 +251,7 @@ Proposed uncreated modules, not clickable source claims: `src/lib/coaching/` for
 
 ## Acceptance and validation record
 
-- [ ] All documented dependency contracts actually exist and cross-organization/private-access fixtures pass against emulators.
+- [x] All documented dependency contracts actually exist and cross-organization/private-access fixtures pass against emulators.
 - [ ] Soccer/basketball/football lineups preserve normalized positions, bench order and unit membership after save/reload; tap/list alternative works with screen reader/large text.
 - [ ] Private notes and individual playtime remain inaccessible to households and unauthorized staff; public lineup publication is explicit.
 - [ ] Clock/background/corrections replay deterministically; duplicate commands and simultaneous editors do not double-count or overwrite.
@@ -265,7 +265,7 @@ Proposed uncreated modules, not clickable source claims: `src/lib/coaching/` for
 - [ ] Each UI PR embeds inspected screenshots accessible to reviewers from its latest checkout, with captions and required empty/error/conflict states.
 - [ ] Required tests/typecheck and backend build pass per step; CI and configured AI review feedback are addressed using `address-pr-feedback`, followed by a new bot-tagged re-review comment after fixes. Missing reviews are reported, not treated as approval.
 
-Executed during planning: the 11 reference geometry/marker tests described above. No Phase 3 application code, native screenshots, Firestore emulator integration, worker load probe or pilot operation has run. Every unchecked acceptance item remains future work. Planning validation must check document links and contract consistency; application tests belong to implementation PRs.
+Planning executed the 11 reference geometry/marker tests described above. Step 1 added pure contracts and emulator isolation coverage only. No Phase 3 UI, worker, migration, feature flag, deployment, production access, native screenshot or pilot operation has run. Every remaining unchecked item belongs to a later explicitly authorized step.
 
 ## Handoff
 
@@ -275,14 +275,20 @@ Executed during planning: the 11 reference geometry/marker tests described above
 - Inspected owner's soccer pitch layout/marker source read-only and executed 11 bounded reference tests successfully.
 - Read exact SDK 54 reference and primary documentation for rendering, gestures, transactions, callables, jobs, aggregation, export, sporting outcomes and rights limitations.
 - Coordinated canonical event/attendance contracts with Phase 2; recorded proof classes and explicit runtime/external gates.
+- Verified the Phase 1 and Phase 2 organization, participant, canonical event, attendance snapshot, facility, scoped authorization, revision and idempotency contracts at `9b5fbc545e9602eef6b08db1d8a0078a34a0731c`. Phase 2 push credentials and physical-device delivery remain parallel release gates, not Step 1 prerequisites.
+- Added `shared/phase3.ts` with pure mutation, revision, immutable-scope, participant-reference, competition-side and named-capability contracts. No Firebase runtime or UI is enabled.
+- Added a synthetic two-organization isolation matrix with two guardians, a coach-parent, a revoked coach, two teams sharing one canonical event, a foreign team and an archived season. Participant IDs differ from authentication UIDs.
+- Added explicit deny-first Firestore rules for proposed Phase 3 private and derived paths plus emulator regressions for unauthenticated, guardian, coach, revoked, organization staff and cross-tenant access.
+- Validation on the implementation checkout: `yarn typecheck`; Functions TypeScript compile with `tsc -p functions/tsconfig.json`; focused Phase 3 emulator suite, 6/6; `yarn test:backend`, 315/315; `yarn test:coverage --ci --runInBand --silent`, 273/273 with 97.25% statements; `git diff --check`. The emulator harness used project `demo-team-hangout` and explicit loopback Auth, Firestore, Functions and Storage hosts. Local validation used the bundled Node 24 runtime because Node 22 is the authoritative CI runtime.
+- UI evidence is not applicable because Step 1 changes contracts, fixtures, rules and documentation only.
 
 ### Remaining work
 
-Not started. Begin **Step 1 only**, confirm Phase 1/2 merged contracts, implement its isolated PR, update this document with exact checks/evidence and next incomplete step. Each later explicit “implement the next step” request selects the next numbered incomplete step, not the whole phase.
+Step 1 is implemented and awaiting PR review and final-head CI. Do not start Step 2 until Step 1 is merged and the user explicitly requests the next step. Each later explicit “implement the next step” request selects the next numbered incomplete step, not the whole phase.
 
 ### Blockers and risks
 
-- All Phase 3 domain modules and runtime proofs are unimplemented; prior-phase dependencies must land first.
+- Step 1 has no known dependency blocker. The remaining Phase 3 domain modules and runtime proofs are intentionally unimplemented.
 - Native drag/scroll/accessibility and package rebuild require simulator/device proof; source/reference tests are insufficient.
 - Pilot league rules, transport policy, rights evidence and qualified content reviewer are external gates owned by the organization/product owner.
 - No production credentials/data/notifications are authorized by this plan; development uses non-sensitive emulator fixtures. Business model selection remains pending.
