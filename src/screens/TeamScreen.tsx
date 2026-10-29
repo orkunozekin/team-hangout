@@ -8,6 +8,7 @@ import {
   Alert,
   FlatList,
   RefreshControl,
+  ScrollView,
   Share,
   StyleSheet,
   Text,
@@ -184,7 +185,7 @@ export default function TeamScreen({ teamId, membership, appRole, onConversation
       ) : !team ? (
         <EmptyState message="Loading team..." />
       ) : team.schemaVersion === 2 ? (
-        <View style={styles.list}>
+        <ScrollView contentContainerStyle={styles.list}>
           <Text>Your organization manages this team's roster.</Text>
           {onConversation ? teamConversationTargets(team).map(target => (
             <SecondaryButton key={`${target.scopeType}:${target.scopeId}`} label={target.label} onPress={() => onConversation({ orgId: target.orgId, scopeType: target.scopeType, scopeId: target.scopeId })} />
@@ -193,7 +194,7 @@ export default function TeamScreen({ teamId, membership, appRole, onConversation
           {membership.role === 'coach' && team.orgId && team.programId && team.seasonId ? (
             <TeamReportSummary orgId={team.orgId} programId={team.programId} seasonId={team.seasonId} teamId={team.id} />
           ) : null}
-        </View>
+        </ScrollView>
       ) : (
         <>
           <Text style={styles.sectionTitle}>Members ({members.length})</Text>

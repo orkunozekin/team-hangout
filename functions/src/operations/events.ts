@@ -16,18 +16,22 @@ import { stageReminder } from '../notifications/reminders';
 
 // Reuse the existing live staff/coach/participant/guardian reader; navigation pointers grant nothing.
 async function readableTeam(tx: Transaction, teamId: string, uid: string, household?: () => Promise<Data>) {
+  return (await readableTeamAccess(tx, teamId, uid, household)).team;
+}
+/** `coaching` is true for program staff and active team coaches or captains, never for household-only access. */
+async function readableTeamAccess(tx: Transaction, teamId: string, uid: string, household?: () => Promise<Data>): Promise<{ team: Data; coaching: boolean }> {
   const team = (await tx.get(getFirestore().doc(`teams/${teamId}`))).data();
   if (!team || team.schemaVersion !== 2) denied();
   const parents = await hierarchy(tx, team.orgId, team.programId, team.seasonId, team.divisionId, false);
   if (parents.org.features?.organizationV2 !== true) denied();
-  try { const staff = await staffScope(tx, team.orgId, uid); requireProgram(staff, team.programId); return team; }
+  try { const staff = await staffScope(tx, team.orgId, uid); requireProgram(staff, team.programId); return { team, coaching: true }; }
   catch (error) { if (!(error instanceof HttpsError) || error.code !== 'permission-denied') throw error; }
   const member = (await tx.get(getFirestore().doc(`teamMembers/${teamId}_${uid}`))).data();
   if (member?.schemaVersion === 2 && member.orgId === team.orgId && member.teamId === teamId && member.userId === uid
-    && member.status === 'active' && Array.isArray(member.roles) && member.roles.some((role: string) => ['coach', 'captain'].includes(role))) return team;
+    && member.status === 'active' && Array.isArray(member.roles) && member.roles.some((role: string) => ['coach', 'captain'].includes(role))) return { team, coaching: true };
   const access = await (household ? household() : readAgenda(tx, {}, uid, { events: false }));
   if (!access.teams.some((row: Data) => row.id === teamId && row.orgId === team.orgId)) denied();
-  return team;
+  return { team, coaching: false };
 }
 async function canonical(tx: Transaction, event: Data) {
   const db = getFirestore();
@@ -69,11 +73,13 @@ export const getNativeTeam = readCommand(data => {
   keys(data, ['teamId']); return { teamId: id(data.teamId, 'teamId') };
 }, async (tx, data, uid) => {
   tx = cacheDocumentReads(tx);
-  const team = await readableTeam(tx, data.teamId, uid);
+  const { team, coaching } = await readableTeamAccess(tx, data.teamId, uid);
   const organization = (await tx.get(getFirestore().doc(`organizations/${team.orgId}`))).data();
   const timeZone = text(organization?.timeZone, 'organization time zone', 100);
   try { new Intl.DateTimeFormat('en', { timeZone }); } catch { invalid('Organization time zone needs administrator correction.'); }
-  return { id: data.teamId, schemaVersion: 2, name: team.name, sport: team.sport ?? null, timeZone, orgId: id(team.orgId, 'stored orgId') };
+  return { id: data.teamId, schemaVersion: 2, name: team.name, sport: team.sport ?? null, timeZone, orgId: id(team.orgId, 'stored orgId'),
+    // Coach surfaces such as the team report need the season scope; households keep the minimal shape. IDs grant no authority.
+    ...(coaching ? Object.fromEntries((['programId', 'seasonId', 'divisionId'] as const).filter(field => typeof team[field] === 'string').map(field => [field, team[field]])) : {}) };
 });
 export const listEventTeamChoices = readCommand(data => {
   keys(data, ['teamId', 'pageSize', 'cursor']); return { teamId: id(data.teamId, 'teamId'), ...page(data) };

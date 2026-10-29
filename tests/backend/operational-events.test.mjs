@@ -126,6 +126,13 @@ test('native creation reads the canonical organization timezone instead of team 
   await db.doc('organizations/p202-org').update({ timeZone: 'America/Chicago' });
   assert.equal((await call('p202-admin', 'getNativeTeam', { teamId: 'p202-a' })).timeZone, 'America/Chicago');
 });
+test('native team reads carry season scope so coach surfaces such as the team report can address it', async () => {
+  const team = (await db.doc('teams/p202-a').get()).data();
+  const native = await call('p202-a-coach', 'getNativeTeam', { teamId: 'p202-a' });
+  assert.equal(native.programId, team.programId);
+  assert.equal(native.seasonId, team.seasonId);
+  assert.equal(native.divisionId, team.divisionId);
+});
 test('50-event reads reuse transaction-local grants and metadata, then reauthorize the next request', async () => {
   await db.doc('organizations/p202-org/participants/p202-child/guardians/p202-guardian').update({ status: 'active' });
   await db.doc('teams/p202-b/roster/p202-child').update({ status: 'active' });
