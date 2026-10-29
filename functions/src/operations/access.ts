@@ -31,6 +31,10 @@ export async function hierarchy(tx: Transaction, orgId: string, programId: strin
   if (program.orgId !== orgId || (seasonId && (season.orgId !== orgId || season.programId !== programId))
     || (divisionId && (division.orgId !== orgId || division.programId !== programId || division.seasonId !== seasonId))) denied();
   if (writing && docs.some(doc => doc.data()?.status === 'archived')) inactive();
+  // A rollover target stays closed to edits until its job reconciles and completes.
+  if (writing && seasonId && season.rolloverState === 'building') {
+    throw new HttpsError('failed-precondition', 'This season is still being created by a rollover.', { domainCode: 'ROLLOVER_IN_PROGRESS' });
+  }
   return { org, program, season, division };
 }
 /** All event teams must have the same tenant/program/season. Coaches and captains need every team's current grant. */
