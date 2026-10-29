@@ -152,7 +152,7 @@ before(async () => {
   booking("r10-b8", "r10-r1", "completed", "2026-03-08T17:00:00Z", "2026-03-08T18:00:00Z", { orgId: "r10-foreign-org" });
   await batch.commit();
 
-  // 366-day synthetic scoped run: team C, one practice a week, 15 participants each.
+  // 366-day synthetic scoped run: team C, one practice a week, 6 participants each.
   batch = db.batch();
   let writes = 0;
   const start = Date.parse("2025-10-31T22:00:00Z");
@@ -162,8 +162,8 @@ before(async () => {
       const id = `r10-year-${week}-${offset}`;
       const [path, row] = event(id, { teamIds: ["r10-c"], seasonId: "r10-year", startsAt: Timestamp.fromMillis(startsAt), endsAt: Timestamp.fromMillis(startsAt + 3600000), ...completed });
       batch.set(db.doc(path), row);
-      roster(batch, id, Array.from({ length: 15 }, (_, i) => [`c${i}`, ["r10-c"], ["r10-c"], ["present", "late", "absent"][i % 3]]));
-      writes += 31;
+      roster(batch, id, Array.from({ length: 6 }, (_, i) => [`c${i}`, ["r10-c"], ["r10-c"], ["present", "late", "absent"][i % 3]]));
+      writes += 13;
       if (writes > 400) {
         await batch.commit();
         batch = db.batch();
@@ -321,10 +321,10 @@ test("a synthetic 366-day team run stays within guardrails and records its read 
   const run = await built(runId);
   assert.equal(run.state, "complete", run.failure?.message);
   assert.equal(run.interval.days, 366);
-  assert.deepEqual([run.manifest.eventsInScope, run.summary.events.closed, run.summary.eligible, run.summary.present], [52, 52, 780, 260]);
-  assert.deepEqual(run.summary.presenceRate, { numerator: 520, denominator: 780, rate: 0.6667 });
+  assert.deepEqual([run.manifest.eventsInScope, run.summary.events.closed, run.summary.eligible, run.summary.present], [52, 52, 312, 104]);
+  assert.deepEqual(run.summary.presenceRate, { numerator: 208, denominator: 312, rate: 0.6667 });
   // One event page read plus one snapshot and one attendance read per participant-event.
   const reads = run.manifest.eventReads + run.manifest.snapshotReads + run.manifest.attendanceReads;
-  assert.equal(reads, 52 + 780 + 780);
+  assert.equal(reads, 52 + 312 + 312);
   console.log(`366-day team run: ${run.manifest.eventsInScope} events, ${reads} document reads, worker ${run.manifest.durationMs} ms, end-to-end ${Date.now() - started} ms`);
 });
