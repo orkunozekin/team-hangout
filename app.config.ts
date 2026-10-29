@@ -40,7 +40,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     slug: 'team-hangout',
     version: '1.0.0',
     scheme: 'teamhangout',
-    orientation: 'portrait',
+    orientation: !isProduction && process.env.EXPO_PUBLIC_PHASE3_SURFACE_HARNESS === 'true'
+      ? 'default'
+      : 'portrait',
     icon: './assets/icon.png',
     userInterfaceStyle: 'light',
     splash: {

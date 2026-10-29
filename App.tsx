@@ -30,6 +30,7 @@ import {
 import {
   SafeAreaProvider,
 } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import {
   User,
@@ -390,14 +391,7 @@ function AppNavigator({
   );
 }
 
-export default function App() {
-  const [fontsLoaded] = useFonts({
-    Inter_400Regular,
-    Inter_500Medium,
-    Inter_600SemiBold,
-    Inter_700Bold,
-  });
-
+function StandardApp() {
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [teamReady, setTeamReady] = useState(false);
@@ -549,7 +543,7 @@ export default function App() {
     refreshTeam();
   }, [refreshTeam, teamVersion]);
 
-  if (!fontsLoaded || !authReady || (user && !teamReady)) {
+  if (!authReady || (user && !teamReady)) {
     return (
       <View style={styles.boot}>
         <ActivityIndicator size="large" color={colors.primary} />
@@ -588,7 +582,32 @@ export default function App() {
   );
 }
 
+export default function App() {
+  const [fontsLoaded] = useFonts({
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
+  });
+  if (!fontsLoaded) {
+    return (
+      <View style={styles.boot}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
+  return (
+    <GestureHandlerRootView style={styles.gestureRoot}>
+      <StandardApp />
+    </GestureHandlerRootView>
+  );
+}
+
 const styles = StyleSheet.create({
+  gestureRoot: {
+    flex: 1,
+  },
   boot: {
     flex: 1,
     alignItems: 'center',

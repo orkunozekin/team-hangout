@@ -6,13 +6,13 @@ Turn the approved [product direction](../plans/product-plan.md#phase-3-coaching-
 
 | Field | Value |
 | --- | --- |
-| Status | in review, Step 1 implemented in PR #49 |
+| Status | in review, Step 2 implemented in PR #50 |
 | Last updated | 2026-10-28 |
-| Source baseline | Team Hangout `9b5fbc545e9602eef6b08db1d8a0078a34a0731c` from `main` |
-| Related PR / branch | [PR #49](https://github.com/orkunozekin/team-hangout/pull/49) on `codex/phase-3-step-1` |
+| Source baseline | Team Hangout `0fade5c03a011e9c6a519844d381f098c2760b32` from `main` after Step 1 merged |
+| Related PR / branch | [PR #49](https://github.com/orkunozekin/team-hangout/pull/49) merged; [PR #50](https://github.com/orkunozekin/team-hangout/pull/50) on `codex/phase-3-step-2` |
 | Dependencies | Phase 1 organization/participant/season authorization and Phase 2 canonical events, attendance, facilities, communications |
 | Commercial status | Business model selection pending; no feature paywall, fee, or entitlement approved |
-| Next implementation step | Review and merge Step 1 only; Step 2 has not started |
+| Next implementation step | Review Step 2 only; Step 3 has not started |
 
 Read the [phase index and common evidence standard](../plans/phase-plans.md), [Phase 1 foundations plan](phase-1-foundations-feature-plan.md), and [Phase 2 operations plan](phase-2-league-operations-feature-plan.md) before implementation.
 
@@ -281,18 +281,25 @@ Planning executed the 11 reference geometry/marker tests described above. Step 1
 - Added explicit deny-first Firestore rules for proposed Phase 3 private and derived paths plus emulator regressions for unauthenticated, guardian, coach, revoked, organization staff and cross-tenant access.
 - Validation on the implementation checkout: `yarn typecheck`; Functions TypeScript compile with `tsc -p functions/tsconfig.json`; focused Phase 3 emulator suite, 6/6; `yarn test:backend`, 315/315; `yarn test:coverage --ci --runInBand --silent`, 273/273 with 97.25% statements; `git diff --check`. The emulator harness used project `demo-team-hangout` and explicit loopback Auth, Firestore, Functions and Storage hosts. Local validation used the bundled Node 24 runtime because Node 22 is the authoritative CI runtime.
 - UI evidence is not applicable because Step 1 changes contracts, fixtures, rules and documentation only.
+- Added SDK 54-resolved `react-native-svg` 15.12.1 and `react-native-gesture-handler` 2.28.0, with gesture initialization first in the native entrypoint.
+- Added an internal development-only lineup surface harness selected only when `__DEV__` and `EXPO_PUBLIC_PHASE3_SURFACE_HARNESS=true`; the gate does not evaluate or render the harness when false. The harness uses only 30 synthetic participants and cannot save or publish.
+- Added explicit soccer, basketball and football presets, normalized coordinate conversion and clamping, capacity-safe participant placement, tap placement, hold-then-drag markers and an accessible position-list alternative. Drag activates after 220 ms and 8 points so ordinary scrolling remains available.
+- Added focused tests for preset capacities, normalized coordinate round-trips, bounds, responsive frames, 30-person synthetic data, selected markers, development gating, long scalable labels and a complete accessible list placement flow. Focused validation passes 20/20; the full native suite passes 293/293 with 97.38% statement coverage plus TypeScript, local Expo dependency-map validation and `git diff --check`.
+- Built and launched the SDK 54 iOS development client from this checkout on an iPhone 17 Pro simulator running iOS 26.5. Inspected narrow portrait, landscape and accessibility-extra-extra-large text. The first large-text capture exposed clipping; the corrected harness preserves full labels with a tested 2x text ceiling and a 1.25x marker-number ceiling.
+- Exercised the native accessibility tree through preset and mode controls, selected `Samira Abdullah-Rahman` from the synthetic bench, placed her at Goalkeeper through list mode and observed the live announcement `Samira Abdullah-Rahman is now Goalkeeper.` Landscape reflow kept controls and long selected names visible. This is simulator evidence, not physical-device performance proof.
 
 ### Remaining work
 
-Step 1 is implemented and awaiting PR review and final-head CI. Do not start Step 2 until Step 1 is merged and the user explicitly requests the next step. Each later explicit “implement the next step” request selects the next numbered incomplete step, not the whole phase.
+Step 2 is implemented in PR #50 and awaiting required GitHub Codex review, final-head CI and coordinator merge decision. Do not start Step 3 until Step 2 is merged and the user explicitly requests it. Each later explicit “implement the next step” request selects the next numbered incomplete step, not the whole phase.
 
 ### Blockers and risks
 
-- Step 1 has no known dependency blocker. The remaining Phase 3 domain modules and runtime proofs are intentionally unimplemented.
-- Native drag/scroll/accessibility and package rebuild require simulator/device proof; source/reference tests are insufficient.
+- Android SDK, emulator and `adb` are unavailable on this host, so the required Android development-client capture and runtime interaction proof remain blocked. Keep the harness development-only and the PR open; iOS evidence does not prove Android behavior.
+- Marker drag uses the documented activation delay and touch slop and has focused configuration coverage. Native scrolling and the accessible non-drag placement path were exposed in the simulator accessibility tree; physical-device timing and performance remain unclaimed.
+- The remaining Phase 3 persistence, publication and runtime features are intentionally unimplemented.
 - Pilot league rules, transport policy, rights evidence and qualified content reviewer are external gates owned by the organization/product owner.
 - No production credentials/data/notifications are authorized by this plan; development uses non-sensitive emulator fixtures. Business model selection remains pending.
 
 ### Pointers for the next agent
 
-Read the product plan, Phase 1/2 plans and repository instructions before Step 1. Use current scoped capabilities and participants, preserve canonical event IDs, and keep private/public documents separate. Record test commands, source revisions, real screenshots and remaining gates in the step PR and Handoff. Leave merging to the user.
+For Step 2 review, preserve the development-only gate, synthetic-only data, initial screenshot provenance and Android runtime blocker. Confirm required GitHub Codex review and final-head CI without exceeding the two-run cap. Do not start Step 3 or add persistence, publication, flags, deployments or production access. Leave merging to the user.
