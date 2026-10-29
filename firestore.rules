@@ -115,6 +115,9 @@ service cloud.firestore {
 
       // Phase 3 private and derived records remain server-only until their owning step adds
       // a callable plus live scoped authorization. A platform role or parent event read is not access.
+      // Step 3 lineups stay callable-only: getLineup/saveLineup/publishLineup recheck the live coach
+      // assignment, and getLineupView rechecks team, staff or household access before returning the
+      // sanitized publication. Direct client reads would bypass roster and guardian checks.
       match /coaching/{teamId}/{document=**} {
         allow read, write: if false;
       }
