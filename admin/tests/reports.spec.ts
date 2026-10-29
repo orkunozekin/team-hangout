@@ -128,6 +128,24 @@ test("staff run an attendance report, see missingness and denominators, then reb
   await expect(rebuilt.getByRole("status")).toContainText("Complete.", { timeout: 30000 });
   await expect(rebuilt.getByRole("row", { name: /All in scope/ })).toContainText("4 of 7");
   await expect(rebuilt).toContainText("Rebuilt from an earlier run.");
+
+  // An export still pending when another run is selected never downloads the old file.
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/exportReport", async (route) => { await held; await route.continue(); });
+  const downloads: string[] = [];
+  page.on("download", (file) => downloads.push(file.suggestedFilename()));
+  await rebuilt.getByRole("button", { name: "Download CSV" }).click();
+  await expect(rebuilt.getByRole("button", { name: "Preparing CSV" })).toBeVisible();
+  await page.getByRole("button", { name: /Complete, stale/ }).click();
+  await expect(page.getByRole("region", { name: "Report detail" }).getByRole("status")).toContainText("stale");
+  const answered = page.waitForResponse("**/exportReport");
+  release();
+  await answered;
+  await page.waitForTimeout(500);
+  expect(downloads).toEqual([]);
+  await expect(page.getByText(/^Downloaded /)).toHaveCount(0);
+  await page.unroute("**/exportReport");
 });
 
 test("a failed run shows its reason and offers a rebuild instead of figures", async ({ page }) => {

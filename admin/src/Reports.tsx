@@ -151,6 +151,10 @@ function RunDetail({ services, orgId, runId, names, onRebuilt, onChanged }: { se
     setRun(null);
     setRows([]);
     void load();
+    // Switching runs remounts this detail, so a pending export from the old run must never download.
+    return () => {
+      exportSeq.current += 1;
+    };
   }, [load]);
 
   useEffect(() => {
