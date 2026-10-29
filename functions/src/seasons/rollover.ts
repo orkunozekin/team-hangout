@@ -319,7 +319,7 @@ export async function runRolloverJob(orgId: string, jobId: string,
         return { state: 'busy' as const, attempts: job.attempts };
       }
       if (job.attempts >= MAX_ATTEMPTS) {
-        tx.update(ref, { state: 'failed', leaseExpiresAt: null, failure: { code: 'ROLLOVER_RETRIES_EXHAUSTED', message: 'This rollover stopped after several attempts. Resume it to continue.' } });
+        tx.update(ref, { state: 'failed', failedAt: now, leaseExpiresAt: null, failure: { code: 'ROLLOVER_RETRIES_EXHAUSTED', message: 'This rollover stopped after several attempts. Resume it to continue.' } });
         return { state: 'failed' as const, attempts: job.attempts };
       }
       const attempt = job.attempts + 1;
@@ -353,7 +353,7 @@ export async function runRolloverJob(orgId: string, jobId: string,
       const current = (await tx.get(ref)).data();
       if (current?.state !== 'running' || current.attempts !== attempt) return 'discarded' as const;
       if (failed instanceof RolloverStop || attempt >= MAX_ATTEMPTS) {
-        tx.update(ref, { state: 'failed', leaseExpiresAt: null, failure: failed instanceof RolloverStop
+        tx.update(ref, { state: 'failed', failedAt: Timestamp.now(), leaseExpiresAt: null, failure: failed instanceof RolloverStop
           ? { code: failed.code, message: failed.message }
           : { code: 'ROLLOVER_FAILED', message: 'This rollover could not continue. Resume it to retry from the last checkpoint.' } });
         return 'failed' as const;
