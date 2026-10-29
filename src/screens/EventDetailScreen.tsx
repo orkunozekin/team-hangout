@@ -8,6 +8,7 @@ import EventResult from "../components/EventResult";
 import EventStandings from "../components/EventStandings";
 import EventBracket from "../components/EventBracket";
 import EventVolunteers from "../components/EventVolunteers";
+import EventRides from "../components/EventRides";
 import React, {
   useCallback,
   useEffect,
@@ -272,6 +273,7 @@ export default function EventDetailScreen({
         {!cached && event.schemaVersion === 2 && event.orgId && event.type === 'match' && membership.role === 'coach' ? <EventResult key={`result:${event.id}:${membership.teamId}`} eventId={event.id} teamId={membership.teamId} /> : null}
         {!cached && event.schemaVersion === 2 && event.orgId && event.type === 'match' ? <EventStandings key={`standings:${event.id}:${membership.teamId}`} eventId={event.id} teamId={membership.teamId} /> : null}
         {!cached && event.schemaVersion === 2 && event.orgId ? <EventVolunteers key={`volunteers:${event.id}:${membership.teamId}`} orgId={event.orgId} eventId={event.id} teamId={membership.teamId} /> : null}
+        {!cached && event.schemaVersion === 2 && event.orgId ? <EventRides key={`rides:${event.id}:${membership.teamId}`} orgId={event.orgId} eventId={event.id} teamId={membership.teamId} /> : null}
         {!cached && event.schemaVersion === 2 && event.orgId && event.type === 'match' ? <EventBracket key={`bracket:${event.id}:${membership.teamId}`} eventId={event.id} teamId={membership.teamId} /> : null}
         {event.history?.length ? <>
           <Text style={styles.row}>Schedule history{event.historyHasMore ? ' (latest 20)' : ''}</Text>

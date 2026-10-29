@@ -134,6 +134,9 @@ service cloud.firestore {
       match /volunteerSlots/{slotId}/{document=**} {
         allow read, write: if false;
       }
+      // Step 9 rides are callable-only and stay disabled until the organization records its transport policy.
+      // Discovery returns sanitized opt-in rows; contacts live under arrangements and only getRideContacts reads them
+      // after rechecking confirmed consent and both adults' live authority.
       match /rideRequests/{requestId}/{document=**} {
         allow read, write: if false;
       }
@@ -152,6 +155,10 @@ service cloud.firestore {
     // Step 7 bracket nodes and bracket history are backend-written by publishBracket/linkBracketEvent/finalizeResult/
     // correctResult/correctBracket and read only through getBracket/getEventBracket.
     match /organizations/{orgId}/competitions/{competitionId}/{document=**} {
+      allow read, write: if false;
+    }
+    // Transport policy evidence is recorded by organization operators outside the app; no client or callable writes it.
+    match /organizations/{orgId}/transportPolicy/{policyId} {
       allow read, write: if false;
     }
     match /organizations/{orgId}/reportRuns/{runId}/{document=**} {
