@@ -19,6 +19,7 @@ import {
 import type { BrowserServices } from "./firebase";
 import { errorCode, message } from "./errors";
 import { Mutation } from "./Mutation";
+import { Standings } from "./Standings";
 
 type Match = CompetitionDetail["matches"][number];
 type ProgramData = { programId: string; seasons: AdminEntity[]; divisions: AdminEntity[]; teams: AdminEntity[] };
@@ -403,6 +404,15 @@ export function Competitions({ services, orgId, programId: initialProgram }: { s
             </details>
           )}
         </section>
+      )}
+      {detail && detail.competition.activeRulesVersion !== null && (
+        <Standings
+          key={`${detail.competition.competitionId}:${detail.competition.sourceRevision}:${detail.competition.activeRulesVersion}`}
+          services={services}
+          orgId={orgId}
+          competitionId={detail.competition.competitionId}
+          onDenied={fail}
+        />
       )}
       {detail && (
         <section className="panel" aria-label="Match results">

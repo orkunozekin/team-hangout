@@ -6,13 +6,13 @@ Turn the approved [product direction](../plans/product-plan.md#phase-3-coaching-
 
 | Field | Value |
 | --- | --- |
-| Status | in review, Step 5 implemented on `codex/phase-3-step-5` |
+| Status | in review, Step 6 implemented on `codex/phase-3-step-6` |
 | Last updated | 2026-10-29 |
-| Source baseline | Team Hangout `0436f95` from `main` after Step 4 merged |
-| Related PR / branch | [PR #49](https://github.com/orkunozekin/team-hangout/pull/49) and [PR #50](https://github.com/orkunozekin/team-hangout/pull/50) and [PR #52](https://github.com/orkunozekin/team-hangout/pull/52) and [PR #53](https://github.com/orkunozekin/team-hangout/pull/53) merged; Step 5 on `codex/phase-3-step-5` |
+| Source baseline | Team Hangout `9c2873c` from `main` after Step 5 merged |
+| Related PR / branch | [PR #49](https://github.com/orkunozekin/team-hangout/pull/49) and [PR #50](https://github.com/orkunozekin/team-hangout/pull/50) and [PR #52](https://github.com/orkunozekin/team-hangout/pull/52) and [PR #53](https://github.com/orkunozekin/team-hangout/pull/53) and [PR #54](https://github.com/orkunozekin/team-hangout/pull/54) merged; Step 6 on `codex/phase-3-step-6` |
 | Dependencies | Phase 1 organization/participant/season authorization and Phase 2 canonical events, attendance, facilities, communications |
 | Commercial status | Business model selection pending; no feature paywall, fee, or entitlement approved |
-| Next implementation step | Review Step 5 only; Step 6 has not started |
+| Next implementation step | Review Step 6 only; Step 7 has not started |
 
 Read the [phase index and common evidence standard](../plans/phase-plans.md), [Phase 1 foundations plan](phase-1-foundations-feature-plan.md), and [Phase 2 operations plan](phase-2-league-operations-feature-plan.md) before implementation.
 
@@ -255,7 +255,7 @@ Proposed uncreated modules, not clickable source claims: `src/lib/coaching/` for
 - [ ] Soccer/basketball/football lineups preserve normalized positions, bench order and unit membership after save/reload; tap/list alternative works with screen reader/large text.
 - [ ] Private notes and individual playtime remain inaccessible to households and unauthorized staff; public lineup publication is explicit.
 - [x] Clock/background/corrections replay deterministically; duplicate commands and simultaneous editors do not double-count or overwrite.
-- [ ] Results and configured rules reproduce standings; unresolved ties remain visible; score corrections and worker retries converge on one active complete generation.
+- [x] Results and configured rules reproduce standings; unresolved ties remain visible; score corrections and worker retries converge on one active complete generation.
 - [ ] Brackets use canonical events and safely block/correct affected descendants; no bye becomes a false game/absence.
 - [ ] Volunteer capacity holds under contention; rides expose contacts only to consented parties and stay disabled without organization policy.
 - [ ] Attendance missingness and facility booked-minute formulas match hand calculations, including DST, closures and shared games.
@@ -265,7 +265,7 @@ Proposed uncreated modules, not clickable source claims: `src/lib/coaching/` for
 - [ ] Each UI PR embeds inspected screenshots accessible to reviewers from its latest checkout, with captions and required empty/error/conflict states.
 - [ ] Required tests/typecheck and backend build pass per step; CI and configured AI review feedback are addressed using `address-pr-feedback`, followed by a new bot-tagged re-review comment after fixes. Missing reviews are reported, not treated as approval.
 
-Planning executed the 11 reference geometry/marker tests described above. Step 1 added pure contracts and emulator isolation coverage only. Step 2 added the development-only surface harness. Step 3 added emulator-proven private lineup persistence and explicit publication. Step 4 added the emulator-proven playing-time ledger and clock transitions. Step 5 added emulator-proven competition rules, result proposal, finalization and correction history; no worker, migration, feature flag, deployment, production access or pilot operation has run. Every remaining unchecked item belongs to a later explicitly authorized step.
+Planning executed the 11 reference geometry/marker tests described above. Step 1 added pure contracts and emulator isolation coverage only. Step 2 added the development-only surface harness. Step 3 added emulator-proven private lineup persistence and explicit publication. Step 4 added the emulator-proven playing-time ledger and clock transitions. Step 5 added emulator-proven competition rules, result proposal, finalization and correction history. Step 6 added the emulator-proven standings reducer, generation worker and reconciliation; no migration, feature flag, deployment, production access or pilot operation has run. Every remaining unchecked item belongs to a later explicitly authorized step.
 
 ## Handoff
 
@@ -312,9 +312,18 @@ Planning executed the 11 reference geometry/marker tests described above. Step 1
 - Review fixes: a final result writes an `events/{eventId}/competitionResults/{competitionId}` marker and `mutateEventSchedule` rejects changing that match to another type (`RESULT_RECORDED`) until a scorer voids the result, which deletes the marker; a final whose event no longer qualifies can still be voided with its saved sides. Creation is capped at 100 competitions per program so the list always loads. Native and admin tie checks compare parsed scores, the native form locks edits while a proposal is in flight or uncertain (with a discard option), and a failed refresh shows beside the last loaded result.
 - Validation on the implementation checkout: `yarn typecheck`; Functions `tsc`; focused emulator suites `competition` and `staging-runtime`, 9/9; admin Playwright `competitions.spec.ts`, 2/2; `yarn test:coverage --ci --runInBand --silent`, 358/358 with 97.68% statements; `yarn test:backend` after updating the staging export count for the seven new callables; `git diff --check`.
 
+- Step 6 added a pure standings reducer in `functions/src/competition/standings.ts` (no Firebase imports) and `functions/src/competition/generations.ts` with the `rebuildStandings` Firestore trigger, the `reconcileStandings` schedule (every 10 minutes) and the `getStandings` (scoped staff) and `getEventStandings` (team viewers from a canonical event) callables. Generations and rows stay deny-all in rules.
+- The reducer counts only final results whose outcome the rules count; void and uncounted outcomes add nothing. A decided tied score awards win and loss points. Forfeits use the recorded policy score and stay marked per row. The differential cap applies per result. A generation applies the active confirmed rules version to every final result and records that version.
+- Criteria apply in the configured order. Each split subgroup continues with the next criterion only, so head-to-head is never reapplied to a smaller cohort. Head-to-head applies only when every cohort pair met the same positive number of times; otherwise the row lists it as not applicable. Exhausted criteria give a shared rank (`T-n`) with the tied teams; team ID only orders rows inside the tie.
+- Every finalization, correction, rules confirmation and team change sets `standingsPendingSince` in the same transaction. A build reads the competition, pages final results by document ID with progress checkpoints, writes rows under a new generation ID, then activates in a transaction only if source revision, rules version, team set and competition creation time still match. A changed source marks the build superseded, deletes its rows and retries (3 attempts). A duplicate build of an already active key is discarded. Activation clears the pending marker, keeps the three newest complete generations readable and retires older ones; a crashed build left `building` for 15 minutes is marked failed and its rows deleted.
+- Viewers see only the active complete generation. Paging pins the generation of the first page (`generationId` is rejected without a cursor) and a retired pin returns `STANDINGS_CHANGED`. Status is `current`, `updating`, `stale` (pending over 10 minutes) or `unconfirmed`; the last complete table stays visible with the latest result change time.
+- Added the admin `Standings` panel in Competitions and a native `EventStandings` section on canonical match detail for every team viewer (shared ranks, tie notes, forfeits, own team highlight, pinned "Show more", refresh, updating/stale/unconfirmed/empty/error states). Team names are snapshotted at build time.
+- Load probe (emulator, 256 teams, 4,096 final results): one build read 4,096 results and 256 teams in about 1.1 to 1.3 seconds and wrote 256 rows. Emulator timing is not production latency.
+- Validation on the implementation checkout: `yarn typecheck`; Functions `tsc`; reducer Jest fixtures against hand calculations plus 25 randomized replay orders; focused emulator suites `standings`, `competition`, `lineups`, `staging-runtime` and `phase3-contracts`, 29/29; admin Playwright `competitions.spec.ts`, 3/3; `yarn test:coverage --ci --runInBand --silent`, 376/376 with 97.69% statements; `git diff --check`.
+
 ### Remaining work
 
-Step 5 is implemented on `codex/phase-3-step-5` and awaits review, final-head CI and the owner's merge decision. Do not start Step 6 until Step 5 is merged and the next step is explicitly requested. Each later explicit "implement the next step" request selects the next numbered incomplete step, not the whole phase.
+Step 6 is implemented on `codex/phase-3-step-6` and awaits review, final-head CI and the owner's merge decision. Do not start Step 7 until Step 6 is merged and the next step is explicitly requested. Each later explicit "implement the next step" request selects the next numbered incomplete step, not the whole phase.
 
 ### Blockers and risks
 
@@ -324,10 +333,12 @@ Step 5 is implemented on `codex/phase-3-step-5` and awaits review, final-head CI
 - Step 4 UI evidence also comes from Expo web against local emulators; native backgrounding, screen-reader and Android behavior of the playing-time section remain unverified on a simulator or device. Background resume is proven by the anchor-based estimate tests, not a native capture.
 - Step 5 exit gate open: no pilot manager has approved real league rules. Tests use a synthetic policy and the admin starting draft is labeled unconfirmed; the pilot manager-approved rules fixture must come from the organization before pilot enablement.
 - Step 5 UI evidence comes from the admin web workspace against local emulators. The native `EventResult` section is covered by component tests only; native screen-reader, large-text and Android behavior remain unverified on a simulator or device.
-- Standings, brackets and the other later Phase 3 runtime features are intentionally unimplemented.
+- Step 6 UI evidence comes from Expo web (the native `EventStandings` component rendered in a temporary local harness against emulator data, with the full app shell not loaded on web) and admin Playwright. Native screen-reader, large-text and Android behavior of the standings section remain unverified on a simulator or device.
+- Standings deployment needs the `competitions.standingsPendingSince` collection-group index override enabled before the reconciliation schedule runs. Superseded, duplicate, failed and retired generation summary documents are retained (rows deleted); add a retention job if their count matters.
+- Brackets and the other later Phase 3 runtime features are intentionally unimplemented.
 - Pilot league rules, transport policy, rights evidence and qualified content reviewer are external gates owned by the organization/product owner.
 - No production credentials/data/notifications are authorized by this plan; development uses non-sensitive emulator fixtures. Business model selection remains pending.
 
 ### Pointers for the next agent
 
-For Step 3 review, keep lineup data callable-only, keep coaching authority to active team coaches, and keep notes out of every publication path. Household entry from the household agenda is not wired yet; `EventLineup` accepts a `participantId` for that later entry. Playing time is coach-only and seeded from the saved `units`; keep households and organization staff away from individual totals until a separate product permission decision. Substitutions currently target the active unit; Step 10 reports should consume `finalTotals` from finalized sessions rather than replaying live ones. Step 6 standings should rebuild from `results` where `status == final`, apply each row's `final.appliedRulesVersion` or the active version as Step 6 decides, and activate a generation only if `sourceRevision` still matches. Final scores reach families only through Step 6 publication. Leave merging to the user.
+For Step 3 review, keep lineup data callable-only, keep coaching authority to active team coaches, and keep notes out of every publication path. Household entry from the household agenda is not wired yet; `EventLineup` accepts a `participantId` for that later entry. Playing time is coach-only and seeded from the saved `units`; keep households and organization staff away from individual totals until a separate product permission decision. Substitutions currently target the active unit; Step 10 reports should consume `finalTotals` from finalized sessions rather than replaying live ones. Step 7 seeding should read the active complete generation through its `generationId` and block on rows with `sharedRank` until a manager records a reasoned seed override; never seed from a pending or stale table without checking `standingsStatus`. Leave merging to the user.

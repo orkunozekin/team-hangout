@@ -94,6 +94,62 @@ export type EventResults = {
 
 export type ResultMutation = { requestId: string; revision: number; state: "proposed" | "final"; sourceRevision?: number; operationId: string };
 
+/** Standings rows come from one immutable generation. Team ID only orders rows inside a shared rank. */
+export type StandingsRow = {
+  position: number;
+  rank: number;
+  teamId: string;
+  teamName: string;
+  played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  forfeitWins: number;
+  forfeitLosses: number;
+  scoresFor: number;
+  scoresAgainst: number;
+  differential: number;
+  points: number;
+  sharedRank: boolean;
+  tiedWith: string[];
+  decidedBy: TieBreaker | null;
+  notApplicable: TieBreaker[];
+};
+
+/** current: the table matches every final result. updating: a rebuild is pending. stale: pending longer than expected. */
+export type StandingsStatus = "current" | "updating" | "stale" | "unconfirmed";
+
+export type StandingsView = {
+  competitionId: string;
+  name: string;
+  format: CompetitionFormat;
+  status: StandingsStatus;
+  sourceRevision: number;
+  sourceUpdatedAt: string | null;
+  generation: {
+    generationId: string;
+    active: boolean;
+    sourceRevision: number;
+    rulesVersion: number;
+    completedAt: string;
+    sourceUpdatedAt: string | null;
+    rowCount: number;
+    countedResults: number;
+    unresolvedTies: number;
+    reducerVersion: number;
+  } | null;
+  rows: StandingsRow[];
+  nextCursor: string | null;
+};
+
+export type EventStandings = {
+  orgId: string;
+  eventId: string;
+  teamId: string;
+  competitions: { competitionId: string; name: string; status: StandingsStatus }[];
+  standings: StandingsView | null;
+};
+
 type Envelope<P> = { requestId: string; orgId: string; resourceId: string; expectedRevision: number; payload: P };
 export type CompetitionCommands = {
   saveCompetitionRules: {
@@ -113,7 +169,27 @@ export type CompetitionCommands = {
   correctResult: { input: Envelope<{ eventId: string; result: ResultValues; reason: string }>; output: ResultMutation };
   listCompetitions: { input: { orgId: string; programId: string }; output: { competitions: CompetitionSummary[] } };
   getCompetition: { input: { orgId: string; competitionId: string; cursor?: string }; output: CompetitionDetail };
+  getStandings: { input: { orgId: string; competitionId: string; generationId?: string; cursor?: string }; output: StandingsView };
 };
+
+export const STANDINGS_STATUS_LABELS: Record<StandingsStatus, string> = {
+  current: "Up to date",
+  updating: "Updating. Showing the last complete table.",
+  stale: "Update delayed. Showing the last complete table; it may not include the latest results.",
+  unconfirmed: "Standings appear after league rules are confirmed.",
+};
+
+export function formatDifferential(value: number): string {
+  return value > 0 ? `+${value}` : String(value);
+}
+
+/** Plain-language tie note for one row. A shared rank is a sporting tie; list order inside it is not a ranking. */
+export function tieNote(row: Pick<StandingsRow, "teamId" | "sharedRank" | "tiedWith" | "notApplicable">, names: (teamId: string) => string): string | null {
+  const parts: string[] = [];
+  if (row.sharedRank) parts.push(`Tied with ${row.tiedWith.filter(teamId => teamId !== row.teamId).map(names).join(", ")}; all tie-breakers exhausted`);
+  if (row.notApplicable.length) parts.push(`${row.notApplicable.map(item => TIE_BREAKER_LABELS[item]).join(", ")} not applicable`);
+  return parts.length ? parts.join(". ") : null;
+}
 
 export const TIE_BREAKER_LABELS: Record<TieBreaker, string> = {
   tablePoints: "Table points",

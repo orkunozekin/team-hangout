@@ -237,23 +237,29 @@ export const getLineup = readCommand(readScope, async (tx, data, uid) => {
 });
 
 /** Relevant team viewers: active team members, scoped staff, or a household of an active rostered participant. */
-export const getLineupView = readCommand(readScope, async (tx, data, uid) => {
-  const team = (await tx.get(db().doc(`teams/${data.teamId}`))).data();
+/** Team viewers from a canonical event: active team members, scoped staff, or a household whose participant is rostered on the team. */
+export async function teamViewer(tx: Transaction, eventId: string, teamId: string, participantId: string | null, uid: string) {
+  const team = (await tx.get(db().doc(`teams/${teamId}`))).data();
   if (!team || team.schemaVersion !== 2) denied();
-  const event = await canonicalEvent(tx, data.eventId, data.teamId, team!);
+  const event = await canonicalEvent(tx, eventId, teamId, team!);
   const [member, staff] = await tx.getAll(
-    db().doc(`teamMembers/${data.teamId}_${uid}`),
+    db().doc(`teamMembers/${teamId}_${uid}`),
     db().doc(`organizations/${team!.orgId}/members/${uid}`),
   );
   const m = member.data();
   const s = staff.data();
-  const allowed = (m?.status === 'active' && m.orgId === team!.orgId && m.teamId === data.teamId && m.userId === uid)
+  const allowed = (m?.status === 'active' && m.orgId === team!.orgId && m.teamId === teamId && m.userId === uid)
     || (s?.status === 'active' && s.orgId === team!.orgId && Array.isArray(s.roles) && Array.isArray(s.programIds)
       && (s.roles.includes('orgAdmin') || (s.roles.includes('programStaff') && s.programIds.includes(team!.programId))));
   if (!allowed) {
-    if (!data.participantId) denied();
-    await eligibleHousehold(tx, event, [{ ...team, id: data.teamId }], data.participantId, uid);
+    if (!participantId) denied();
+    await eligibleHousehold(tx, event, [{ ...team, id: teamId }], participantId!, uid);
   }
+  return team!;
+}
+
+export const getLineupView = readCommand(readScope, async (tx, data, uid) => {
+  await teamViewer(tx, data.eventId, data.teamId, data.participantId ?? null, uid);
   const view = (await tx.get(db().doc(`events/${data.eventId}/lineupViews/${data.teamId}`))).data();
   if (!view) return { state: 'unpublished' };
   return {

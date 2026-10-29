@@ -801,6 +801,16 @@
   ],
   "fieldOverrides": [
     {
+      "collectionGroup": "competitions",
+      "fieldPath": "standingsPendingSince",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    },
+    {
       "collectionGroup": "outbox",
       "fieldPath": "state",
       "indexes": [

@@ -65,3 +65,4 @@ export { resumeRsvpReminders } from './notifications/reminders';
 export { getLineup, saveLineup, publishLineup, getLineupView } from './coaching/lineups';
 export { recordPlayAction, finalizePlaySession, getPlaySession } from './coaching/playTime';
 export { saveCompetitionRules, proposeResult, finalizeResult, correctResult, listCompetitions, getCompetition, getEventResults } from './competition/results';
+export { rebuildStandings, reconcileStandings, getStandings, getEventStandings } from './competition/generations';
