@@ -129,6 +129,8 @@ service cloud.firestore {
       match /playSessions/{teamId}/{document=**} {
         allow read, write: if false;
       }
+      // Step 8 volunteer slots and claims are callable-only: saveVolunteerSlot rechecks the live coach assignment,
+      // claim/release recheck adult eligibility in the capacity transaction, and getEventVolunteers returns aliases only.
       match /volunteerSlots/{slotId}/{document=**} {
         allow read, write: if false;
       }

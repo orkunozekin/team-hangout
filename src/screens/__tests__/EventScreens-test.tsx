@@ -12,6 +12,7 @@ jest.mock('../../firebase/attendance', () => ({ getEventAttendance: jest.fn().mo
 jest.mock('../../firebase/lineups', () => ({ getLineup: jest.fn().mockResolvedValue({ orgId: 'org', eventId: 'event', teamId: 'team', revision: 0, sportPresetId: null, presetVersion: null, units: [], bench: [], note: '', roster: [], unavailableParticipantIds: [], publication: { state: 'private', sourceRevision: null, publishedAt: null }, updatedAt: null }), getLineupView: jest.fn(), saveLineup: jest.fn(), publishLineup: jest.fn(), lineupRequestId: () => 'id' }));
 jest.mock('../../firebase/playTime', () => ({ getPlaySession: jest.fn(), recordPlayAction: jest.fn(), finalizePlaySession: jest.fn() }));
 jest.mock('../../firebase/competition', () => ({ getEventResults: jest.fn(), proposeResult: jest.fn(), getEventStandings: jest.fn(), getEventBracket: jest.fn() }));
+jest.mock('../../firebase/volunteers', () => ({ getEventVolunteers: jest.fn(), claimVolunteerSlot: jest.fn(), releaseVolunteerSlot: jest.fn(), saveVolunteerSlot: jest.fn(), volunteerRequestId: () => 'id' }));
 jest.mock('../../firebase/teams', () => ({ getTeam: jest.fn() }));
 jest.mock('../../lib/gameDayCache', () => ({
   loadCachedEvent: jest.fn(), saveCachedEvent: jest.fn(), clearGameDayCache: jest.fn(),
