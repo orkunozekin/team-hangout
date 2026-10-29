@@ -141,6 +141,7 @@ function LineupEditor({ orgId, eventId, teamId, onDenied }: { orgId: string; eve
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ kind: LineupErrorKind; message: string } | null>(null);
   const [status, setStatus] = useState('');
+  const [refreshFailed, setRefreshFailed] = useState(false);
   // One ID per intended change, reused only when retrying that same change.
   const requestId = useRef<string | null>(null);
 
@@ -155,11 +156,15 @@ function LineupEditor({ orgId, eventId, teamId, onDenied }: { orgId: string; eve
       setDirty(false);
       setUnitId(getSportPreset(next.sportPresetId).units[0].id);
       setSelected(null);
+      setRefreshFailed(false);
       requestId.current = null;
     } catch (e) {
       const failure = lineupError(e);
       if (failure.kind === 'denied') onDenied();
-      else setError(failure);
+      else {
+        setError(failure);
+        setRefreshFailed(true);
+      }
     } finally {
       setBusy(false);
     }
@@ -184,8 +189,10 @@ function LineupEditor({ orgId, eventId, teamId, onDenied }: { orgId: string; eve
   const preset = getSportPreset(draft.sportPresetId);
   const unit = preset.units.find((candidate) => candidate.id === unitId) ?? preset.units[0];
   const placements = draft.units[unit.id] ?? [];
-  const available = unassignedParticipants(draft, lineup.roster);
+  const available = unassignedParticipants(draft, lineup.roster, unit.id);
+  // Edits are frozen while a mutation and its refresh run, so the refresh cannot discard them.
   const update = (next: LineupDraft, message: string) => {
+    if (busy) return;
     setDraft(next);
     setDirty(true);
     setStatus(message);
@@ -199,10 +206,13 @@ function LineupEditor({ orgId, eventId, teamId, onDenied }: { orgId: string; eve
     setBusy(true);
     setError(null);
     try {
-      await saveLineup(orgId, eventId, lineup.revision, draftToPayload(draft, teamId), requestId.current);
+      const result = await saveLineup(orgId, eventId, lineup.revision, draftToPayload(draft, teamId), requestId.current);
       requestId.current = null;
-      await load();
+      // Apply the acknowledged revision first so a failed refresh cannot leave stale state.
+      setLineup((before) => before && { ...before, revision: result.revision });
+      setDirty(false);
       setStatus(publication.state === 'published' ? 'Saved privately. Republish to update families.' : 'Lineup saved privately.');
+      await load();
     } catch (e) {
       const failure = lineupError(e);
       // A retry after an uncertain transport failure must reuse the same request ID.
@@ -216,9 +226,17 @@ function LineupEditor({ orgId, eventId, teamId, onDenied }: { orgId: string; eve
     setBusy(true);
     setError(null);
     try {
-      await publishLineup(orgId, eventId, teamId, lineup.revision, action, lineupRequestId());
-      await load();
+      const result = await publishLineup(orgId, eventId, teamId, lineup.revision, action, lineupRequestId());
+      // Reflect the acknowledged publication even if the refresh below fails.
+      setLineup((before) => before && {
+        ...before,
+        revision: result.revision,
+        publication: result.state === 'published'
+          ? { state: 'published', sourceRevision: result.revision, publishedAt: before.publication.publishedAt ?? new Date().toISOString() }
+          : { state: 'private', sourceRevision: null, publishedAt: null },
+      });
       setStatus(action === 'publish' ? 'Lineup published to families.' : 'Publication retracted. Families no longer see this lineup.');
+      await load();
     } catch (e) {
       setError(lineupError(e));
       setBusy(false);
@@ -336,6 +354,7 @@ function LineupEditor({ orgId, eventId, teamId, onDenied }: { orgId: string; eve
           <TextField
             accessibilityLabel="Private coach note"
             multiline
+            editable={!busy}
             maxLength={LINEUP_NOTE_MAX}
             value={draft.note}
             onChangeText={(note) => update({ ...draft, note }, 'Note edited.')}
@@ -344,7 +363,7 @@ function LineupEditor({ orgId, eventId, teamId, onDenied }: { orgId: string; eve
         </>
       )}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error.message}</Text> : null}
-      {error?.kind === 'conflict' ? <SecondaryButton label="Reload latest lineup" onPress={() => void load()} /> : null}
+      {error?.kind === 'conflict' || refreshFailed ? <SecondaryButton label="Reload latest lineup" onPress={() => void load()} /> : null}
       {lineup.roster.length ? <PrimaryButton label={error?.kind === 'offline' ? 'Retry save' : 'Save lineup'} loading={busy} disabled={!dirty} onPress={() => void save()} /> : null}
       {lineup.revision > 0 && !dirty ? (
         <View style={styles.actions}>

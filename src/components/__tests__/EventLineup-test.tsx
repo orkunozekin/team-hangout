@@ -144,3 +144,42 @@ test('an offline family view explains the outage without draft language', async 
   await open({ canCoach: false, initiallyOpen: true });
   expect(await screen.findByText('Lineup unavailable while offline. Reconnect and reopen the lineup.')).toBeTruthy();
 });
+
+test('football units are independent: one participant can hold offense and defense positions', async () => {
+  read.mockResolvedValue(lineup({ sportPresetId: 'football', units: [], bench: [] }));
+  save.mockResolvedValue({ requestId: 'request-1', revision: 3, state: 'private' });
+  await open({ initiallyOpen: true });
+  await fireEvent.press(await screen.findByRole('button', { name: 'Avery Stone' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Quarterback: open' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Defense' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Avery Stone' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Middle linebacker: open' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Save lineup' }));
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+  expect(save.mock.calls[0][3].units.map((u: { slots: { participantId: string }[] }) => u.slots.map((s) => s.participantId)))
+    .toEqual([['a'], ['a'], []]);
+});
+
+test('an acknowledged publication stays visible when the refresh fails, with a reload path', async () => {
+  read.mockResolvedValueOnce(lineup()).mockRejectedValueOnce({ code: 'functions/unavailable' });
+  publish.mockResolvedValue({ requestId: 'request-1', revision: 3, state: 'published' });
+  await open({ initiallyOpen: true });
+  await fireEvent.press(await screen.findByRole('button', { name: 'Publish to families' }));
+  expect(await screen.findByText('Published. Families see positions and bench order, never notes.')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Retract publication' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Reload latest lineup' })).toBeTruthy();
+});
+
+test('edits are frozen while a save is in flight so the refresh cannot discard them', async () => {
+  let finish: (value: unknown) => void = () => {};
+  read.mockResolvedValue(lineup());
+  save.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+  await open({ initiallyOpen: true });
+  await fireEvent.changeText(await screen.findByLabelText('Private coach note'), 'First edit');
+  await fireEvent.press(screen.getByRole('button', { name: 'Save lineup' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Clear Goalkeeper' }));
+  expect(screen.getByRole('button', { name: 'Goalkeeper: Avery Stone' })).toBeTruthy();
+  expect(screen.getByLabelText('Private coach note').props.editable).toBe(false);
+  finish({ requestId: 'request-1', revision: 3, state: 'private' });
+  expect(await screen.findByText('Lineup saved privately.')).toBeTruthy();
+});

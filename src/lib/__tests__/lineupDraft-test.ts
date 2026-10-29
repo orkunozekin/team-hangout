@@ -45,7 +45,7 @@ test('saved lineups round-trip coordinates and explicit bench order without reor
     teamId: 't', sportPresetId: 'soccer', units: saved.units, bench: ['d', 'b'], note: 'private',
   });
   expect(draftFromLineup({ ...saved, sportPresetId: null, units: [] }, 'basketball').units).toEqual({ onCourt: [] });
-  expect(unassignedParticipants(draft, saved.roster).map((r) => r.participantId)).toEqual(['c']);
+  expect(unassignedParticipants(draft, saved.roster, 'starting').map((r) => r.participantId)).toEqual(['c']);
 });
 
 test('assignment keeps each participant once per unit and moves them off the bench', () => {
@@ -69,6 +69,9 @@ test('football units are independent and switching sport keeps placed participan
   draft = assignToSlot(draft, 'offense', 'qb', 'a');
   draft = assignToSlot(draft, 'defense', 'mlb', 'a');
   expect(draftToPayload(draft, 't').units.map((unit) => unit.slots.map((slot) => slot.participantId))).toEqual([['a'], ['a'], []]);
+  const roster = [{ participantId: 'a', displayName: 'A', available: true }];
+  expect(unassignedParticipants(assignToSlot(emptyDraft('football'), 'offense', 'qb', 'a'), roster, 'defense')).toEqual(roster);
+  expect(unassignedParticipants(assignToSlot(emptyDraft('football'), 'offense', 'qb', 'a'), roster, 'offense')).toEqual([]);
   const soccer = changePreset({ ...draft, bench: ['b'] }, 'soccer');
   expect(soccer.units).toEqual({ starting: [] });
   expect(soccer.bench).toEqual(['b', 'a']);

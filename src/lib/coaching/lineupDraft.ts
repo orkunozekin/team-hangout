@@ -108,9 +108,9 @@ export function draftToPayload(draft: LineupDraft, teamId: string): SaveLineupPa
   };
 }
 
-/** Available roster entries that hold no slot and are not on the bench. */
-export function unassignedParticipants(draft: LineupDraft, roster: readonly LineupRosterEntry[]): LineupRosterEntry[] {
-  const used = new Set([...draft.bench, ...Object.values(draft.units).flat().map((p) => p.participantId)]);
+/** Available roster entries not on the bench and not already placed in this unit. Other units are independent. */
+export function unassignedParticipants(draft: LineupDraft, roster: readonly LineupRosterEntry[], unitId: string): LineupRosterEntry[] {
+  const used = new Set([...draft.bench, ...(draft.units[unitId] ?? []).map((p) => p.participantId)]);
   return roster.filter((entry) => entry.available && !used.has(entry.participantId));
 }
 
