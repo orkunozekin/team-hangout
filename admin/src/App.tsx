@@ -1,6 +1,7 @@
 import { Conversations } from "./Conversations";
 import { DeliveryDiagnostics } from "./DeliveryDiagnostics";
 import { PilotOperations } from "./PilotOperations";
+import { Competitions } from "./Competitions";
 import { Closures } from "./Closures";
 import { ScheduleDrafts } from "./ScheduleDrafts";
 import { Recurrence } from "./Recurrence";
@@ -209,6 +210,8 @@ export function App({ services }: { services: BrowserServices }) {
               <Conversations services={services} orgId={route.orgId} />
             ) : route.section === "diagnostics" ? (
               <DeliveryDiagnostics services={services} orgId={route.orgId} />
+            ) : route.section === "competition" ? (
+              <Competitions key={route.orgId} services={services} orgId={route.orgId} programId={route.programId} />
             ) : route.section === "pilot" ? (
               <PilotOperations services={services} orgId={route.orgId} />
             ) : route.section === "closures" ? (

@@ -6,13 +6,13 @@ Turn the approved [product direction](../plans/product-plan.md#phase-3-coaching-
 
 | Field | Value |
 | --- | --- |
-| Status | in review, Step 4 implemented on `codex/phase-3-step-4` |
+| Status | in review, Step 5 implemented on `codex/phase-3-step-5` |
 | Last updated | 2026-10-29 |
-| Source baseline | Team Hangout `6ad0891` from `main` after Step 3 merged |
-| Related PR / branch | [PR #49](https://github.com/orkunozekin/team-hangout/pull/49) and [PR #50](https://github.com/orkunozekin/team-hangout/pull/50) and [PR #52](https://github.com/orkunozekin/team-hangout/pull/52) merged; Step 4 on `codex/phase-3-step-4` |
+| Source baseline | Team Hangout `0436f95` from `main` after Step 4 merged |
+| Related PR / branch | [PR #49](https://github.com/orkunozekin/team-hangout/pull/49) and [PR #50](https://github.com/orkunozekin/team-hangout/pull/50) and [PR #52](https://github.com/orkunozekin/team-hangout/pull/52) and [PR #53](https://github.com/orkunozekin/team-hangout/pull/53) merged; Step 5 on `codex/phase-3-step-5` |
 | Dependencies | Phase 1 organization/participant/season authorization and Phase 2 canonical events, attendance, facilities, communications |
 | Commercial status | Business model selection pending; no feature paywall, fee, or entitlement approved |
-| Next implementation step | Review Step 4 only; Step 5 has not started |
+| Next implementation step | Review Step 5 only; Step 6 has not started |
 
 Read the [phase index and common evidence standard](../plans/phase-plans.md), [Phase 1 foundations plan](phase-1-foundations-feature-plan.md), and [Phase 2 operations plan](phase-2-league-operations-feature-plan.md) before implementation.
 
@@ -265,7 +265,7 @@ Proposed uncreated modules, not clickable source claims: `src/lib/coaching/` for
 - [ ] Each UI PR embeds inspected screenshots accessible to reviewers from its latest checkout, with captions and required empty/error/conflict states.
 - [ ] Required tests/typecheck and backend build pass per step; CI and configured AI review feedback are addressed using `address-pr-feedback`, followed by a new bot-tagged re-review comment after fixes. Missing reviews are reported, not treated as approval.
 
-Planning executed the 11 reference geometry/marker tests described above. Step 1 added pure contracts and emulator isolation coverage only. Step 2 added the development-only surface harness. Step 3 added emulator-proven private lineup persistence and explicit publication. Step 4 added the emulator-proven playing-time ledger and clock transitions; no worker, migration, feature flag, deployment, production access or pilot operation has run. Every remaining unchecked item belongs to a later explicitly authorized step.
+Planning executed the 11 reference geometry/marker tests described above. Step 1 added pure contracts and emulator isolation coverage only. Step 2 added the development-only surface harness. Step 3 added emulator-proven private lineup persistence and explicit publication. Step 4 added the emulator-proven playing-time ledger and clock transitions. Step 5 added emulator-proven competition rules, result proposal, finalization and correction history; no worker, migration, feature flag, deployment, production access or pilot operation has run. Every remaining unchecked item belongs to a later explicitly authorized step.
 
 ## Handoff
 
@@ -303,9 +303,17 @@ Planning executed the 11 reference geometry/marker tests described above. Step 1
 - Review fixes: the action limit reserves the start, end-period and finalize actions still needed so a busy game can always finalize (`ACTION_LIMIT`); `getPlaySession` pages history by `beforeSequence` so every earlier substitution stays correctable; corrections can change who left; affected participants compare the previous effective substitution and totals; the reducer copies interval objects. The open panel refreshes read-only every 30 seconds while a game is in progress, marks a failed refresh stale, and a lost write response is reported as unconfirmed rather than failed.
 - Validation on the implementation checkout: `yarn typecheck`; Functions `tsc`; focused emulator suites `playtime`, `lineups` and `phase3-contracts`, 20/20; `yarn test:coverage --ci --runInBand --silent`, 341/341 with 97.58% statements; `yarn test:backend`, 329/329 after updating the staging export count for the three new callables; `git diff --check`.
 
+- Step 5 added a pure rules and result validator in `functions/src/competition/rules.ts` (no Firebase imports) and seven callables in `functions/src/competition/results.ts`: `saveCompetitionRules`, `proposeResult`, `finalizeResult`, `correctResult`, `listCompetitions`, `getCompetition` and `getEventResults`. Competitions, results, rules versions and result history stay deny-all in rules; access is callable-only.
+- Rules are explicit: points for win/draw/loss/forfeit, allowed draws, forfeit score, counted outcomes, ordered tie-breakers from the supported five, an optional per-result differential cap and permitted tied-score deciders. Nothing is derived from a sport name. Saving keeps a draft; confirming with the policy checkbox writes an immutable `rulesVersions/{n}` and makes it active. Unchanged re-confirmation keeps the version. Program, season, division and format are immutable and teams lock after the first final result.
+- Authority: competition managers and scorers are active `orgAdmin` or `programStaff` assigned to the competition's program; proposals need an active coach of one side. Guardians, captains, revoked coaches, platform support, other programs and other tenants are denied. Every replay rechecks the live grant; an archived season blocks writes.
+- Results reference one canonical published match whose explicit home/away teams are both competition teams in scope; one-sided external-opponent events never enter. Cancelled, postponed and unstarted matches accept only `void`. Forfeit scores come from confirmed policy. Knockout ties and ties under no-draw rules need a winner and a permitted decider (`INVALID_KNOCKOUT_DRAW`, `DRAW_NOT_ALLOWED`). Finalization requires confirmed rules (`RULES_NOT_CONFIRMED`) and records the applied version.
+- Each proposal, finalization and correction checks the result revision and appends an immutable `resultHistory` row with before/after, actor, reason and operation ID. Finalization and correction increment the competition `sourceRevision` for Step 6. Corrections need a reason and a real change. Guardrails: 2 to 256 teams and 4,096 final results per competition.
+- Added `shared/competition.ts`, the admin web section `Competitions and results` (rules setup, draft/confirm, version list, paged match results, finalize and correct with reason) and a coach-only native `EventResult` section on canonical match detail (outcome, scores, forfeiting team, winner and decider for ties, pending and final states, uncertain-write retry with the same request ID). Added the `events` index `orgId, seasonId, type, startsAt` for the paged match list.
+- Validation on the implementation checkout: `yarn typecheck`; Functions `tsc`; focused emulator suites `competition` and `staging-runtime`, 9/9; admin Playwright `competitions.spec.ts`, 2/2; `yarn test:coverage --ci --runInBand --silent`, 358/358 with 97.68% statements; `yarn test:backend` after updating the staging export count for the seven new callables; `git diff --check`.
+
 ### Remaining work
 
-Step 4 is implemented on `codex/phase-3-step-4` and awaits review, final-head CI and the owner's merge decision. Do not start Step 5 until Step 4 is merged and the next step is explicitly requested. Each later explicit "implement the next step" request selects the next numbered incomplete step, not the whole phase.
+Step 5 is implemented on `codex/phase-3-step-5` and awaits review, final-head CI and the owner's merge decision. Do not start Step 6 until Step 5 is merged and the next step is explicitly requested. Each later explicit "implement the next step" request selects the next numbered incomplete step, not the whole phase.
 
 ### Blockers and risks
 
@@ -313,10 +321,12 @@ Step 4 is implemented on `codex/phase-3-step-4` and awaits review, final-head CI
 - Marker drag uses the documented activation delay and touch slop and has focused configuration coverage. Native scrolling and the accessible non-drag placement path were exposed in the simulator accessibility tree; physical-device timing and performance remain unclaimed.
 - Step 3 UI evidence comes from Expo web against local emulators because no iOS or Android simulator was reachable in the Step 3 environment. Native screen-reader, large-text and Android behavior of the lineup editor remain unverified.
 - Step 4 UI evidence also comes from Expo web against local emulators; native backgrounding, screen-reader and Android behavior of the playing-time section remain unverified on a simulator or device. Background resume is proven by the anchor-based estimate tests, not a native capture.
-- Competition and the other later Phase 3 runtime features are intentionally unimplemented.
+- Step 5 exit gate open: no pilot manager has approved real league rules. Tests use a synthetic policy and the admin starting draft is labeled unconfirmed; the pilot manager-approved rules fixture must come from the organization before pilot enablement.
+- Step 5 UI evidence comes from the admin web workspace against local emulators. The native `EventResult` section is covered by component tests only; native screen-reader, large-text and Android behavior remain unverified on a simulator or device.
+- Standings, brackets and the other later Phase 3 runtime features are intentionally unimplemented.
 - Pilot league rules, transport policy, rights evidence and qualified content reviewer are external gates owned by the organization/product owner.
 - No production credentials/data/notifications are authorized by this plan; development uses non-sensitive emulator fixtures. Business model selection remains pending.
 
 ### Pointers for the next agent
 
-For Step 3 review, keep lineup data callable-only, keep coaching authority to active team coaches, and keep notes out of every publication path. Household entry from the household agenda is not wired yet; `EventLineup` accepts a `participantId` for that later entry. Playing time is coach-only and seeded from the saved `units`; keep households and organization staff away from individual totals until a separate product permission decision. Substitutions currently target the active unit; Step 10 reports should consume `finalTotals` from finalized sessions rather than replaying live ones. Leave merging to the user.
+For Step 3 review, keep lineup data callable-only, keep coaching authority to active team coaches, and keep notes out of every publication path. Household entry from the household agenda is not wired yet; `EventLineup` accepts a `participantId` for that later entry. Playing time is coach-only and seeded from the saved `units`; keep households and organization staff away from individual totals until a separate product permission decision. Substitutions currently target the active unit; Step 10 reports should consume `finalTotals` from finalized sessions rather than replaying live ones. Step 6 standings should rebuild from `results` where `status == final`, apply each row's `final.appliedRulesVersion` or the active version as Step 6 decides, and activate a generation only if `sourceRevision` still matches. Final scores reach families only through Step 6 publication. Leave merging to the user.
