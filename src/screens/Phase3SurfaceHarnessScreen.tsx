@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   LayoutChangeEvent,
   Pressable,
@@ -96,17 +96,25 @@ function PlayerMarker({
   onMove: (point: NormalizedPoint) => void;
 }) {
   const pixels = denormalizePoint(point, frame);
+  // Pan translation is cumulative from the drag start, so offsets must apply to the
+  // position captured at onStart, not to the position re-rendered after each move.
+  const latest = useRef({ pixels, onSelect, onMove });
+  latest.current = { pixels, onSelect, onMove };
+  const dragOrigin = useRef(pixels);
   const pan = useMemo(() => Gesture.Pan()
     .activateAfterLongPress(DRAG_ACTIVATION_MS)
     .minDistance(DRAG_TOUCH_SLOP)
     .runOnJS(true)
-    .onStart(onSelect)
+    .onStart(() => {
+      dragOrigin.current = latest.current.pixels;
+      latest.current.onSelect();
+    })
     .onUpdate((event) => {
-      onMove(normalizePoint({
-        x: pixels.x + event.translationX,
-        y: pixels.y + event.translationY,
+      latest.current.onMove(normalizePoint({
+        x: dragOrigin.current.x + event.translationX,
+        y: dragOrigin.current.y + event.translationY,
       }, frame));
-    }), [frame, onMove, onSelect, pixels.x, pixels.y]);
+    }), [frame]);
 
   return (
     <GestureDetector gesture={pan}>
@@ -272,7 +280,7 @@ export default function Phase3SurfaceHarnessScreen() {
                 <Pressable
                   key={surfaceSlot.id}
                   accessibilityRole="button"
-                  accessibilityLabel={selected && participant ? `${participant.displayName} at ${surfaceSlot.label}, selected` : `Place ${selectedParticipant.displayName} at ${surfaceSlot.label}`}
+                  accessibilityLabel={selected && participant ? `${participant.displayName} at ${surfaceSlot.label}, selected` : `Place ${selectedParticipant.displayName} at ${surfaceSlot.label}, currently ${participant?.displayName ?? 'open position'}`}
                   accessibilityHint={selected ? 'This participant is selected.' : 'Moves the selected participant to this position.'}
                   accessibilityState={{ selected }}
                   onPress={() => placeSelectedAtSlot(surfaceSlot.id)}

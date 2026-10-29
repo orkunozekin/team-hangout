@@ -94,6 +94,26 @@ describe('Phase 3 lineup surface contracts', () => {
     expect(frame.height).toBeLessThanOrEqual(viewport.height * 0.68);
   });
 
+  test.each([
+    { width: 320, height: 568, fontScale: 1 },
+    { width: 390, height: 844, fontScale: 1 },
+    { width: 390, height: 844, fontScale: 2 },
+  ])('preset markers keep separate 44pt touch targets at %o', (viewport) => {
+    const markerSize = 44;
+    for (const presetId of SPORT_PRESET_IDS) {
+      const preset = getSportPreset(presetId);
+      const frame = resolveSurfaceFrame(viewport, preset);
+      const centers = preset.slots.map((slot) => ({ id: slot.id, ...denormalizePoint(slot.point, frame) }));
+      for (const [index, a] of centers.entries()) {
+        for (const b of centers.slice(index + 1)) {
+          const distance = Math.hypot(a.x - b.x, a.y - b.y);
+          expect({ presetId, pair: `${a.id}/${b.id}`, clear: distance >= markerSize })
+            .toEqual({ presetId, pair: `${a.id}/${b.id}`, clear: true });
+        }
+      }
+    }
+  });
+
   test('drag activation yields scrolling until an intentional hold and movement', () => {
     expect(DRAG_ACTIVATION_MS).toBeGreaterThanOrEqual(180);
     expect(DRAG_TOUCH_SLOP).toBeGreaterThanOrEqual(6);
