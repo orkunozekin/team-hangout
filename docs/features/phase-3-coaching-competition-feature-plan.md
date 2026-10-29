@@ -294,7 +294,7 @@ Planning executed the 11 reference geometry/marker tests described above. Step 1
 - Presets gained versioned units in `src/lib/coaching/lineupSurface.ts`; football has independent offense, defense and special-teams units. `functions/src/coaching/presets.ts` mirrors slot identity and a Jest test enforces alignment.
 - Publication copies an explicit allowlist (positions, display names, bench order). Later private saves do not leak until the coach republishes; retraction deletes the public view.
 - Added `src/firebase/lineups.ts`, pure draft helpers in `src/lib/coaching/lineupDraft.ts` and the `EventLineup` component on canonical event detail: tap participant then tap position, bench ordering, private note, conflict reload, offline retry with the same request ID, empty-roster and departure states, publish/republish/retract, and a read-only family view.
-- Validation on the implementation checkout: `yarn typecheck`; Functions `tsc`; focused emulator suites `lineups` plus `phase3-contracts`, 13/13; `yarn test:coverage --ci --runInBand --silent`, 314/314 with 97.5% statements; `yarn test:backend` results are recorded in the PR.
+- Validation on the implementation checkout: `yarn typecheck`; Functions `tsc`; focused emulator suites `lineups` plus `phase3-contracts`, 13/13; `yarn test:coverage --ci --runInBand --silent`, 314/314 with 97.5% statements; `yarn test:backend`, 322/322 after updating the staging export count for the four new callables; `git diff --check`.
 
 ### Remaining work
 
