@@ -306,3 +306,20 @@ test("program competition count is capped at creation so the list stays loadable
   // Existing competitions remain editable at the cap.
   assert.equal((await saveRules("p35-manager", 1, { confirm: false }, "p35-bulk-0")).revision, 2);
 });
+
+test("voiding a final releases the match so its type can change", async () => {
+  await saveRules("p35-manager", 0);
+  await finalize("p35-staff", 0, played(2, 1));
+  const edit = (expectedRevision) => call("p35-manager", "mutateEventSchedule", {
+    requestId: `p35-${++seq}`, eventId: "p35-match", expectedRevision, action: "edit", patch: { type: "practice" }, reason: "Wrong type",
+  });
+  await domain(edit(1), "RESULT_RECORDED");
+  await correct("p35-staff", 1, { ...played(null, null), outcome: "void" }, "Not a competition match");
+  assert.equal((await db.doc(`events/p35-match/competitionResults/${competitionId}`).get()).exists, false);
+  await edit(1);
+  const event = (await db.doc("events/p35-match").get()).data();
+  assert.deepEqual([event.type, event.homeTeamId, event.awayTeamId], ["practice", null, null]);
+  // A void finalized directly never blocks the event either.
+  await finalize("p35-staff", 0, { ...played(null, null), outcome: "void" }, { eventId: "p35-cancelled" });
+  assert.equal((await db.doc(`events/p35-cancelled/competitionResults/${competitionId}`).get()).exists, false);
+});

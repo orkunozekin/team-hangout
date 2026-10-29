@@ -231,10 +231,11 @@ function writeResult(
     revision: nextRevision, updatedAt: now, updatedBy: uid,
   });
   if (next.status === 'final') {
-    // Marker the event lifecycle checks so a match with a final result cannot silently change type.
-    tx.set(db().doc(`events/${eventId}/competitionResults/${competition.competitionId}`), {
-      schemaVersion: 2, orgId: competition.orgId, competitionId: competition.competitionId, eventId, updatedAt: now,
-    });
+    // Marker the event lifecycle checks so a match with a counted final result cannot silently change type.
+    // A void final counts for nothing, so voiding releases the event.
+    const marker = db().doc(`events/${eventId}/competitionResults/${competition.competitionId}`);
+    if (next.final.outcome === 'void') tx.delete(marker);
+    else tx.set(marker, { schemaVersion: 2, orgId: competition.orgId, competitionId: competition.competitionId, eventId, updatedAt: now });
   }
   // Immutable audit row. operationId is backend-generated.
   const historyRef = ref.collection('resultHistory').doc();
