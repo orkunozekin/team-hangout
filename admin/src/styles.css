@@ -795,3 +795,12 @@ button { overflow-wrap: anywhere; }
 .reports .report-runs { list-style: none; padding: 0; display: grid; gap: 8px; }
 .reports .report-runs button[aria-pressed="true"] { border-color: #245746; box-shadow: inset 0 0 0 1px #245746; }
 .report-detail .actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.rollover .report-form { flex-wrap: wrap; align-items: flex-end; }
+.rollover .report-form label { min-width: 160px; }
+.rollover .report-form button { flex: none; }
+.rollover .report-runs { list-style: none; padding: 0; display: grid; gap: 8px; }
+.rollover .rollover-job { border: 1px solid #d9e2dc; border-radius: 8px; padding: 12px 16px; }
+.rollover .rollover-job p { margin: 0 0 8px; }
+.rollover .rollover-failure { color: #9b2c2c; }
+.rollover .rollover-excluded { columns: 2; margin: 0 0 16px; }
+.rollover .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }

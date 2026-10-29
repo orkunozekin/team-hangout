@@ -24,7 +24,8 @@ export type AdminSection =
   | "organization"
   | "conversations"
   | "competition"
-  | "reports";
+  | "reports"
+  | "rollover";
 export type AdminEntity = {
   id: string;
   name: string;
@@ -79,7 +80,7 @@ export type TeamInput = {
     status: "active" | "archived";
   };
 };
-export type AdminCommands = import("./competition").CompetitionCommands & import("./reports").ReportCommands & import("./reminders").ReminderCommands & import("./pilot").PilotCommands & import("./conversations").ConversationCommands & import("./attachments").AttachmentCommands & import("./closures").ClosureCommands & import("./scheduleDrafts").DraftCommands & import("./recurrence").RecurrenceCommands & import("./facilities").FacilityCommands & import("./email").EmailCommands & import("./scheduleImports").ScheduleCommands & import("./imports").ImportCommands & import("./calendarSubscriptions").CalendarCommands & import("./participants").ParticipantCommands & import("./invitations").InvitationCommands & {
+export type AdminCommands = import("./competition").CompetitionCommands & import("./reports").ReportCommands & import("./rollover").RolloverCommands & import("./reminders").ReminderCommands & import("./pilot").PilotCommands & import("./conversations").ConversationCommands & import("./attachments").AttachmentCommands & import("./closures").ClosureCommands & import("./scheduleDrafts").DraftCommands & import("./recurrence").RecurrenceCommands & import("./facilities").FacilityCommands & import("./email").EmailCommands & import("./scheduleImports").ScheduleCommands & import("./imports").ImportCommands & import("./calendarSubscriptions").CalendarCommands & import("./participants").ParticipantCommands & import("./invitations").InvitationCommands & {
   listMyOrganizations: {
     input: { cursor?: string; pageSize?: number };
     output: Page<OrganizationLink>;

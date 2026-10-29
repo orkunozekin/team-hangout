@@ -3,6 +3,7 @@ import { DeliveryDiagnostics } from "./DeliveryDiagnostics";
 import { PilotOperations } from "./PilotOperations";
 import { Competitions } from "./Competitions";
 import { Reports } from "./Reports";
+import { Rollover } from "./Rollover";
 import { Closures } from "./Closures";
 import { ScheduleDrafts } from "./ScheduleDrafts";
 import { Recurrence } from "./Recurrence";
@@ -215,6 +216,8 @@ export function App({ services }: { services: BrowserServices }) {
               <Competitions key={route.orgId} services={services} orgId={route.orgId} programId={route.programId} />
             ) : route.section === "reports" ? (
               <Reports key={route.orgId} services={services} orgId={route.orgId} programId={route.programId} />
+            ) : route.section === "rollover" ? (
+              <Rollover key={route.orgId} services={services} orgId={route.orgId} />
             ) : route.section === "pilot" ? (
               <PilotOperations services={services} orgId={route.orgId} />
             ) : route.section === "closures" ? (

@@ -29,6 +29,9 @@ export function audit(tx: Transaction, orgId: string, uid: string, operation: st
     schemaVersion: 2, actorUid: uid, operation, targetId, revision: newRevision, createdAt: Timestamp.now(),
   });
 }
+function rolloverBuilding(): never {
+  throw new HttpsError('failed-precondition', 'This season is still being created by a rollover.', { domainCode: 'ROLLOVER_IN_PROGRESS' });
+}
 function enabled(organization: Data) {
   if (organization.features?.organizationV2 !== true) throw new HttpsError('failed-precondition', 'Organization features are not enabled.');
 }
@@ -96,6 +99,7 @@ export const saveHierarchyEntity = command('saveHierarchyEntity', data => {
   if (kind === 'division') await hierarchy(tx, orgId, fields.programId, fields.seasonId, undefined, !replay);
   if (replay) return replay;
   if (kind === 'season' && before?.status === 'archived') inactive();
+  if (kind === 'season' && before?.rolloverState === 'building') rolloverBuilding();
   checkRevision(before, payload.expectedRevision);
   const entity = { ...before, ...fields, ...(kind === 'organization' ? {} : { orgId }), ...metadata(uid, before) };
   tx.set(ref, entity);
@@ -170,6 +174,7 @@ export const archiveSeason = command('archiveSeason', data => {
   if (!before || before.orgId !== payload.orgId) denied();
   requireProgram(scope, before!.programId); await hierarchy(tx, payload.orgId, before!.programId, undefined, undefined, !replay);
   if (replay) return replay;
+  if (before!.rolloverState === 'building') rolloverBuilding();
   checkRevision(before, payload.expectedRevision);
   const season = { ...before, status: payload.status, ...metadata(uid, before) };
   tx.set(ref, season); audit(tx, payload.orgId, uid, 'archiveSeason', ref.id, season.revision);
@@ -264,8 +269,13 @@ export const listOrganizationHierarchy = readCommand(data => {
   query = query.orderBy(FieldPath.documentId()).limit(payload.pageSize + 1);
   if (payload.cursor) query = query.startAfter(payload.cursor);
   const result = await tx.get(query);
+  const docs = result.docs.slice(0, payload.pageSize);
+  // A rollover target and its divisions and teams stay hidden until the job completes.
+  const seasonIds = payload.kind === 'season' ? [] : [...new Set(docs.map(doc => doc.data().seasonId).filter((value): value is string => typeof value === 'string'))];
+  const seasons = seasonIds.length ? await tx.getAll(...seasonIds.map(seasonId => db.doc(`organizations/${payload.orgId}/seasons/${seasonId}`))) : [];
+  const building = new Set(seasons.filter(doc => doc.data()?.rolloverState === 'building').map(doc => doc.id));
   return { organization: { id: payload.orgId, name: scope.organization.name, status: scope.organization.status, timeZone: scope.organization.timeZone },
-    items: result.docs.slice(0, payload.pageSize).map(doc => ({ id: doc.id, ...doc.data() })),
+    items: docs.filter(doc => doc.data().rolloverState !== 'building' && !building.has(doc.data().seasonId)).map(doc => ({ id: doc.id, ...doc.data() })),
     nextCursor: result.size > payload.pageSize ? result.docs[payload.pageSize - 1].id : null };
 });
 
