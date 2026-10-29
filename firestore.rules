@@ -143,6 +143,9 @@ service cloud.firestore {
       }
     }
 
+    // Step 5 competitions are callable-only: saveCompetitionRules/finalizeResult/correctResult/getCompetition recheck
+    // live orgAdmin or assigned programStaff grants, and proposeResult/getEventResults recheck the active side coach.
+    // Results, rules versions and history are backend-written; published standings arrive in Step 6.
     match /organizations/{orgId}/competitions/{competitionId}/{document=**} {
       allow read, write: if false;
     }
