@@ -18,7 +18,7 @@ import { stageReminder } from '../notifications/reminders';
 async function readableTeam(tx: Transaction, teamId: string, uid: string, household?: () => Promise<Data>) {
   return (await readableTeamAccess(tx, teamId, uid, household)).team;
 }
-/** `coaching` is true for program staff and active team coaches or captains, never for household-only access. */
+/** `coaching` is true for program staff and active team coaches (not captain-only members, who cannot run reports), never for household-only access. */
 async function readableTeamAccess(tx: Transaction, teamId: string, uid: string, household?: () => Promise<Data>): Promise<{ team: Data; coaching: boolean }> {
   const team = (await tx.get(getFirestore().doc(`teams/${teamId}`))).data();
   if (!team || team.schemaVersion !== 2) denied();
@@ -28,7 +28,7 @@ async function readableTeamAccess(tx: Transaction, teamId: string, uid: string, 
   catch (error) { if (!(error instanceof HttpsError) || error.code !== 'permission-denied') throw error; }
   const member = (await tx.get(getFirestore().doc(`teamMembers/${teamId}_${uid}`))).data();
   if (member?.schemaVersion === 2 && member.orgId === team.orgId && member.teamId === teamId && member.userId === uid
-    && member.status === 'active' && Array.isArray(member.roles) && member.roles.some((role: string) => ['coach', 'captain'].includes(role))) return { team, coaching: true };
+    && member.status === 'active' && Array.isArray(member.roles) && member.roles.some((role: string) => ['coach', 'captain'].includes(role))) return { team, coaching: member.roles.includes('coach') };
   const access = await (household ? household() : readAgenda(tx, {}, uid, { events: false }));
   if (!access.teams.some((row: Data) => row.id === teamId && row.orgId === team.orgId)) denied();
   return { team, coaching: false };

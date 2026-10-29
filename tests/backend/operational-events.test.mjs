@@ -132,6 +132,17 @@ test('native team reads carry season scope so coach surfaces such as the team re
   assert.equal(native.programId, team.programId);
   assert.equal(native.seasonId, team.seasonId);
   assert.equal(native.divisionId, team.divisionId);
+  // Captain-only members cannot run team reports, so they get no scope and the summary stays hidden.
+  const grant = db.doc('teamMembers/p202-a_p202-captain');
+  const previous = (await grant.get()).data();
+  await grant.set({ ...meta, orgId: 'p202-org', teamId: 'p202-a', userId: 'p202-captain', roles: ['captain'] });
+  try {
+    const captain = await call('p202-captain', 'getNativeTeam', { teamId: 'p202-a' });
+    assert.equal(captain.name, team.name);
+    for (const key of ['programId', 'seasonId', 'divisionId']) assert.equal(Object.hasOwn(captain, key), false, key);
+  } finally {
+    if (previous) await grant.set(previous); else await grant.delete();
+  }
 });
 test('50-event reads reuse transaction-local grants and metadata, then reauthorize the next request', async () => {
   await db.doc('organizations/p202-org/participants/p202-child/guardians/p202-guardian').update({ status: 'active' });
