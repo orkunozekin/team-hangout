@@ -32,6 +32,12 @@ function score(value: string): number | null {
   return parsed <= RESULT_SCORE_MAX ? parsed : null;
 }
 
+/** Ties compare parsed scores, matching resultFromDraft, so "01" and "1" are a tie. */
+export function scoresTied(draft: Pick<ResultDraft, 'homeScore' | 'awayScore'>): boolean {
+  const home = score(draft.homeScore);
+  return home !== null && home === score(draft.awayScore);
+}
+
 /**
  * Builds the wire result or explains what is missing. Forfeit scores are left to confirmed league policy on the server.
  * A tied score needs a winner and decider only when the format or rules forbid draws.

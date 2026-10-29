@@ -128,7 +128,8 @@ function ResultForm({ services, orgId, detail, match, onSaved, onDenied }: { ser
   const [decider, setDecider] = useState<KnockoutDecider | "">(start.decider ?? "");
   const [reason, setReason] = useState("");
   const name = (teamId: string) => detail.teams.find((team) => team.teamId === teamId)?.name ?? "Unavailable team";
-  const tied = outcome === "played" && home !== "" && home === away;
+  // Compare parsed numbers so "01" and "1" count as a tie.
+  const tied = outcome === "played" && home.trim() !== "" && away.trim() !== "" && Number(home) === Number(away);
   const values = (): ResultValues => outcome === "void"
     ? { outcome, homeScore: null, awayScore: null, forfeitingTeamId: null, winnerTeamId: null, decider: null }
     : outcome === "forfeit"

@@ -1,4 +1,4 @@
-import { draftFromValues, emptyResultDraft, resultError, resultFromDraft } from '../competition/resultDraft';
+import { draftFromValues, emptyResultDraft, resultError, resultFromDraft, scoresTied } from '../competition/resultDraft';
 
 const draft = (patch = {}) => ({ ...emptyResultDraft(), homeScore: '2', awayScore: '1', ...patch });
 
@@ -34,4 +34,11 @@ test('errors map transport and domain failures', () => {
   expect(resultError({ code: 'functions/permission-denied' }).kind).toBe('denied');
   expect(resultError({ message: 'x' })).toEqual({ kind: 'other', message: 'x' });
   expect(resultError({}).message).toContain('unavailable');
+});
+
+test('ties compare parsed scores', () => {
+  expect(scoresTied({ homeScore: '01', awayScore: '1' })).toBe(true);
+  expect(scoresTied({ homeScore: '2', awayScore: '1' })).toBe(false);
+  expect(scoresTied({ homeScore: '', awayScore: '' })).toBe(false);
+  expect(scoresTied({ homeScore: 'x', awayScore: 'x' })).toBe(false);
 });

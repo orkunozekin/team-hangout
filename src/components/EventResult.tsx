@@ -5,7 +5,7 @@ import type { EventResults, KnockoutDecider, ResultOutcome } from '../../shared/
 import { DECIDER_LABELS, describeResult, KNOCKOUT_DECIDERS_ALL, tiedNeedsDecider } from '../../shared/competition';
 import { getEventResults, proposeResult } from '../firebase/competition';
 import { lineupRequestId } from '../firebase/lineups';
-import { draftFromValues, emptyResultDraft, resultError, resultFromDraft, type ResultDraft, type ResultErrorKind } from '../lib/competition/resultDraft';
+import { draftFromValues, resultError, resultFromDraft, scoresTied, type ResultDraft, type ResultErrorKind } from '../lib/competition/resultDraft';
 import { colors, radius, spacing, type } from '../theme/theme';
 import { FieldLabel, PrimaryButton, SecondaryButton, TextField } from './ui';
 
@@ -46,6 +46,8 @@ function CompetitionResult({ data, competition, onChanged }: { data: EventResult
   const away = data.awayTeamId!;
   const name = (teamId: string) => data.teams?.find((team) => team.teamId === teamId)?.name ?? 'Unavailable team';
   const update = (patch: Partial<ResultDraft>) => {
+    // The request ID belongs to the submitted values; edits are locked while a proposal is in flight or uncertain.
+    if (busy || error?.kind === 'offline') return;
     requestId.current = null;
     setDraft((current) => ({ ...current, ...patch }));
   };
@@ -62,8 +64,8 @@ function CompetitionResult({ data, competition, onChanged }: { data: EventResult
   }
 
   const built = resultFromDraft(draft, competition.format, competition.rules);
-  const needsDecider = draft.outcome === 'played' && draft.homeScore.trim() !== '' && draft.homeScore.trim() === draft.awayScore.trim()
-    && tiedNeedsDecider(competition.format, competition.rules);
+  const needsDecider = draft.outcome === 'played' && scoresTied(draft) && tiedNeedsDecider(competition.format, competition.rules);
+  const locked = busy || error?.kind === 'offline';
   const deciders: KnockoutDecider[] = competition.rules ? competition.rules.knockoutDeciders : KNOCKOUT_DECIDERS_ALL;
 
   const submit = async () => {
@@ -105,11 +107,11 @@ function CompetitionResult({ data, competition, onChanged }: { data: EventResult
         <View style={styles.scores}>
           <View style={styles.score}>
             <FieldLabel>{name(home)}</FieldLabel>
-            <TextField accessibilityLabel={`${name(home)} score`} keyboardType="number-pad" value={draft.homeScore} onChangeText={(value) => update({ homeScore: value })} />
+            <TextField editable={!locked} accessibilityLabel={`${name(home)} score`} keyboardType="number-pad" value={draft.homeScore} onChangeText={(value) => update({ homeScore: value })} />
           </View>
           <View style={styles.score}>
             <FieldLabel>{name(away)}</FieldLabel>
-            <TextField accessibilityLabel={`${name(away)} score`} keyboardType="number-pad" value={draft.awayScore} onChangeText={(value) => update({ awayScore: value })} />
+            <TextField editable={!locked} accessibilityLabel={`${name(away)} score`} keyboardType="number-pad" value={draft.awayScore} onChangeText={(value) => update({ awayScore: value })} />
           </View>
         </View>
       ) : null}
@@ -150,6 +152,7 @@ function CompetitionResult({ data, competition, onChanged }: { data: EventResult
         disabled={'error' in built}
         onPress={() => void submit()}
       />
+      {error?.kind === 'offline' ? <SecondaryButton label="Discard and reload" onPress={() => { requestId.current = null; setError(null); void onChanged(); }} /> : null}
       {error?.kind === 'conflict' ? <SecondaryButton label="Reload result" onPress={() => { setError(null); void onChanged(); }} /> : null}
     </View>
   );
@@ -189,6 +192,8 @@ function ResultPanel({ eventId, teamId }: { eventId: string; teamId: string }) {
     <View>
       <Text accessibilityRole="header" style={styles.heading}>Match result</Text>
       <Text style={styles.copy}>Coaches propose. A competition scorer finalizes the official result.</Text>
+      {error ? <Text accessibilityRole="alert" style={styles.error}>{`${error} Showing the last loaded result.`}</Text> : null}
+      {error ? <SecondaryButton label="Retry loading results" onPress={() => void load()} /> : null}
       {data.externalOpponent ? <Text style={styles.copy}>This game has an external opponent, so it is not part of a league competition.</Text> : null}
       {!data.externalOpponent && data.competitions.length === 0 ? <Text style={styles.copy}>This match is not part of a competition.</Text> : null}
       {data.competitions.map((competition) => (

@@ -92,6 +92,7 @@ function match(batch, eventId, fields = {}) {
 
 beforeEach(async () => {
   await db.recursiveDelete(db.collection(`organizations/${scope.orgId}/competitions`));
+  await db.recursiveDelete(db.collection("events/p35-match/competitionResults"));
   const batch = db.batch();
   batch.delete(db.doc("events/p35-forfeit"));
   batch.set(db.doc(`organizations/${scope.orgId}`), { ...meta(), name: "Synthetic league", features: { organizationV2: true, households: true } });
@@ -273,4 +274,35 @@ test("revoked coach and archived season stop proposals at replay and write time"
   await db.doc(`organizations/${scope.orgId}/seasons/${scope.seasonId}`).update({ status: "archived" });
   await domain(propose("p35-coach", 1, played(2, 0)), "HIERARCHY_ARCHIVED");
   await domain(finalize("p35-staff", 1, played(2, 0)), "HIERARCHY_ARCHIVED");
+});
+
+test("a final result blocks the event leaving match type, and a stranded final can still be voided", async () => {
+  await saveRules("p35-manager", 0);
+  await finalize("p35-staff", 0, played(2, 1));
+  assert.ok((await db.doc(`events/p35-match/competitionResults/${competitionId}`).get()).exists);
+  await domain(call("p35-manager", "mutateEventSchedule", {
+    requestId: `p35-${++seq}`, eventId: "p35-match", expectedRevision: 1, action: "edit", patch: { type: "practice" }, reason: "Wrong type",
+  }), "RESULT_RECORDED");
+  // Simulate an event that no longer qualifies (for example edited before this guard existed).
+  await db.doc("events/p35-match").update({ type: "practice", teamIds: ["p35-home"], homeTeamId: null, awayTeamId: null });
+  await domain(correct("p35-staff", 1, played(3, 1), "Scorer sheet"), "NOT_COMPETITION_MATCH");
+  const voided = await correct("p35-staff", 1, { ...played(null, null), outcome: "void" }, "Event was not a match");
+  assert.equal(voided.revision, 2);
+  const stored = (await db.doc(`${competitionPath}/results/p35-match`).get()).data();
+  assert.deepEqual([stored.final.outcome, stored.homeTeamId, stored.awayTeamId], ["void", "p35-home", "p35-away"]);
+});
+
+test("program competition count is capped at creation so the list stays loadable", async () => {
+  const batch = db.batch();
+  for (let i = 0; i < 100; i += 1) {
+    batch.set(db.doc(`organizations/${scope.orgId}/competitions/p35-bulk-${i}`), {
+      schemaVersion: 2, orgId: scope.orgId, competitionId: `p35-bulk-${i}`, programId: scope.programId, name: `Bulk ${i}`, format: "league",
+      seasonId: scope.seasonId, divisionId: scope.divisionId, teamIds: teams, state: "active", revision: 1, draftRules: rules, activeRules: null,
+    });
+  }
+  await batch.commit();
+  await domain(saveRules("p35-manager", 0), "COMPETITION_LIMIT");
+  assert.equal((await call("p35-manager", "listCompetitions", { orgId: scope.orgId, programId: scope.programId })).competitions.length, 100);
+  // Existing competitions remain editable at the cap.
+  assert.equal((await saveRules("p35-manager", 1, { confirm: false }, "p35-bulk-0")).revision, 2);
 });

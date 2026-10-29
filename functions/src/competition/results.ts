@@ -103,6 +103,14 @@ export const saveCompetitionRules = command('saveCompetitionRules', normalizeCom
   }
   checkRevision(current, data.expectedRevision);
   await hierarchy(tx, data.orgId, data.programId, data.seasonId, data.divisionId, true);
+  if (!current) {
+    // Cap at creation so the program list always stays loadable.
+    const existing = await tx.get(db().collection(`organizations/${data.orgId}/competitions`)
+      .where('programId', '==', data.programId).select().limit(LIST_LIMIT));
+    if (existing.size >= LIST_LIMIT) {
+      domain('COMPETITION_LIMIT', `Programs support at most ${LIST_LIMIT} competitions. Edit an existing competition instead.`, 'resource-exhausted');
+    }
+  }
   const teams = await tx.getAll(...(data.teamIds as string[]).map(teamId => db().doc(`teams/${teamId}`)));
   if (teams.some(team => {
     const row = team.data();
@@ -222,6 +230,12 @@ function writeResult(
     ...next,
     revision: nextRevision, updatedAt: now, updatedBy: uid,
   });
+  if (next.status === 'final') {
+    // Marker the event lifecycle checks so a match with a final result cannot silently change type.
+    tx.set(db().doc(`events/${eventId}/competitionResults/${competition.competitionId}`), {
+      schemaVersion: 2, orgId: competition.orgId, competitionId: competition.competitionId, eventId, updatedAt: now,
+    });
+  }
   // Immutable audit row. operationId is backend-generated.
   const historyRef = ref.collection('resultHistory').doc();
   tx.create(historyRef, {
@@ -309,15 +323,23 @@ export const finalizeResult = command('finalizeResult', data => normalizeResultC
 
 export const correctResult = command('correctResult', data => normalizeResultCommand(data, false, true), async (tx, data, uid, _actor, replay) => {
   const competition = await scorerContext(tx, data, uid, !replay);
-  const { event, sides } = await competitionMatch(tx, competition, data.eventId);
-  if (replay) return replay;
   const current = (await tx.get(competitionRef(data.orgId, data.competitionId).collection('results').doc(data.eventId))).data();
+  let match: Awaited<ReturnType<typeof competitionMatch>> | null = null;
+  try {
+    match = await competitionMatch(tx, competition, data.eventId);
+  } catch (error) {
+    // A final whose event no longer qualifies (type, teams or publication changed) can still be voided with its saved sides.
+    if (current?.status !== 'final' || data.result?.outcome !== 'void') throw error;
+  }
+  if (replay) return replay;
   if (current?.status !== 'final') domain('RESULT_NOT_FINAL', 'Only a final result can be corrected.');
   checkRevision(current, data.expectedRevision);
   const rules = finalRules(competition);
   const now = Timestamp.now();
+  const sides = match?.sides ?? { homeTeamId: current!.homeTeamId as string, awayTeamId: current!.awayTeamId as string };
+  const event = match?.event ?? { startsAt: current!.eventStartsAt ?? null };
   const values = validate(data.result, sides, competition, rules);
-  assertPlayable(event, values!, now);
+  if (match) assertPlayable(event, values!, now);
   if (sameResult(values!, current!.final) && current!.final.appliedRulesVersion === competition.activeRulesVersion) {
     domain('NO_CHANGE', 'The correction matches the current final result.', 'invalid-argument');
   }
@@ -357,9 +379,9 @@ export const listCompetitions = readCommand(data => {
   return { orgId: id(data.orgId, 'orgId'), programId: id(data.programId, 'programId') };
 }, async (tx, data, uid) => {
   await competitionStaff(tx, data.orgId, data.programId, uid);
+  // saveCompetitionRules caps creation at LIST_LIMIT, so one bounded read returns the whole program list.
   const snap = await tx.get(db().collection(`organizations/${data.orgId}/competitions`)
-    .where('programId', '==', data.programId).limit(LIST_LIMIT + 1));
-  if (snap.size > LIST_LIMIT) domain('COMPETITION_LIMIT', `Programs list at most ${LIST_LIMIT} competitions. Archive older ones.`, 'resource-exhausted');
+    .where('programId', '==', data.programId).limit(LIST_LIMIT));
   return {
     competitions: snap.docs.map(doc => doc.data()).filter(row => row.schemaVersion === 2 && row.orgId === data.orgId)
       .map(summary).sort((a, b) => a.name.localeCompare(b.name) || a.competitionId.localeCompare(b.competitionId)),

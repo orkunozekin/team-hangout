@@ -133,7 +133,8 @@ test("a knockout competition rejects a tied score without a permitted decider", 
   await expect(page.getByText("Rules confirmed as league policy.")).toBeVisible();
   const results = page.getByRole("region", { name: "Match results" });
   await results.getByRole("row", { name: /Foxes vs Hawks/ }).getByRole("button", { name: "Finalize" }).click();
-  await page.getByLabel("Foxes score").fill("1");
+  // "01" and "1" are a tie once parsed.
+  await page.getByLabel("Foxes score").fill("01");
   await page.getByLabel("Hawks score").fill("1");
   await page.getByRole("button", { name: "Finalize result" }).click();
   await expect(page.getByText("A knockout match cannot end in a draw. Record the winner and the decider the rules allow.")).toBeVisible();

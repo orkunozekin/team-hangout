@@ -86,3 +86,48 @@ test('load failure offers retry', async () => {
   await fireEvent.press(screen.getByRole('button', { name: 'Retry loading results' }));
   expect(await screen.findByText('This match is not part of a competition.')).toBeTruthy();
 });
+
+test('parsed scores detect a tie and edits lock while an uncertain proposal is pending', async () => {
+  read.mockResolvedValue(results());
+  propose.mockRejectedValueOnce({ code: 'functions/unavailable' });
+  await open();
+  await screen.findByText('No result proposed yet.');
+  await fireEvent.changeText(screen.getByLabelText('Hawks score'), '01');
+  await fireEvent.changeText(screen.getByLabelText('Owls score'), '1');
+  await fireEvent.press(screen.getByRole('button', { name: 'Winner Hawks' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Decided by Penalties' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Propose result' }));
+  expect(await screen.findByText(/Connection lost/)).toBeTruthy();
+  // Changing the outcome is ignored so the retry keeps the submitted values and request ID.
+  await fireEvent.press(screen.getByRole('button', { name: 'Outcome Void' }));
+  expect(screen.queryByText('A void result counts for nothing. Use it for cancelled or abandoned matches.')).toBeNull();
+  expect(screen.getByLabelText('Hawks score').props.editable).toBe(false);
+  propose.mockResolvedValueOnce({ requestId: 'req-1', revision: 1, state: 'proposed', operationId: 'op' });
+  await fireEvent.press(screen.getByRole('button', { name: 'Retry same proposal' }));
+  await waitFor(() => expect(propose).toHaveBeenCalledTimes(2));
+  expect(propose.mock.calls[1]).toEqual(propose.mock.calls[0]);
+});
+
+test('a failed refresh stays visible beside the last loaded result', async () => {
+  read.mockResolvedValueOnce(results()).mockRejectedValueOnce({ code: 'functions/unavailable' }).mockResolvedValueOnce(results());
+  propose.mockResolvedValueOnce({ requestId: 'req-1', revision: 1, state: 'proposed', operationId: 'op' });
+  await open();
+  await screen.findByText('No result proposed yet.');
+  await fireEvent.press(screen.getByRole('button', { name: 'Outcome Void' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Propose result' }));
+  expect(await screen.findByText(/Showing the last loaded result\./)).toBeTruthy();
+  await fireEvent.press(screen.getByRole('button', { name: 'Retry loading results' }));
+  await waitFor(() => expect(screen.queryByText(/Showing the last loaded result\./)).toBeNull());
+});
+
+test('discarding an uncertain proposal reloads and unlocks editing', async () => {
+  read.mockResolvedValue(results());
+  propose.mockRejectedValueOnce({ code: 'functions/unavailable' });
+  await open();
+  await screen.findByText('No result proposed yet.');
+  await fireEvent.press(screen.getByRole('button', { name: 'Outcome Void' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Propose result' }));
+  await fireEvent.press(await screen.findByRole('button', { name: 'Discard and reload' }));
+  await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+  expect(await screen.findByRole('button', { name: 'Propose result' })).toBeTruthy();
+});
