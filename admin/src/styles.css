@@ -788,3 +788,10 @@ button { overflow-wrap: anywhere; }
 .bracket-node form { margin-top: 8px; }
 .seed-order li { margin: 4px 0; }
 .bracket-impact { margin-top: 12px; }
+
+.reports .report-form { flex-wrap: wrap; align-items: flex-end; }
+.reports .report-form label { min-width: 160px; }
+.reports .report-form button { flex: none; }
+.reports .report-runs { list-style: none; padding: 0; display: grid; gap: 8px; }
+.reports .report-runs button[aria-pressed="true"] { border-color: #245746; box-shadow: inset 0 0 0 1px #245746; }
+.report-detail .actions { display: flex; flex-wrap: wrap; gap: 12px; }

@@ -60,6 +60,8 @@ export function mapTeamDoc(
     timeZone: typeof data.timeZone === 'string' ? data.timeZone : undefined,
     ...(typeof data.orgId === 'string' ? { orgId: data.orgId } : {}),
     ...(typeof data.divisionId === 'string' ? { divisionId: data.divisionId } : {}),
+    ...(typeof data.programId === 'string' ? { programId: data.programId } : {}),
+    ...(typeof data.seasonId === 'string' ? { seasonId: data.seasonId } : {}),
     name: String(data.name ?? ''),
     sport: data.sport == null ? null : String(data.sport),
     inviteCode: String(data.inviteCode ?? ''),
