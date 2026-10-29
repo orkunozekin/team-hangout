@@ -17,6 +17,10 @@ export function message(error: unknown): string {
     return "This draft changed or was already published. Upload a fresh schedule preview to review current events before committing and publishing again.";
   if (domain === "SCHEDULE_RECIPIENTS_CHANGED")
     return "Notification contacts changed. Review selected publication again before confirming.";
+  if (domain === "PRACTICE_REVIEWER_REQUIRED")
+    return "Only a designated content reviewer can approve resources. Ask your organization to record your reviewer designation.";
+  if (domain === "PRACTICE_REVIEWER_CONFLICT")
+    return "You edited this draft. A different designated reviewer must approve it.";
   if (domain === "STALE_REVISION")
     return "This record changed while you were editing. Reload the workspace and review the latest version before saving.";
   if (domain === "ADMIN_WORKSPACE_DISABLED")

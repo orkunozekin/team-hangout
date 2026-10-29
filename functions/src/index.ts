@@ -69,5 +69,6 @@ export { rebuildStandings, reconcileStandings, getStandings, getEventStandings }
 export { previewBracket, publishBracket, linkBracketEvent, getBracket, getEventBracket, previewBracketCorrection, correctBracket } from './competition/brackets';
 export { saveVolunteerSlot, claimVolunteerSlot, releaseVolunteerSlot, getEventVolunteers } from './volunteers/slots';
 export { requestReport, rebuildReport, getReportRun, exportReport, listReportRuns, runReport, reconcileReports, reportScheduleChanged, reportResourceChanged, reportAttendanceChanged, reportClosureChanged, reportAvailabilityChanged } from './reports/runs';
+export { savePracticeResource, publishPracticeResource, listPracticeResources, getPracticeResource, savePracticePlan, getEventPracticePlan } from './resources/practice';
 export { previewRollover, commitRollover, resumeRollover, listRolloverJobs, runRollover, reconcileRollovers } from './seasons/rollover';
 export { saveRideRequest, confirmRideArrangement, revokeRideConsent, getEventRides, getRideContacts } from './volunteers/rides';

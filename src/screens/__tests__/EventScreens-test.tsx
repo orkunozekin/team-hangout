@@ -13,6 +13,7 @@ jest.mock('../../firebase/lineups', () => ({ getLineup: jest.fn().mockResolvedVa
 jest.mock('../../firebase/playTime', () => ({ getPlaySession: jest.fn(), recordPlayAction: jest.fn(), finalizePlaySession: jest.fn() }));
 jest.mock('../../firebase/competition', () => ({ getEventResults: jest.fn(), proposeResult: jest.fn(), getEventStandings: jest.fn(), getEventBracket: jest.fn() }));
 jest.mock('../../firebase/volunteers', () => ({ getEventVolunteers: jest.fn(), claimVolunteerSlot: jest.fn(), releaseVolunteerSlot: jest.fn(), saveVolunteerSlot: jest.fn(), volunteerRequestId: () => 'id' }));
+jest.mock('../../firebase/practice', () => ({ getEventPracticePlan: jest.fn(), listTeamPracticeResources: jest.fn(), savePracticePlan: jest.fn(), practiceRequestId: () => 'id' }));
 jest.mock('../../firebase/rides', () => ({ getEventRides: jest.fn(), getRideContacts: jest.fn(), saveRideRequest: jest.fn(), confirmRideArrangement: jest.fn(), revokeRideConsent: jest.fn(), rideRequestId: () => 'id' }));
 jest.mock('../../firebase/teams', () => ({ getTeam: jest.fn() }));
 jest.mock('../../lib/gameDayCache', () => ({
