@@ -74,3 +74,29 @@ it('fences logout revocation to the registration generation it targets', async (
   await revokePushNotifications('user-1');
   expect(api.revokePushDevice).toHaveBeenCalledWith(installationId, 3);
 });
+
+it('an older overlapping sync response cannot roll the revocation generation back', async () => {
+  let resolveFirst: (value: unknown) => void = () => undefined;
+  await syncExistingPushPermission('user-1', 'project-1');
+  const installationId = (api.registerPushDevice as jest.Mock).mock.calls[0][0].installationId;
+  (api.registerPushDevice as jest.Mock)
+    .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve; }))
+    .mockResolvedValueOnce({ permissionState: 'granted', registrationGeneration: 2 });
+  const older = registerPushNotifications('user-1', 'project-1');
+  await registerPushNotifications('user-1', 'project-1');
+  resolveFirst({ permissionState: 'granted', registrationGeneration: 1 });
+  await older;
+  await revokePushNotifications('user-1');
+  expect(api.revokePushDevice).toHaveBeenCalledWith(installationId, 2);
+});
+
+it('generations are tracked per account so another user registration does not fence this one', async () => {
+  (api.registerPushDevice as jest.Mock)
+    .mockResolvedValueOnce({ permissionState: 'granted', registrationGeneration: 7 })
+    .mockResolvedValueOnce({ permissionState: 'granted', registrationGeneration: 1 });
+  await registerPushNotifications('user-1', 'project-1');
+  await registerPushNotifications('user-2', 'project-1');
+  const installationId = (api.registerPushDevice as jest.Mock).mock.calls[0][0].installationId;
+  await revokePushNotifications('user-2');
+  expect(api.revokePushDevice).toHaveBeenCalledWith(installationId, 1);
+});

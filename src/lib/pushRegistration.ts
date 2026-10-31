@@ -4,7 +4,13 @@ import { Platform } from 'react-native';
 import { registerPushDevice, revokePushDevice } from '../firebase/notifications';
 
 const INSTALLATION_KEY = '@team-hangout/push-installation/v1';
-const GENERATION_KEY = '@team-hangout/push-registration-generation/v1';
+const generationKey = (uid: string) => `@team-hangout/push-registration-generation/v1/${uid}`;
+
+/** Keeps the highest generation per account so an older overlapping sync response cannot roll the revocation fence back. */
+async function rememberGeneration(uid: string, generation: number) {
+  const stored = Number(await AsyncStorage.getItem(generationKey(uid)));
+  if (!Number.isSafeInteger(stored) || generation > stored) await AsyncStorage.setItem(generationKey(uid), String(generation));
+}
 
 function permissionState(permission: Notifications.NotificationPermissionsStatus): 'granted' | 'denied' | 'undetermined' {
   if (Platform.OS === 'ios' && permission.ios) {
@@ -41,7 +47,7 @@ async function sync(uid: string, projectId: string, ask: boolean) {
   if (state === 'granted') expoPushToken = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
   const registered = await registerPushDevice({ installationId: id, platform: Platform.OS === 'ios' ? 'ios' : 'android', projectId,
     permissionState: state, expoPushToken }) as { registrationGeneration?: unknown } | undefined;
-  if (Number.isSafeInteger(registered?.registrationGeneration)) await AsyncStorage.setItem(GENERATION_KEY, String(registered!.registrationGeneration));
+  if (Number.isSafeInteger(registered?.registrationGeneration)) await rememberGeneration(uid, registered!.registrationGeneration as number);
   return { permissionState: state, installationId: id };
 }
 
@@ -53,10 +59,10 @@ export function syncExistingPushPermission(uid: string, projectId: string) {
   return sync(uid, projectId, false);
 }
 
-export async function revokePushNotifications(_uid: string): Promise<void> {
+export async function revokePushNotifications(uid: string): Promise<void> {
   const id = await AsyncStorage.getItem(INSTALLATION_KEY);
   if (!id) return;
   // Capture the generation now: sign-out may time out and let a new sign-in re-register before this request lands.
-  const generation = Number(await AsyncStorage.getItem(GENERATION_KEY));
+  const generation = Number(await AsyncStorage.getItem(generationKey(uid)));
   await revokePushDevice(id, Number.isSafeInteger(generation) && generation > 0 ? generation : undefined);
 }
