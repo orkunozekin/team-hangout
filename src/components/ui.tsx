@@ -54,8 +54,11 @@ export function Screen({
   );
 }
 
+// 22pt headings already read large; past 2x a single word like "Household" no longer fits a phone line and wraps mid-word.
+export const TITLE_MAX_FONT_SCALE = 2;
+
 export function Title({ children }: { children: React.ReactNode }) {
-  return <Text accessibilityRole="header" style={styles.title}>{children}</Text>;
+  return <Text accessibilityRole="header" maxFontSizeMultiplier={TITLE_MAX_FONT_SCALE} style={styles.title}>{children}</Text>;
 }
 
 export function Subtitle({ children }: { children: React.ReactNode }) {

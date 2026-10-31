@@ -5,7 +5,7 @@ import type { EventVolunteers as VolunteersData, VolunteerKind, VolunteerSlot } 
 import { aliasProblem, deadlineInput, parseDeadline, slotStatusLabel, VOLUNTEER_CAPACITY_MAX, VOLUNTEER_KIND_LABELS, VOLUNTEER_KINDS } from '../../shared/volunteers';
 import { claimVolunteerSlot, getEventVolunteers, releaseVolunteerSlot, saveVolunteerSlot, type SlotInput, volunteerRequestId } from '../firebase/volunteers';
 import { colors, radius, spacing, type } from '../theme/theme';
-import { ConsentCheckbox, PrimaryButton, SecondaryButton, TextField } from './ui';
+import { ConsentCheckbox, FieldLabel, PrimaryButton, SecondaryButton, TextField } from './ui';
 
 function Text(props: TextProps) {
   return <NativeText maxFontSizeMultiplier={2} {...props} />;
@@ -133,6 +133,7 @@ function SlotForm({ initial, busy, onSave, onClose }: {
         })}
       </View>
       <TextField accessibilityLabel={`${prefix}Slot title`} value={title} onChangeText={setTitle} maxLength={80} placeholder="Slot title" />
+      <FieldLabel>Volunteers needed</FieldLabel>
       <TextField accessibilityLabel={`${prefix}Number of volunteers needed`} value={capacity} onChangeText={setCapacity} keyboardType="number-pad" maxLength={2} />
       <TextField accessibilityLabel={`${prefix}Sign-up deadline`} value={deadline} onChangeText={setDeadline} maxLength={16} placeholder="Deadline YYYY-MM-DD HH:MM (optional)" />
       <Text style={styles.copy}>Leave the deadline blank to keep sign-up open until the event starts.</Text>

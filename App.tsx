@@ -343,7 +343,7 @@ function AppNavigator({
     <RootStack.Navigator>
       <RootStack.Screen
         name="MainTabs"
-        options={{ headerShown: false }}
+        options={{ headerShown: false, title: 'Back' }}
       >
         {() => (
           <MainTabs
@@ -358,7 +358,7 @@ function AppNavigator({
       </RootStack.Screen>
       <RootStack.Screen
         name="EventDetail"
-        options={{ title: 'Event' }}
+        options={{ title: 'Event', headerBackTitle: 'Back' }}
       >
         {({ navigation, route }) => (
           <EventDetailScreen

@@ -183,3 +183,25 @@ test('edits are frozen while a save is in flight so the refresh cannot discard t
   finish({ requestId: 'request-1', revision: 3, state: 'private' });
   expect(await screen.findByText('Lineup saved privately.')).toBeTruthy();
 });
+
+test('a text size change remounts the lineup text but keeps the open panel and unsaved draft', async () => {
+  const dimensions = jest.requireActual('react-native/Libraries/Utilities/useWindowDimensions');
+  const metrics = { width: 390, height: 844, scale: 3, fontScale: 1 };
+  const spy = jest.spyOn(dimensions, 'default').mockImplementation(() => metrics);
+  read.mockResolvedValue(lineup());
+  const { rerender } = await open();
+  await fireEvent.press(screen.getByRole('button', { name: 'Team lineup' }));
+  await screen.findByText('Private. Families cannot see this lineup.');
+  await fireEvent.press(screen.getByRole('button', { name: 'Blake Rivers' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Add Blake Rivers to bench' }));
+  await fireEvent.changeText(screen.getByLabelText('Private coach note'), 'Edited before resize');
+  const headingBefore = screen.getByText('Private lineup');
+  metrics.fontScale = 2;
+  await rerender(<EventLineup orgId="o" eventId="e" teamId="t" canCoach />);
+  const headingAfter = screen.getByText('Private lineup');
+  expect(headingAfter).not.toBe(headingBefore);
+  expect(screen.getByLabelText('Private coach note').props.value).toBe('Edited before resize');
+  expect(screen.getByRole('button', { name: 'Move Blake Rivers up' })).toBeTruthy();
+  expect(read).toHaveBeenCalledTimes(1);
+  spy.mockRestore();
+});

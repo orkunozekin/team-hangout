@@ -57,6 +57,10 @@ test('a coach filters by age, sees the empty state, adds a resource and saves a 
   expect(screen.getByText('Synthetic steps.')).toBeTruthy();
   expect(screen.getByText('Equipment: Cones')).toBeTruthy();
   expect(screen.getByText('Safety: Synthetic spacing.')).toBeTruthy();
+  // Visible labels keep the shared and private notes distinguishable once filled in.
+  expect(screen.getByText('Minutes')).toBeTruthy();
+  expect(screen.getByText('Household note (shared when published)')).toBeTruthy();
+  expect(screen.getByText('Private coach note (never shared)')).toBeTruthy();
   await fireEvent.changeText(screen.getByLabelText('Private coach note'), ' Private ');
   await fireEvent.press(screen.getByRole('button', { name: 'Save practice plan' }));
   await waitFor(() => expect(save).toHaveBeenCalledWith('o', 'e', 't', 0,
