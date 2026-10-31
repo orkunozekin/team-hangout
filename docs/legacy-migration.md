@@ -1,5 +1,42 @@
 # Reviewed legacy migration rehearsal
 
+## Live operator procedure (staging and production)
+
+`scripts/migrations/legacy-live.mjs` is the reviewed live entry point. The demo-only `legacy.mjs` below is unchanged. The live tool reuses the same plan/apply core and adds: a required `--project` from an exact allowlist (`demo-team-hangout`, `team-hangout-staging`, `team-hangout-ddf27`), refusal when emulator hosts or a mismatched `GCLOUD_PROJECT`/credential `project_id` are present, a read-only `--dry-run`, an `--apply` that requires the saved plan's checksum plus `--confirm-project <same id>` and `--writers-stopped`, and a read-only `--reconcile`. All argument and environment guards run before a Firebase client is created. Running it against production still needs explicit owner approval of the mapping manifest, the plan checksum and the maintenance window; this document is not that approval.
+
+Credentials: real projects use Application Default Credentials (`GOOGLE_APPLICATION_CREDENTIALS` pointing at an owner-approved key, or `gcloud auth application-default login`). The Firebase CLI login is not used. Never commit or print the key.
+
+1. Prerequisites. Deny-first rules and the scoped readers/commands from Phase 1 are deployed to the target. Organization/program/season/division parents exist and are active v2 with `features.organizationV2: true`. Copy `scripts/migrations/manifest.example.json` outside the repository and fill one reviewed mapping per legacy team (org/program/season/division, IANA timezone, default duration, `confirmedBy`). An empty `mappings` array is allowed for an inventory-only plan.
+2. Dry-run (read-only). The whole inventory is read inside a Firestore read-only transaction, which the server rejects if any write is attempted, and the tool issues none. The plan file is created exclusively with mode 0600 and contains private preimages; keep it out of source control under the approved retention policy. Console output is aggregate-only: checksum, source/target counts, mapped/unmapped teams, blocking issues, orphans, coach assignment count, distinct owners, timezones and default durations. The plan file's `report` holds the detail (`mappings` with owner/timezone/duration, `coachAssignments`, `issues`, `orphanPaths`, `unmappedTeamIds`). Exit code 2 means blocking issues or orphans: fix the source or manifest and dry-run again.
+3. Review and approve the printed checksum. The checksum covers the project ID and generation time, so a plan cannot be replayed against another project. A fresh apply refuses plans older than 24 hours.
+4. Stop writers. Disable legacy client writes and new entry points for the whole apply/reconcile window, then apply. `--max-operations N` bounds a session; any interruption (crash, Ctrl-C, `--max-operations`) resumes by rerunning the identical command with the same plan file. Completed operations are verified, never rewritten, and a resumed run is not subject to the 24 hour limit.
+5. Reconcile. A complete apply runs access reconciliation automatically (exit 3 on mismatch): every member of each mapped team must be in the approved plan, migrated with roles matching the legacy role, and each player must have an active roster entry and a linked participant. Rerun it any time read-only with `--reconcile --plan ... --checksum ...`. Rerunning `--apply` after completion is an idempotent replay that reports the same result and rewrites nothing.
+6. Rollback stays manual and pre-edit only, as described below. A production rollback worker is not implemented.
+
+The emulator suite `tests/backend/migration-live.test.mjs` rehearses this procedure on a synthetic multi-org, multi-timezone dataset in an isolated named emulator database: refusals (no/unknown project, missing checksum or confirmation, project mismatch, emulator mixing), proof that inventory only uses a read-only transaction and changes nothing, blocking orphans, interrupted apply and resume, idempotent replay and access drift detection.
+
+### Staging rehearsal commands
+
+Staging needs ADC for `team-hangout-staging` (gcloud is not installed on the owner workstation yet). With credentials in place and synthetic `@example.test` legacy data seeded in staging:
+
+```sh
+export PRIVATE_DIR="$(mktemp -d)"; chmod 700 "$PRIVATE_DIR"
+unset FIRESTORE_EMULATOR_HOST FIREBASE_AUTH_EMULATOR_HOST
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/approved-staging-key.json   # or gcloud ADC
+cp scripts/migrations/manifest.example.json "$PRIVATE_DIR/manifest.json"     # then edit reviewed mappings
+npm --prefix functions run build
+node scripts/migrations/legacy-live.mjs --project team-hangout-staging --dry-run --manifest "$PRIVATE_DIR/manifest.json" --out "$PRIVATE_DIR/plan.json"
+SHA=<checksum printed above, after review>
+node scripts/migrations/legacy-live.mjs --project team-hangout-staging --apply --plan "$PRIVATE_DIR/plan.json" --checksum "$SHA" --confirm-project team-hangout-staging --writers-stopped --max-operations 5
+node scripts/migrations/legacy-live.mjs --project team-hangout-staging --apply --plan "$PRIVATE_DIR/plan.json" --checksum "$SHA" --confirm-project team-hangout-staging --writers-stopped
+node scripts/migrations/legacy-live.mjs --project team-hangout-staging --apply --plan "$PRIVATE_DIR/plan.json" --checksum "$SHA" --confirm-project team-hangout-staging --writers-stopped
+node scripts/migrations/legacy-live.mjs --project team-hangout-staging --reconcile --plan "$PRIVATE_DIR/plan.json" --checksum "$SHA"
+```
+
+The first apply simulates an interruption, the second resumes to completion with automatic reconciliation, the third is the idempotent replay.
+
+## Demo-only emulator rehearsal (historical)
+
 Step 4 adds offline tooling, not a deployed migration endpoint. The executable deliberately accepts only `demo-team-hangout` and Firestore at `127.0.0.1:8080`. It refuses credential overrides. No production data was read, no rollout flags are changed, and no invitations, guardian grants, self-access projections, emails or outbox jobs are created. Staging/production execution needs a separately reviewed release and owner approval of organization/timezone mappings, deployment inventory and retention policy.
 
 ## Review and dry run

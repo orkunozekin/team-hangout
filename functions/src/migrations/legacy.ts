@@ -1,14 +1,18 @@
 import { scheduleMutation } from '../scheduling/lease';
 /** Offline, reviewed tooling only. No callable exports and no email/rollout writes. */
 import { createHash } from 'node:crypto';
-import { Firestore, Timestamp } from 'firebase-admin/firestore';
+import { Firestore, Timestamp, Transaction } from 'firebase-admin/firestore';
 
 type Data = Record<string, any>;
 export type Inventory = Record<string, Data>;
 export type Mapping = { teamId: string; orgId: string; programId: string; seasonId: string; divisionId: string; timeZone: string; confirmedBy: string; defaultDurationMinutes: number };
 export type Manifest = { version: 1; noEmail: true; confirmedAt: string; mappings: Mapping[] };
 type Operation = { path: string; before: Data | null; after: Data; dependencyPaths: string[] };
-export type Plan = { version: 1; manifestChecksum: string; runId: string; dependencies: Inventory; operations: Operation[]; report: Data };
+export type Plan = { version: 1; project?: string; manifestChecksum: string; runId: string; dependencies: Inventory; operations: Operation[]; report: Data };
+/** Real projects the CLI may target. Anything else is refused before a client is created. */
+export const ALLOWED_PROJECTS = ['demo-team-hangout', 'team-hangout-staging', 'team-hangout-ddf27'] as const;
+export const EMULATOR_PROJECT = 'demo-team-hangout';
+export const INVENTORY_COLLECTIONS = ['teams', 'teamMembers', 'events', 'inviteCodes', 'users', 'organizations'] as const;
 function requireValue(condition: unknown, message: string): asserts condition { if (!condition) throw new Error(message); }
 function id(value: unknown): asserts value is string { requireValue(typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value), 'Invalid document ID'); }
 function iso(value: unknown): string {
@@ -60,7 +64,7 @@ export function buildPlan(manifest: Manifest, inventory: Inventory): Plan {
   const manifestChecksum = checksum({ ...manifest, mappings });
   const runId = `legacy_${manifestChecksum.slice(0, 40)}`;
   const operations = new Map<string, Operation>(); const dependencies: Inventory = {};
-  const report: Data = { issues: [], orphanPaths: [], unmappedTeamIds: [], counts: {}, noEmail: true };
+  const report: Data = { issues: [], orphanPaths: [], unmappedTeamIds: [], counts: {}, noEmail: true, mappings: [], coachAssignments: [] };
   const issue = (path: string, reason: string) => report.issues.push({ path, reason });
   const get = (path: string) => { const data = inventory[path]; requireValue(data, `Missing ${path}`); dependencies[path] = data; return data; };
   const put = (path: string, after: Data) => {
@@ -96,6 +100,7 @@ export function buildPlan(manifest: Manifest, inventory: Inventory): Plan {
       const parents = { orgId, programId, seasonId, divisionId };
       const metadata = { schemaVersion: 2, revision: 1, createdAt: team.createdAt, updatedAt: team.updatedAt, createdBy: team.createdBy, updatedBy: confirmedBy };
       put(`teams/${teamId}`, { ...team, ...parents, ...metadata, status: 'active' });
+      report.mappings.push({ teamId, orgId, owner: team.createdBy, confirmedBy, timeZone, defaultDurationMinutes });
       requireValue(typeof team.inviteCode === 'string' && /^[A-Z2-9]{8}$/.test(team.inviteCode), 'Invalid invite code');
       const invite = get(`inviteCodes/${team.inviteCode}`);
       requireValue(invite.teamId === teamId, 'Invite lookup points to another team');
@@ -106,6 +111,7 @@ export function buildPlan(manifest: Manifest, inventory: Inventory): Plan {
           const user = get(`users/${member.userId}`); iso(member.joinedAt);
           requireValue(member.orgId == null && member.schemaVersion !== 2 && ['player', 'coach'].includes(member.role), 'Invalid legacy membership');
           put(path, { ...member, orgId, schemaVersion: 2, roles: member.role === 'coach' ? ['coach'] : [], status: 'active' });
+          if (member.role === 'coach') report.coachAssignments.push({ teamId, userId: member.userId });
           if (member.role !== 'player') continue;
           const pid = participantId(orgId, member.userId);
           // User profile is canonical across teams; names never establish identity.
@@ -141,6 +147,67 @@ export function buildPlan(manifest: Manifest, inventory: Inventory): Plan {
   }
   report.sourceCounts = Object.fromEntries(['teams', 'teamMembers', 'events', 'inviteCodes', 'users'].map(kind => [kind, Object.keys(inventory).filter(path => path.split('/')[0] === kind && path.split('/').length === 2).length]));
   return { version: 1, manifestChecksum, runId, dependencies, operations: sorted, report };
+}
+
+/** Read-only inventory. Every read happens inside a Firestore read-only transaction,
+ * which the server rejects if any write is attempted; this function issues none. */
+export async function collectInventory(db: Firestore): Promise<Inventory> {
+  return db.runTransaction(async (tx: Transaction) => {
+    const inventory: Inventory = {};
+    for (const kind of INVENTORY_COLLECTIONS) {
+      for (const doc of (await tx.get(db.collection(kind))).docs) {
+        inventory[doc.ref.path] = doc.data();
+        const children = kind === 'organizations' ? ['programs', 'seasons', 'divisions', 'participants'] : kind === 'teams' ? ['roster'] : [];
+        for (const child of children) for (const row of (await tx.get(doc.ref.collection(child))).docs) inventory[row.ref.path] = row.data();
+      }
+    }
+    return inventory;
+  }, { readOnly: true });
+}
+
+/** Aggregate-only view for console output: no names, IDs or document bodies. */
+export function summarize(plan: Plan) {
+  const { report } = plan;
+  const mappings: Data[] = report.mappings ?? [];
+  return {
+    project: plan.project ?? null, runId: plan.runId, operations: plan.operations.length,
+    sourceCounts: report.sourceCounts, targetCounts: report.counts,
+    mappedTeams: mappings.length, unmappedTeams: report.unmappedTeamIds.length,
+    blockingIssues: report.issues.length, orphanPaths: report.orphanPaths.length,
+    coachAssignments: (report.coachAssignments ?? []).length,
+    distinctOwners: new Set(mappings.map(row => row.owner)).size,
+    timeZones: [...new Set(mappings.map(row => row.timeZone))].sort(),
+    defaultDurationsMinutes: [...new Set(mappings.map(row => row.defaultDurationMinutes))].sort((a, b) => a - b),
+  };
+}
+
+/** Post-apply access reconciliation for mapped teams. Read-only. A member added, removed or
+ * changed after the plan, or a player without an active roster entry, is a mismatch. */
+export async function reconcileAccess(db: Firestore, plan: Plan) {
+  const mismatches: { path: string; reason: string }[] = [];
+  let members = 0; let coaches = 0; let players = 0;
+  const planned = new Map(plan.operations.map(op => [op.path, op.after]));
+  for (const mapping of plan.report.mappings ?? []) {
+    const { teamId, orgId } = mapping as { teamId: string; orgId: string };
+    const team = (await db.doc(`teams/${teamId}`).get()).data();
+    if (team?.orgId !== orgId || team?.schemaVersion !== 2) mismatches.push({ path: `teams/${teamId}`, reason: 'Team not mapped to planned organization' });
+    for (const doc of (await db.collection('teamMembers').where('teamId', '==', teamId).get()).docs) {
+      members++;
+      const member = doc.data();
+      if (!planned.has(doc.ref.path)) { mismatches.push({ path: doc.ref.path, reason: 'Membership not in approved plan' }); continue; }
+      if (member.orgId !== orgId || member.schemaVersion !== 2 || member.status !== 'active') { mismatches.push({ path: doc.ref.path, reason: 'Membership not migrated' }); continue; }
+      const expectedRoles = member.role === 'coach' ? ['coach'] : [];
+      if (JSON.stringify(member.roles) !== JSON.stringify(expectedRoles)) mismatches.push({ path: doc.ref.path, reason: 'Role assignment differs from legacy role' });
+      if (member.role === 'coach') { coaches++; continue; }
+      players++;
+      const pid = participantId(orgId, member.userId);
+      const roster = (await db.doc(`teams/${teamId}/roster/${pid}`).get()).data();
+      const participant = (await db.doc(`organizations/${orgId}/participants/${pid}`).get()).data();
+      if (roster?.status !== 'active' || roster?.orgId !== orgId) mismatches.push({ path: `teams/${teamId}/roster/${pid}`, reason: 'Player missing active roster entry' });
+      if (participant?.linkedUserId !== member.userId) mismatches.push({ path: `organizations/${orgId}/participants/${pid}`, reason: 'Participant not linked to member' });
+    }
+  }
+  return { ok: mismatches.length === 0, members, coaches, players, mismatches };
 }
 
 /** Each bounded transaction stores its preimage and completion marker atomically.
