@@ -56,6 +56,8 @@ export function Screen({
 
 // 22pt headings already read large; past 2x a single word like "Household" no longer fits a phone line and wraps mid-word.
 export const TITLE_MAX_FONT_SCALE = 2;
+// Caps button labels so long words still fit on one line at the largest accessibility sizes.
+export const BUTTON_MAX_FONT_SCALE = 1.5;
 
 export function Title({ children }: { children: React.ReactNode }) {
   return <Text accessibilityRole="header" maxFontSizeMultiplier={TITLE_MAX_FONT_SCALE} style={styles.title}>{children}</Text>;
@@ -117,7 +119,7 @@ export function PrimaryButton({
       {loading ? (
         <ActivityIndicator color={colors.white} />
       ) : (
-        <Text style={styles.primaryButtonText}>{label}</Text>
+        <Text maxFontSizeMultiplier={BUTTON_MAX_FONT_SCALE} style={styles.primaryButtonText}>{label}</Text>
       )}
     </Pressable>
   );
@@ -150,7 +152,7 @@ export function SecondaryButton({
       {loading ? (
         <ActivityIndicator color={colors.primary} />
       ) : (
-        <Text style={styles.secondaryButtonText}>{label}</Text>
+        <Text maxFontSizeMultiplier={BUTTON_MAX_FONT_SCALE} style={styles.secondaryButtonText}>{label}</Text>
       )}
     </Pressable>
   );
@@ -165,7 +167,7 @@ export function LinkButton({
 }) {
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={styles.linkButton}>
-      <Text style={styles.linkText}>{label}</Text>
+      <Text maxFontSizeMultiplier={BUTTON_MAX_FONT_SCALE} style={styles.linkText}>{label}</Text>
     </Pressable>
   );
 }
