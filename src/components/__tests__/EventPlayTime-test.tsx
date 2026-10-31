@@ -9,6 +9,18 @@ jest.mock('../../firebase/playTime', () => ({
   recordPlayAction: jest.fn(),
   finalizePlaySession: jest.fn(),
 }));
+const fieldRenders: Record<string, number> = {};
+jest.mock('../ui', () => {
+  const actual = jest.requireActual('../ui');
+  return {
+    ...actual,
+    TextField: (props: { accessibilityLabel?: string }) => {
+      const label = props.accessibilityLabel ?? '';
+      fieldRenders[label] = (fieldRenders[label] ?? 0) + 1;
+      return actual.TextField(props);
+    },
+  };
+});
 const read = getPlaySession as jest.Mock;
 const record = recordPlayAction as jest.Mock;
 const finalize = finalizePlaySession as jest.Mock;
@@ -182,4 +194,21 @@ test('earlier substitutions stay reachable for correction through history pages'
   await waitFor(() => expect(read).toHaveBeenLastCalledWith('e', 't', 60));
   expect(await screen.findByRole('button', { name: 'Correct substitution at 0:30' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Show earlier actions' })).toBeNull();
+});
+
+test('the running clock tick does not re-render an open correction form, so typing is not interrupted', async () => {
+  jest.useFakeTimers({ now: new Date('2026-12-20T23:05:00Z') });
+  const actions = [
+    { sequence: 2, kind: 'substitute' as const, period: 1, atElapsedMs: 60_000, unitId: 'starting', outParticipantId: 'b', inParticipantId: 'c' },
+    { sequence: 1, kind: 'start' as const, period: 1, atElapsedMs: 0 },
+  ];
+  read.mockResolvedValue(session({ actions }));
+  await open();
+  await fireEvent.press(await screen.findByRole('button', { name: 'Correct substitution at 1:00' }));
+  await fireEvent.changeText(screen.getByLabelText('Correction reason'), 'Scorer');
+  const before = fieldRenders['Correction reason'];
+  await act(async () => { jest.advanceTimersByTime(5_000); });
+  expect(screen.getByText('Clock running · Period 1 of 2 · 2:10')).toBeTruthy();
+  expect(fieldRenders['Correction reason']).toBe(before);
+  expect(screen.getByLabelText('Correction reason').props.value).toBe('Scorer');
 });
