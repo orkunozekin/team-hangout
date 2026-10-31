@@ -210,52 +210,6 @@ export default function ScheduleScreen({
 
   return (
     <Screen style={{ paddingHorizontal: 0 }}>
-      <View style={styles.header}>
-        <Title>Schedule</Title>
-        <Subtitle>Practices and matches for {teamName || 'your team'}.</Subtitle>
-
-        <View style={styles.filters}>
-          {(['upcoming', 'past'] as const).map(value => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: view === value }} onPress={() => setView(value)} style={[styles.chip, view === value ? styles.chipSelected : null]}><Text style={[styles.chipText, view === value ? styles.chipTextSelected : null]}>{value === 'upcoming' ? 'Upcoming' : 'Past events'}</Text></Pressable>)}
-        </View>
-
-        <View style={styles.filters}>
-          {FILTERS.map((item) => {
-            const selected = filter === item.key;
-            return (
-              <Pressable
-                key={item.key}
-                accessibilityRole="button"
-                accessibilityState={{ selected }}
-                onPress={() => setFilter(item.key)}
-                style={[
-                  styles.chip,
-                  selected ? styles.chipSelected : null,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.chipText,
-                    selected ? styles.chipTextSelected : null,
-                  ]}
-                >
-                  {item.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        {canManage ? (
-          <PrimaryButton
-            label="Add event"
-            onPress={() => navigation.navigate('CreateEditEvent', {})}
-          />
-        ) : null}
-      </View>
-
-      {nextCursor ? <Text style={styles.meta}>More events are available. Load more to include them in this view.</Text> : null}
-      {cached ? <View style={styles.cacheNotice}><OfflineNotice savedAt={cached.savedAt} olderThanTtl={cached.olderThanTtl} /></View> : null}
-
       <FlatList
         data={visible}
         keyExtractor={(item) => item.id}
@@ -263,6 +217,55 @@ export default function ScheduleScreen({
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
         contentContainerStyle={styles.list}
+        ListHeaderComponent={
+          <>
+            <View>
+              <Title>Schedule</Title>
+              <Subtitle>Practices and matches for {teamName || 'your team'}.</Subtitle>
+
+              <View style={styles.filters}>
+                {(['upcoming', 'past'] as const).map(value => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: view === value }} onPress={() => setView(value)} style={[styles.chip, view === value ? styles.chipSelected : null]}><Text style={[styles.chipText, view === value ? styles.chipTextSelected : null]}>{value === 'upcoming' ? 'Upcoming' : 'Past events'}</Text></Pressable>)}
+              </View>
+
+              <View style={styles.filters}>
+                {FILTERS.map((item) => {
+                  const selected = filter === item.key;
+                  return (
+                    <Pressable
+                      key={item.key}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                      onPress={() => setFilter(item.key)}
+                      style={[
+                        styles.chip,
+                        selected ? styles.chipSelected : null,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.chipText,
+                          selected ? styles.chipTextSelected : null,
+                        ]}
+                      >
+                        {item.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              {canManage ? (
+                <PrimaryButton
+                  label="Add event"
+                  onPress={() => navigation.navigate('CreateEditEvent', {})}
+                />
+              ) : null}
+            </View>
+
+            {nextCursor ? <Text style={styles.meta}>More events are available. Load more to include them in this view.</Text> : null}
+            {cached ? <View><OfflineNotice savedAt={cached.savedAt} olderThanTtl={cached.olderThanTtl} /></View> : null}
+          </>
+        }
         ListEmptyComponent={
           loading ? null : (
             <EmptyState message={error || "No events yet. Coaches can add practices and matches."} />
@@ -320,10 +323,6 @@ export default function ScheduleScreen({
 }
 
 const styles = StyleSheet.create({
-  cacheNotice: { paddingHorizontal: spacing.lg },
-  header: {
-    paddingHorizontal: spacing.lg,
-  },
   filters: {
     flexDirection: 'row',
     flexWrap: 'wrap',
