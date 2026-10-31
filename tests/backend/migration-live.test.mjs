@@ -186,4 +186,22 @@ test('rehearsal: dry-run, blocking orphans, apply with interruption, resume, rep
   const drift = cli(...base, '--reconcile', '--plan', planPath, '--checksum', approved);
   assert.equal(drift.status, 3, drift.stderr);
   assert.deepEqual(json(drift).mismatches, [{ path: 'teamMembers/live-ktm_p1', reason: 'Membership not in approved plan' }]);
+  await db.doc('teamMembers/live-ktm_p1').delete();
+
+  // 7. A planned player promoted to coach after approval is not accepted from live fields.
+  const promoted = db.doc('teamMembers/live-ldn_p1');
+  const approvedPlayer = (await promoted.get()).data();
+  await promoted.update({ role: 'coach', roles: ['coach'] });
+  const promotion = cli(...base, '--reconcile', '--plan', planPath, '--checksum', approved);
+  assert.equal(promotion.status, 3, promotion.stderr);
+  assert.deepEqual(json(promotion).mismatches, [{ path: 'teamMembers/live-ldn_p1', reason: 'Membership identity or role differs from approved plan' }]);
+
+  // 8. A planned membership deleted after migration is reported missing, not silently dropped from the count.
+  await promoted.delete();
+  const removal = cli(...base, '--reconcile', '--plan', planPath, '--checksum', approved);
+  assert.equal(removal.status, 3, removal.stderr);
+  assert.deepEqual(json(removal).mismatches, [{ path: 'teamMembers/live-ldn_p1', reason: 'Planned membership missing' }]);
+  await promoted.set(approvedPlayer);
+  const restored = cli(...base, '--reconcile', '--plan', planPath, '--checksum', approved);
+  assert.equal(restored.status, 0, restored.stderr);
 });

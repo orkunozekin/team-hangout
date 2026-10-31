@@ -191,14 +191,25 @@ export async function reconcileAccess(db: Firestore, plan: Plan) {
     const { teamId, orgId } = mapping as { teamId: string; orgId: string };
     const team = (await db.doc(`teams/${teamId}`).get()).data();
     if (team?.orgId !== orgId || team?.schemaVersion !== 2) mismatches.push({ path: `teams/${teamId}`, reason: 'Team not mapped to planned organization' });
-    for (const doc of (await db.collection('teamMembers').where('teamId', '==', teamId).get()).docs) {
+    const current = (await db.collection('teamMembers').where('teamId', '==', teamId).get()).docs;
+    const seen = new Set(current.map(doc => doc.ref.path));
+    // A planned membership that was deleted (or moved off the team) after approval no longer shows up in the query.
+    for (const [path, after] of planned) {
+      if (path.startsWith('teamMembers/') && (after as { teamId?: string } | null)?.teamId === teamId && !seen.has(path))
+        mismatches.push({ path, reason: 'Planned membership missing' });
+    }
+    for (const doc of current) {
       members++;
       const member = doc.data();
       if (!planned.has(doc.ref.path)) { mismatches.push({ path: doc.ref.path, reason: 'Membership not in approved plan' }); continue; }
       if (member.orgId !== orgId || member.schemaVersion !== 2 || member.status !== 'active') { mismatches.push({ path: doc.ref.path, reason: 'Membership not migrated' }); continue; }
-      const expectedRoles = member.role === 'coach' ? ['coach'] : [];
-      if (JSON.stringify(member.roles) !== JSON.stringify(expectedRoles)) mismatches.push({ path: doc.ref.path, reason: 'Role assignment differs from legacy role' });
-      if (member.role === 'coach') { coaches++; continue; }
+      // Role comes from the approved plan, never from live fields, so a post-approval promotion cannot pass as approved.
+      const approved = planned.get(doc.ref.path) as { userId?: string; teamId?: string; role?: string; roles?: unknown } | null;
+      if (member.userId !== approved?.userId || member.teamId !== approved?.teamId || member.role !== approved?.role
+        || JSON.stringify(member.roles) !== JSON.stringify(approved?.roles)) {
+        mismatches.push({ path: doc.ref.path, reason: 'Membership identity or role differs from approved plan' }); continue;
+      }
+      if (approved?.role === 'coach') { coaches++; continue; }
       players++;
       const pid = participantId(orgId, member.userId);
       const roster = (await db.doc(`teams/${teamId}/roster/${pid}`).get()).data();
