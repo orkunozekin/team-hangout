@@ -15,8 +15,8 @@ Each value is generated with a CSPRNG and piped straight into the CLI, never pri
 
 1. **OWNER** `ATTACHMENT_UPLOAD_KEY` (>= 32 random bytes): `openssl rand -base64 48 | firebase functions:secrets:set ATTACHMENT_UPLOAD_KEY --data-file=- --project team-hangout-ddf27`.
 2. **OWNER** `CONVERSATION_SEARCH_CURSOR_KEY` (>= 32 random bytes), same pattern.
-3. **OWNER** `INVITATION_DELIVERY_KEY` (>= 32 random bytes), same pattern.
-4. **OWNER** `ESSENTIAL_EMAIL_API_KEY`: needs a real email provider account and sender domain. Blocked until the owner chooses a provider and approves email policy. Without it the Functions source cannot load `resumeEssentialEmail`, so either create it with the provider key or deploy with that export excluded (see step 3.3).
+3. **OWNER** `INVITATION_DELIVERY_KEY` (32 random bytes encoded as exactly 64 hexadecimal characters; `seal()` rejects anything else and invitations fail with "Invitation delivery encryption is not configured"): `openssl rand -hex 32 | firebase functions:secrets:set INVITATION_DELIVERY_KEY --data-file=- --project team-hangout-ddf27`.
+4. **OWNER** `ESSENTIAL_EMAIL_API_KEY`: needs a real email provider account and sender domain. Blocked until the owner chooses a provider and approves email policy. Two exports bind this secret outside staging: `resumeEssentialEmail` (`functions/src/email/worker.ts`) and `resumeNotificationInbox` (`functions/src/notifications/worker.ts`, staging-only omission). Without the secret, deploy stays blocked until either the provider key exists or a reviewed code change omits the binding for production as it does for staging (see step 3.3).
 5. Verify with `firebase functions:secrets:describe <NAME> --project team-hangout-ddf27` (shows versions only, not values).
 
 ## 2. Functions environment
@@ -29,6 +29,10 @@ Each value is generated with a CSPRNG and piped straight into the CLI, never pri
 | `IMPORT_RETENTION_DAYS` | e.g. `30` | **OWNER** approves real participant data retention; staging uses 1 day for fixtures only |
 | `ESSENTIAL_EMAIL_ENABLED` | `false` | Turn on only after provider and policy approval |
 | `ESSENTIAL_EMAIL_POLICY_APPROVED` | `false` | **OWNER** policy decision |
+| `ESSENTIAL_EMAIL_FROM`, `ESSENTIAL_EMAIL_REPLY_TO` | verified sender and reply-to | **OWNER** sender domain with SPF/DKIM/DMARC. `senderConfig()` keeps email off until all four email settings are set |
+| `ESSENTIAL_EMAIL_BROWSER_ORIGIN` | approved admin/browser origin | **OWNER** hosting decision |
+| `ESSENTIAL_EMAIL_PRIVACY_URL` | published privacy policy URL | **OWNER** privacy policy |
+| `CALENDAR_FEED_BASE_URL`, `CALENDAR_UID_DOMAIN` | approved HTTPS feed origin and UID domain | **OWNER**. Calendar subscription creation and rotation fail without them outside the demo emulator, so keep `calendarSubscriptions` off until set |
 
 Staging-only scaling bounds (min 0, max 2, concurrency 1) are keyed on the staging project id and do not apply to production. **OWNER** decides production min/max instances if defaults are not acceptable.
 
@@ -38,7 +42,7 @@ All commands use explicit `--project team-hangout-ddf27`. Each step is **OWNER**
 
 1. **OWNER** Indexes first: `firebase deploy --only firestore:indexes --project team-hangout-ddf27`. Poll `firebase firestore:indexes --project team-hangout-ddf27` and the console until every composite index in `firestore.indexes.json` is READY. Do not continue while any index is building.
 2. **OWNER** Storage rules: `firebase deploy --only storage --project team-hangout-ddf27`.
-3. **OWNER** Functions: `firebase deploy --only functions --project team-hangout-ddf27`. Deploy in batches of at most ten (`--only functions:a,functions:b,...`) if first-time provisioning races occur, and retry only the failed names. If `ESSENTIAL_EMAIL_API_KEY` does not exist, the email worker must be excluded first; it is only auto-omitted for staging today, so this needs a code change or the secret. Verify every export is ACTIVE with `firebase functions:list`.
+3. **OWNER** Functions: `firebase deploy --only functions --project team-hangout-ddf27`. Deploy in batches of at most ten (`--only functions:a,functions:b,...`) if first-time provisioning races occur, and retry only the failed names. If `ESSENTIAL_EMAIL_API_KEY` does not exist, deploy is blocked: both `resumeEssentialEmail` and `resumeNotificationInbox` bind it, and the omission is keyed to the staging project id only. Excluding one export is not enough. Create the secret with the real provider key, or land a separately reviewed change that omits the binding for production while email stays disabled. Verify every export is ACTIVE with `firebase functions:list`.
 4. **OWNER** Firestore rules last: `firebase deploy --only firestore:rules --project team-hangout-ddf27`. Rules go after callables so new clients never reach rules that expect missing backend paths.
 5. Record deployed SHA, function count, index READY count and rules release in a production evidence file under `docs/evidence/`.
 
@@ -46,7 +50,7 @@ Hosting for the browser admin workspace is a separate **OWNER** decision (site, 
 
 ## 4. Legacy migration window
 
-Follow [legacy migration](legacy-migration.md) exactly.
+**Blocked.** The current migration executable is emulator-only: `legacy.mjs` rejects non-demo settings and initializes only `demo-team-hangout` (see [legacy migration](legacy-migration.md)). Do not improvise changes during a release. These steps apply only after separately reviewed live-project tooling has merged and been rehearsed on staging; the pilot-readiness work tracks that tooling in its own PR.
 
 1. **OWNER** Approve the migration window and announce it to existing users.
 2. Generate the plan (dry run) read-only against production, review the entire saved plan privately and note its SHA-256.
@@ -66,7 +70,7 @@ Flags are per organization and never replace authorization. Enable them one orga
 
 ## 6. Rollback
 
-- Stop new writes by setting the affected organization flags to `false` (table in the Phase 2 runbook). Leave `organizationV2`, `adminWorkspace` and `households` on so staff can read history.
+- Stop new writes by setting the affected organization flags to `false`. Phase 2 flags are in the [Phase 2 runbook](phase-2-pilot-runbook.md) table. Phase 3 flags with their own switch: `reports` (report requests, rebuilds and exports), `rollover` (preview, commit and resume), `rides` (ride requests, confirmations and contact reveals), `practiceResources` (resource editing, publication and plan saves). Coaching lineups, playing time, results, standings, brackets and volunteers have **no independent switch**: they stay available behind live authorization until Functions are redeployed at a previous approved SHA, so turning flags off does not stop them. Leave `organizationV2`, `adminWorkspace` and `households` on so staff can read history.
 - Schedule publication: call rollback repeatedly until `truncated` is false.
 - Functions: redeploy the previous approved SHA (**OWNER**). Rules: redeploy the previous rules file (**OWNER**). Do not delete indexes during rollback.
 - Migration: follow the reverse-checkpoint procedure in the migration doc, only before post-migration edits or grants (**OWNER**).
