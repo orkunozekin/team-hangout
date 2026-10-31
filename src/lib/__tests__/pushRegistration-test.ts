@@ -64,39 +64,32 @@ it('creates the Android channel before asking permission and revokes on logout',
   );
   const installationId = (api.registerPushDevice as jest.Mock).mock.calls[0][0].installationId;
   await revokePushNotifications('user-1');
-  expect(api.revokePushDevice).toHaveBeenCalledWith(installationId, undefined);
+  expect(api.revokePushDevice).toHaveBeenCalledWith(installationId, expect.stringMatching(/^session_/));
 });
 
-it('fences logout revocation to the registration generation it targets', async () => {
-  (api.registerPushDevice as jest.Mock).mockResolvedValueOnce({ permissionState: 'granted', registrationGeneration: 3 });
-  await registerPushNotifications('user-1', 'project-1');
-  const installationId = (api.registerPushDevice as jest.Mock).mock.calls[0][0].installationId;
-  await revokePushNotifications('user-1');
-  expect(api.revokePushDevice).toHaveBeenCalledWith(installationId, 3);
-});
-
-it('an older overlapping sync response cannot roll the revocation generation back', async () => {
-  let resolveFirst: (value: unknown) => void = () => undefined;
+it('every sync in a sign-in shares one session ID and logout revocation is fenced to it', async () => {
+  let resolveSlow: (value: unknown) => void = () => undefined;
+  await AsyncStorage.setItem('@team-hangout/push-installation/v1', 'install_existing_device');
+  (api.registerPushDevice as jest.Mock)
+    .mockImplementationOnce(() => new Promise((resolve) => { resolveSlow = resolve; }))
+    .mockResolvedValueOnce({ permissionState: 'granted' });
+  // Overlapping syncs, including one whose response is still pending at sign-out, all carry the same session.
+  const slow = registerPushNotifications('user-1', 'project-1');
   await syncExistingPushPermission('user-1', 'project-1');
-  const installationId = (api.registerPushDevice as jest.Mock).mock.calls[0][0].installationId;
-  (api.registerPushDevice as jest.Mock)
-    .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve; }))
-    .mockResolvedValueOnce({ permissionState: 'granted', registrationGeneration: 2 });
-  const older = registerPushNotifications('user-1', 'project-1');
-  await registerPushNotifications('user-1', 'project-1');
-  resolveFirst({ permissionState: 'granted', registrationGeneration: 1 });
-  await older;
+  const [first, second] = (api.registerPushDevice as jest.Mock).mock.calls.map((call) => call[0]);
+  expect(first.registrationSessionId).toMatch(/^session_/);
+  expect(second.registrationSessionId).toBe(first.registrationSessionId);
   await revokePushNotifications('user-1');
-  expect(api.revokePushDevice).toHaveBeenCalledWith(installationId, 2);
+  expect(api.revokePushDevice).toHaveBeenCalledWith(first.installationId, first.registrationSessionId);
+  resolveSlow({ permissionState: 'granted' });
+  await slow;
 });
 
-it('generations are tracked per account so another user registration does not fence this one', async () => {
-  (api.registerPushDevice as jest.Mock)
-    .mockResolvedValueOnce({ permissionState: 'granted', registrationGeneration: 7 })
-    .mockResolvedValueOnce({ permissionState: 'granted', registrationGeneration: 1 });
+it('the next sign-in gets a new session, so a late revocation from the previous one cannot match it', async () => {
   await registerPushNotifications('user-1', 'project-1');
-  await registerPushNotifications('user-2', 'project-1');
-  const installationId = (api.registerPushDevice as jest.Mock).mock.calls[0][0].installationId;
-  await revokePushNotifications('user-2');
-  expect(api.revokePushDevice).toHaveBeenCalledWith(installationId, 1);
+  const before = (api.registerPushDevice as jest.Mock).mock.calls[0][0].registrationSessionId;
+  await revokePushNotifications('user-1');
+  await registerPushNotifications('user-1', 'project-1');
+  const after = (api.registerPushDevice as jest.Mock).mock.calls[1][0].registrationSessionId;
+  expect(after).not.toBe(before);
 });

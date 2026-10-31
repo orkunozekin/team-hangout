@@ -56,7 +56,7 @@ export const listNotifications = readCommand(data => { keys(data, ['pageSize', '
 });
 
 export const registerPushDevice = command('registerPushDevice', data => {
-  keys(data, ['requestId', 'installationId', 'platform', 'projectId', 'permissionState', 'expoPushToken']);
+  keys(data, ['requestId', 'installationId', 'platform', 'projectId', 'permissionState', 'expoPushToken', 'registrationSessionId']);
   const platform = data.platform;
   if (!['ios', 'android'].includes(platform)) invalid('Invalid platform.');
   const permissionState = data.permissionState;
@@ -65,7 +65,8 @@ export const registerPushDevice = command('registerPushDevice', data => {
   if (permissionState === 'granted') {
     if (typeof token !== 'string' || !/^(ExponentPushToken|ExpoPushToken)\[[A-Za-z0-9_-]+\]$/.test(token)) invalid('Invalid expoPushToken.');
   } else if (token != null) invalid('A denied or undetermined endpoint cannot include a token.');
-  return { installationId: id(data.installationId, 'installationId'), platform, projectId: id(data.projectId, 'projectId'), permissionState, expoPushToken: token ?? null };
+  return { installationId: id(data.installationId, 'installationId'), platform, projectId: id(data.projectId, 'projectId'), permissionState, expoPushToken: token ?? null,
+    registrationSessionId: data.registrationSessionId === undefined ? undefined : id(data.registrationSessionId, 'registrationSessionId') };
 }, async (tx, payload, uid, _actor, replay) => {
   if (replay) return replay;
   const db = getFirestore(), ref = db.doc(`notificationEndpoints/${uid}_${payload.installationId}`), before = (await tx.get(ref)).data();
@@ -80,26 +81,26 @@ export const registerPushDevice = command('registerPushDevice', data => {
   for (const duplicate of duplicates?.docs ?? []) if (duplicate.id !== ref.id) tx.update(duplicate.ref, {
     permissionState: 'revoked', expoPushToken: null, revokedAt: now, updatedAt: now,
   });
-  // Each registration advances the generation so a late revocation aimed at an older registration cannot revoke this one.
-  const registrationGeneration = (Number.isSafeInteger(before?.registrationGeneration) ? before!.registrationGeneration : 0) + 1;
-  tx.set(ref, { schemaVersion: 2, userId: uid, installationId: payload.installationId, platform: payload.platform, registrationGeneration,
+  // The client sends one session ID per sign-in; a late revocation from an earlier sign-in carries a different ID and is skipped.
+  tx.set(ref, { schemaVersion: 2, userId: uid, installationId: payload.installationId, platform: payload.platform,
+    registrationSessionId: payload.registrationSessionId ?? null,
     projectId: payload.projectId, permissionState: payload.permissionState, expoPushToken: payload.expoPushToken,
     tokenUpdatedAt: payload.expoPushToken !== before?.expoPushToken ? now : before?.tokenUpdatedAt ?? now,
     revokedAt: payload.permissionState === 'granted' ? null : before?.revokedAt ?? null,
     createdAt: before?.createdAt ?? now, updatedAt: now });
-  return { installationId: payload.installationId, permissionState: payload.permissionState, registrationGeneration };
+  return { installationId: payload.installationId, permissionState: payload.permissionState };
 });
 
 export const revokePushDevice = command('revokePushDevice', data => {
-  keys(data, ['requestId', 'installationId', 'registrationGeneration']);
-  const generation = data.registrationGeneration;
-  if (generation !== undefined && (!Number.isSafeInteger(generation) || (generation as number) < 1)) invalid('Invalid registrationGeneration.');
-  return { installationId: id(data.installationId, 'installationId'), registrationGeneration: generation as number | undefined };
+  keys(data, ['requestId', 'installationId', 'registrationSessionId']);
+  return { installationId: id(data.installationId, 'installationId'),
+    registrationSessionId: data.registrationSessionId === undefined ? undefined : id(data.registrationSessionId, 'registrationSessionId') };
 }, async (tx, payload, uid, _actor, replay) => {
   if (replay) return replay;
   const ref = getFirestore().doc(`notificationEndpoints/${uid}_${payload.installationId}`), row = (await tx.get(ref)).data();
-  // A fenced revocation only applies to the registration it targeted; a newer sign-in keeps its endpoint.
-  const superseded = payload.registrationGeneration !== undefined && (row?.registrationGeneration ?? 0) > payload.registrationGeneration;
+  // A fenced revocation only applies to its own sign-in session; an endpoint re-registered by a later sign-in is kept.
+  const superseded = payload.registrationSessionId !== undefined && typeof row?.registrationSessionId === 'string'
+    && row.registrationSessionId !== payload.registrationSessionId;
   if (row?.userId === uid && row.installationId === payload.installationId && !superseded) tx.update(ref, { permissionState: 'revoked', expoPushToken: null, revokedAt: Timestamp.now(), updatedAt: Timestamp.now() });
   return { installationId: payload.installationId, revoked: !superseded };
 });

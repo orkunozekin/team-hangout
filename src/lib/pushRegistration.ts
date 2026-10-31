@@ -4,12 +4,28 @@ import { Platform } from 'react-native';
 import { registerPushDevice, revokePushDevice } from '../firebase/notifications';
 
 const INSTALLATION_KEY = '@team-hangout/push-installation/v1';
-const generationKey = (uid: string) => `@team-hangout/push-registration-generation/v1/${uid}`;
+const sessionKey = (uid: string) => `@team-hangout/push-registration-session/v1/${uid}`;
+const pendingSessions = new Map<string, Promise<string>>();
 
-/** Keeps the highest generation per account so an older overlapping sync response cannot roll the revocation fence back. */
-async function rememberGeneration(uid: string, generation: number) {
-  const stored = Number(await AsyncStorage.getItem(generationKey(uid)));
-  if (!Number.isSafeInteger(stored) || generation > stored) await AsyncStorage.setItem(generationKey(uid), String(generation));
+/**
+ * One ID per sign-in, shared by every sync in that session and kept until sign-out. Revocation is fenced to it, so a
+ * late revoke from an earlier sign-in cannot clear a newer one, and slow or overlapping syncs never change it.
+ */
+function registrationSession(uid: string): Promise<string> {
+  const pending = pendingSessions.get(uid);
+  if (pending) return pending;
+  const created = (async () => {
+    const existing = await AsyncStorage.getItem(sessionKey(uid));
+    if (existing && /^[A-Za-z0-9_-]{12,128}$/.test(existing)) return existing;
+    const id = `session_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 14)}`;
+    await AsyncStorage.setItem(sessionKey(uid), id);
+    return id;
+  })();
+  // Only dedupe a creation still in flight; once settled, storage is the source of truth.
+  pendingSessions.set(uid, created);
+  const settle = () => { if (pendingSessions.get(uid) === created) pendingSessions.delete(uid); };
+  created.then(settle, settle);
+  return created;
 }
 
 function permissionState(permission: Notifications.NotificationPermissionsStatus): 'granted' | 'denied' | 'undetermined' {
@@ -45,9 +61,8 @@ async function sync(uid: string, projectId: string, ask: boolean) {
   const state = permissionState(permission);
   let expoPushToken: string | null = null;
   if (state === 'granted') expoPushToken = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-  const registered = await registerPushDevice({ installationId: id, platform: Platform.OS === 'ios' ? 'ios' : 'android', projectId,
-    permissionState: state, expoPushToken }) as { registrationGeneration?: unknown } | undefined;
-  if (Number.isSafeInteger(registered?.registrationGeneration)) await rememberGeneration(uid, registered!.registrationGeneration as number);
+  await registerPushDevice({ installationId: id, platform: Platform.OS === 'ios' ? 'ios' : 'android', projectId,
+    permissionState: state, expoPushToken, registrationSessionId: await registrationSession(uid) });
   return { permissionState: state, installationId: id };
 }
 
@@ -61,8 +76,9 @@ export function syncExistingPushPermission(uid: string, projectId: string) {
 
 export async function revokePushNotifications(uid: string): Promise<void> {
   const id = await AsyncStorage.getItem(INSTALLATION_KEY);
-  if (!id) return;
-  // Capture the generation now: sign-out may time out and let a new sign-in re-register before this request lands.
-  const generation = Number(await AsyncStorage.getItem(generationKey(uid)));
-  await revokePushDevice(id, Number.isSafeInteger(generation) && generation > 0 ? generation : undefined);
+  // Capture and end this sign-in's session first, so the next sign-in starts a new one even if this request is slow.
+  const session = await AsyncStorage.getItem(sessionKey(uid));
+  pendingSessions.delete(uid);
+  await AsyncStorage.removeItem(sessionKey(uid));
+  if (id) await revokePushDevice(id, session ?? undefined);
 }
