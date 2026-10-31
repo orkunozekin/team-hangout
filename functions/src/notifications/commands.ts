@@ -80,21 +80,28 @@ export const registerPushDevice = command('registerPushDevice', data => {
   for (const duplicate of duplicates?.docs ?? []) if (duplicate.id !== ref.id) tx.update(duplicate.ref, {
     permissionState: 'revoked', expoPushToken: null, revokedAt: now, updatedAt: now,
   });
-  tx.set(ref, { schemaVersion: 2, userId: uid, installationId: payload.installationId, platform: payload.platform,
+  // Each registration advances the generation so a late revocation aimed at an older registration cannot revoke this one.
+  const registrationGeneration = (Number.isSafeInteger(before?.registrationGeneration) ? before!.registrationGeneration : 0) + 1;
+  tx.set(ref, { schemaVersion: 2, userId: uid, installationId: payload.installationId, platform: payload.platform, registrationGeneration,
     projectId: payload.projectId, permissionState: payload.permissionState, expoPushToken: payload.expoPushToken,
     tokenUpdatedAt: payload.expoPushToken !== before?.expoPushToken ? now : before?.tokenUpdatedAt ?? now,
     revokedAt: payload.permissionState === 'granted' ? null : before?.revokedAt ?? null,
     createdAt: before?.createdAt ?? now, updatedAt: now });
-  return { installationId: payload.installationId, permissionState: payload.permissionState };
+  return { installationId: payload.installationId, permissionState: payload.permissionState, registrationGeneration };
 });
 
 export const revokePushDevice = command('revokePushDevice', data => {
-  keys(data, ['requestId', 'installationId']); return { installationId: id(data.installationId, 'installationId') };
+  keys(data, ['requestId', 'installationId', 'registrationGeneration']);
+  const generation = data.registrationGeneration;
+  if (generation !== undefined && (!Number.isSafeInteger(generation) || (generation as number) < 1)) invalid('Invalid registrationGeneration.');
+  return { installationId: id(data.installationId, 'installationId'), registrationGeneration: generation as number | undefined };
 }, async (tx, payload, uid, _actor, replay) => {
   if (replay) return replay;
   const ref = getFirestore().doc(`notificationEndpoints/${uid}_${payload.installationId}`), row = (await tx.get(ref)).data();
-  if (row?.userId === uid && row.installationId === payload.installationId) tx.update(ref, { permissionState: 'revoked', expoPushToken: null, revokedAt: Timestamp.now(), updatedAt: Timestamp.now() });
-  return { installationId: payload.installationId, revoked: true };
+  // A fenced revocation only applies to the registration it targeted; a newer sign-in keeps its endpoint.
+  const superseded = payload.registrationGeneration !== undefined && (row?.registrationGeneration ?? 0) > payload.registrationGeneration;
+  if (row?.userId === uid && row.installationId === payload.installationId && !superseded) tx.update(ref, { permissionState: 'revoked', expoPushToken: null, revokedAt: Timestamp.now(), updatedAt: Timestamp.now() });
+  return { installationId: payload.installationId, revoked: !superseded };
 });
 
 export const resolveNotificationTarget = readCommand(data => {

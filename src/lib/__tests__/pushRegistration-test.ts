@@ -64,5 +64,13 @@ it('creates the Android channel before asking permission and revokes on logout',
   );
   const installationId = (api.registerPushDevice as jest.Mock).mock.calls[0][0].installationId;
   await revokePushNotifications('user-1');
-  expect(api.revokePushDevice).toHaveBeenCalledWith(installationId);
+  expect(api.revokePushDevice).toHaveBeenCalledWith(installationId, undefined);
+});
+
+it('fences logout revocation to the registration generation it targets', async () => {
+  (api.registerPushDevice as jest.Mock).mockResolvedValueOnce({ permissionState: 'granted', registrationGeneration: 3 });
+  await registerPushNotifications('user-1', 'project-1');
+  const installationId = (api.registerPushDevice as jest.Mock).mock.calls[0][0].installationId;
+  await revokePushNotifications('user-1');
+  expect(api.revokePushDevice).toHaveBeenCalledWith(installationId, 3);
 });

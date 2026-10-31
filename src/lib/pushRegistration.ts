@@ -4,6 +4,7 @@ import { Platform } from 'react-native';
 import { registerPushDevice, revokePushDevice } from '../firebase/notifications';
 
 const INSTALLATION_KEY = '@team-hangout/push-installation/v1';
+const GENERATION_KEY = '@team-hangout/push-registration-generation/v1';
 
 function permissionState(permission: Notifications.NotificationPermissionsStatus): 'granted' | 'denied' | 'undetermined' {
   if (Platform.OS === 'ios' && permission.ios) {
@@ -38,8 +39,9 @@ async function sync(uid: string, projectId: string, ask: boolean) {
   const state = permissionState(permission);
   let expoPushToken: string | null = null;
   if (state === 'granted') expoPushToken = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-  await registerPushDevice({ installationId: id, platform: Platform.OS === 'ios' ? 'ios' : 'android', projectId,
-    permissionState: state, expoPushToken });
+  const registered = await registerPushDevice({ installationId: id, platform: Platform.OS === 'ios' ? 'ios' : 'android', projectId,
+    permissionState: state, expoPushToken }) as { registrationGeneration?: unknown } | undefined;
+  if (Number.isSafeInteger(registered?.registrationGeneration)) await AsyncStorage.setItem(GENERATION_KEY, String(registered!.registrationGeneration));
   return { permissionState: state, installationId: id };
 }
 
@@ -53,5 +55,8 @@ export function syncExistingPushPermission(uid: string, projectId: string) {
 
 export async function revokePushNotifications(_uid: string): Promise<void> {
   const id = await AsyncStorage.getItem(INSTALLATION_KEY);
-  if (id) await revokePushDevice(id);
+  if (!id) return;
+  // Capture the generation now: sign-out may time out and let a new sign-in re-register before this request lands.
+  const generation = Number(await AsyncStorage.getItem(GENERATION_KEY));
+  await revokePushDevice(id, Number.isSafeInteger(generation) && generation > 0 ? generation : undefined);
 }

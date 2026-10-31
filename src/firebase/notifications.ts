@@ -20,8 +20,8 @@ export type PushRegistration = { installationId: string; platform: 'ios' | 'andr
 export async function registerPushDevice(registration: PushRegistration) {
   return runCommand('registerPushDevice', registration, requestId());
 }
-export async function revokePushDevice(installationId: string) {
-  return runCommand('revokePushDevice', { installationId }, requestId());
+export async function revokePushDevice(installationId: string, registrationGeneration?: number) {
+  return runCommand('revokePushDevice', { installationId, ...(registrationGeneration ? { registrationGeneration } : {}) }, requestId());
 }
 export async function resolveNotificationTarget(notificationId: string, sourceRevision: number) {
   return (await httpsCallable<{ notificationId: string; sourceRevision: number },

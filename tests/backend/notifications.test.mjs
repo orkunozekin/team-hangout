@@ -202,6 +202,18 @@ test('push device lifecycle is self-only, validates tokens and records denied pe
   assert.equal((await db.doc('notificationEndpoints/notify-self_install-a').get()).data().permissionState, 'revoked');
   await call('notify-self', 'revokePushDevice', { requestId: 'push-revoke', installationId: 'install-a' });
   assert.ok((await db.doc('notificationEndpoints/notify-self_install-a').get()).data().revokedAt);
+  // A delayed revocation fenced to an older registration must not revoke a newer sign-in's endpoint.
+  const first = await call('notify-self', 'registerPushDevice', { requestId: 'push-fence-1', installationId: 'install-fence', platform: 'ios',
+    projectId: 'project-a', permissionState: 'granted', expoPushToken: 'ExponentPushToken[fence-token]' });
+  const second = await call('notify-self', 'registerPushDevice', { requestId: 'push-fence-2', installationId: 'install-fence', platform: 'ios',
+    projectId: 'project-a', permissionState: 'granted', expoPushToken: 'ExponentPushToken[fence-token]' });
+  assert.equal(second.registrationGeneration, first.registrationGeneration + 1);
+  const late = await call('notify-self', 'revokePushDevice', { requestId: 'push-fence-late', installationId: 'install-fence', registrationGeneration: first.registrationGeneration });
+  assert.equal(late.revoked, false);
+  assert.equal((await db.doc('notificationEndpoints/notify-self_install-fence').get()).data().permissionState, 'granted');
+  await call('notify-self', 'revokePushDevice', { requestId: 'push-fence-current', installationId: 'install-fence', registrationGeneration: second.registrationGeneration });
+  assert.equal((await db.doc('notificationEndpoints/notify-self_install-fence').get()).data().permissionState, 'revoked');
+  await db.doc('notificationEndpoints/notify-self_install-fence').delete();
   for (let index = 0; index < 5; index++) await call('notify-self', 'registerPushDevice', { requestId: `push-cap-${index}`,
     installationId: `cap-${index}`, platform: 'ios', projectId: 'project-a', permissionState: 'granted',
     expoPushToken: `ExponentPushToken[cap-token-${index}]` });
