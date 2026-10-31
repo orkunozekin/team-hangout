@@ -16,12 +16,12 @@ export async function acknowledgeCriticalUpdate(notificationId: string, sourceRe
 }
 export type PushPermissionState = 'granted' | 'denied' | 'undetermined';
 export type PushRegistration = { installationId: string; platform: 'ios' | 'android'; projectId: string;
-  permissionState: PushPermissionState; expoPushToken: string | null };
+  permissionState: PushPermissionState; expoPushToken: string | null; registrationSessionId?: string };
 export async function registerPushDevice(registration: PushRegistration) {
   return runCommand('registerPushDevice', registration, requestId());
 }
-export async function revokePushDevice(installationId: string) {
-  return runCommand('revokePushDevice', { installationId }, requestId());
+export async function revokePushDevice(installationId: string, registrationSessionId?: string) {
+  return runCommand('revokePushDevice', { installationId, ...(registrationSessionId ? { registrationSessionId } : {}) }, requestId());
 }
 export async function resolveNotificationTarget(notificationId: string, sourceRevision: number) {
   return (await httpsCallable<{ notificationId: string; sourceRevision: number },

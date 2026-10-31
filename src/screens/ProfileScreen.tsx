@@ -83,6 +83,7 @@ export default function ProfileScreen({
   );
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const isSuperAdmin = isSuperAdminRole(appRole);
   const legal = getLegalUrls();
 
@@ -108,6 +109,8 @@ export default function ProfileScreen({
   }
 
   async function onLogout() {
+    if (signingOut) return;
+    setSigningOut(true);
     try {
       await logout();
     } catch (err) {
@@ -115,6 +118,8 @@ export default function ProfileScreen({
         'Logout failed',
         err instanceof Error ? err.message : 'Please try again',
       );
+    } finally {
+      setSigningOut(false);
     }
   }
 
@@ -170,12 +175,13 @@ export default function ProfileScreen({
           label="Save profile"
           onPress={onSave}
           loading={loading}
-          disabled={deleting}
+          disabled={deleting || signingOut}
         />
 
         <SecondaryButton
           label="Sign out"
           onPress={onLogout}
+          loading={signingOut}
           disabled={loading || deleting}
         />
 
@@ -222,7 +228,7 @@ export default function ProfileScreen({
           label="Delete account"
           onPress={onDeleteAccount}
           loading={deleting}
-          disabled={loading}
+          disabled={loading || signingOut}
         />
       </ScrollView>
     </Screen>

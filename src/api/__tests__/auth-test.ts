@@ -109,6 +109,7 @@ import {
   loginWithEmail,
   loginWithGoogle,
   logout,
+  PUSH_REVOCATION_TIMEOUT_MS,
   registerWithEmail,
   resetPassword,
   subscribeToAuthChanges,
@@ -508,6 +509,32 @@ describe('api/auth', () => {
 
     expect(mockClearGameDayCache).toHaveBeenCalledWith('cached-user');
     expect(mockSignOut).toHaveBeenCalledWith(auth);
+  });
+
+  it('signs out after a bounded wait when endpoint revocation never settles', async () => {
+    jest.useFakeTimers();
+    try {
+      (auth as { currentUser: unknown }).currentUser = { uid: 'cached-user' };
+      mockRevokePushNotifications.mockReturnValueOnce(new Promise(() => undefined));
+      mockSignOut.mockResolvedValue(undefined);
+
+      let settled = false;
+      const pending = logout().then(() => { settled = true; });
+      await jest.advanceTimersByTimeAsync(PUSH_REVOCATION_TIMEOUT_MS - 1);
+      expect(settled).toBe(false);
+      expect(mockSignOut).not.toHaveBeenCalled();
+
+      await jest.advanceTimersByTimeAsync(1);
+      await pending;
+
+      expect(mockClearGameDayCache).toHaveBeenCalledWith('cached-user');
+      expect(mockClearGameDayCache.mock.invocationCallOrder[0]).toBeLessThan(
+        mockSignOut.mock.invocationCallOrder[0],
+      );
+      expect(mockSignOut).toHaveBeenCalledWith(auth);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('still signs out of Firebase if Google sign-out fails', async () => {

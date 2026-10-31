@@ -64,5 +64,32 @@ it('creates the Android channel before asking permission and revokes on logout',
   );
   const installationId = (api.registerPushDevice as jest.Mock).mock.calls[0][0].installationId;
   await revokePushNotifications('user-1');
-  expect(api.revokePushDevice).toHaveBeenCalledWith(installationId);
+  expect(api.revokePushDevice).toHaveBeenCalledWith(installationId, expect.stringMatching(/^session_/));
+});
+
+it('every sync in a sign-in shares one session ID and logout revocation is fenced to it', async () => {
+  let resolveSlow: (value: unknown) => void = () => undefined;
+  await AsyncStorage.setItem('@team-hangout/push-installation/v1', 'install_existing_device');
+  (api.registerPushDevice as jest.Mock)
+    .mockImplementationOnce(() => new Promise((resolve) => { resolveSlow = resolve; }))
+    .mockResolvedValueOnce({ permissionState: 'granted' });
+  // Overlapping syncs, including one whose response is still pending at sign-out, all carry the same session.
+  const slow = registerPushNotifications('user-1', 'project-1');
+  await syncExistingPushPermission('user-1', 'project-1');
+  const [first, second] = (api.registerPushDevice as jest.Mock).mock.calls.map((call) => call[0]);
+  expect(first.registrationSessionId).toMatch(/^session_/);
+  expect(second.registrationSessionId).toBe(first.registrationSessionId);
+  await revokePushNotifications('user-1');
+  expect(api.revokePushDevice).toHaveBeenCalledWith(first.installationId, first.registrationSessionId);
+  resolveSlow({ permissionState: 'granted' });
+  await slow;
+});
+
+it('the next sign-in gets a new session, so a late revocation from the previous one cannot match it', async () => {
+  await registerPushNotifications('user-1', 'project-1');
+  const before = (api.registerPushDevice as jest.Mock).mock.calls[0][0].registrationSessionId;
+  await revokePushNotifications('user-1');
+  await registerPushNotifications('user-1', 'project-1');
+  const after = (api.registerPushDevice as jest.Mock).mock.calls[1][0].registrationSessionId;
+  expect(after).not.toBe(before);
 });

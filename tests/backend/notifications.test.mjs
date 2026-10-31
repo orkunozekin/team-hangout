@@ -202,6 +202,19 @@ test('push device lifecycle is self-only, validates tokens and records denied pe
   assert.equal((await db.doc('notificationEndpoints/notify-self_install-a').get()).data().permissionState, 'revoked');
   await call('notify-self', 'revokePushDevice', { requestId: 'push-revoke', installationId: 'install-a' });
   assert.ok((await db.doc('notificationEndpoints/notify-self_install-a').get()).data().revokedAt);
+  // A delayed revocation from an earlier sign-in session must not revoke the endpoint a later sign-in registered.
+  const register = (requestId, registrationSessionId) => call('notify-self', 'registerPushDevice', { requestId, installationId: 'install-fence',
+    platform: 'ios', projectId: 'project-a', permissionState: 'granted', expoPushToken: 'ExponentPushToken[fence-token]', registrationSessionId });
+  await register('push-fence-1', 'session-one-aaaa');
+  await register('push-fence-2', 'session-two-bbbb');
+  const late = await call('notify-self', 'revokePushDevice', { requestId: 'push-fence-late', installationId: 'install-fence', registrationSessionId: 'session-one-aaaa' });
+  assert.equal(late.revoked, false);
+  assert.equal((await db.doc('notificationEndpoints/notify-self_install-fence').get()).data().permissionState, 'granted');
+  // Repeated syncs in the same session keep the same ID, so that session's sign-out still revokes.
+  await register('push-fence-3', 'session-two-bbbb');
+  await call('notify-self', 'revokePushDevice', { requestId: 'push-fence-current', installationId: 'install-fence', registrationSessionId: 'session-two-bbbb' });
+  assert.equal((await db.doc('notificationEndpoints/notify-self_install-fence').get()).data().permissionState, 'revoked');
+  await db.doc('notificationEndpoints/notify-self_install-fence').delete();
   for (let index = 0; index < 5; index++) await call('notify-self', 'registerPushDevice', { requestId: `push-cap-${index}`,
     installationId: `cap-${index}`, platform: 'ios', projectId: 'project-a', permissionState: 'granted',
     expoPushToken: `ExponentPushToken[cap-token-${index}]` });
