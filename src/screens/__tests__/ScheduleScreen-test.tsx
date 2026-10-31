@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react-native';
-import { AppState } from 'react-native';
+import { AppState, StyleSheet } from 'react-native';
 import ScheduleScreen from '../ScheduleScreen';
 import { listTeamEventPage } from '../../firebase/events';
 import { clearGameDayCache, loadCachedTeamSchedule, saveCachedTeamSchedule } from '../../lib/gameDayCache';
@@ -35,6 +35,10 @@ test('restores an offline schedule without restoring management authority', asyn
   await screen.findByText('Cached match');
   expect(screen.getByRole('alert').props.children.join('')).toMatch(/Offline copy/);
   expect(screen.queryByText('Add event')).toBeNull();
+  // Filter chips wrap instead of running off screen at large accessibility text sizes.
+  let node = screen.getByRole('button', { name: 'Past events' }).parent;
+  while (node && StyleSheet.flatten(node.props.style)?.flexDirection !== 'row') node = node.parent;
+  expect(StyleSheet.flatten(node?.props.style)).toMatchObject({ flexWrap: 'wrap' });
 });
 
 test('keeps a cached schedule read-only until foreground authorization succeeds and clears it on revocation', async () => {

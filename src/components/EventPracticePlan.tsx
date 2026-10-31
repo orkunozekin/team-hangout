@@ -5,7 +5,7 @@ import type { CoachPracticePlan, CoachResource, EventPracticePlan as PlanData, H
 import { ageLabel, NOTICE_LABELS, parseAge, plannedProblem, PRACTICE_HOUSEHOLD_NOTE_MAX, PRACTICE_NOTE_MAX } from '../../shared/practiceResources';
 import { getEventPracticePlan, listTeamPracticeResources, practiceRequestId, savePracticePlan } from '../firebase/practice';
 import { colors, radius, spacing, type } from '../theme/theme';
-import { PrimaryButton, SecondaryButton, TextField } from './ui';
+import { FieldLabel, PrimaryButton, SecondaryButton, TextField } from './ui';
 
 function Text(props: TextProps) {
   return <NativeText maxFontSizeMultiplier={2} {...props} />;
@@ -167,12 +167,15 @@ function CoachPanel({ orgId, eventId, teamId, data, reload }: Props & { data: Co
           <Text style={styles.copy}>{item.instructions}</Text>
           <Text style={styles.copy}>{`Safety: ${item.safetyNotes}`}</Text>
           {item.attribution ? <Text style={styles.copy}>{`Source: ${item.attribution}`}</Text> : null}
+          <FieldLabel>Minutes</FieldLabel>
           <TextField accessibilityLabel={`Minutes for ${item.title}`} value={item.minutes} onChangeText={(minutes) => update(index, { minutes })} keyboardType="number-pad" maxLength={3} />
           <SecondaryButton label={`Remove ${item.title}`} disabled={busy} onPress={() => setItems((rows) => rows.filter((_, i) => i !== index))} />
         </View>
       ))}
       <Text style={styles.copy}>{`Planned total: ${total} min`}</Text>
+      <FieldLabel>Household note (shared when published)</FieldLabel>
       <TextField accessibilityLabel="Note shared with households" value={householdNote} onChangeText={setHouseholdNote} maxLength={PRACTICE_HOUSEHOLD_NOTE_MAX} multiline placeholder="Note for households (shared when published)" />
+      <FieldLabel>Private coach note (never shared)</FieldLabel>
       <TextField accessibilityLabel="Private coach note" value={privateNote} onChangeText={setPrivateNote} maxLength={PRACTICE_NOTE_MAX} multiline placeholder="Private coach note (never shared)" />
       <PrimaryButton label="Save practice plan" loading={busy} onPress={save} />
       {data.revision > 0 ? (

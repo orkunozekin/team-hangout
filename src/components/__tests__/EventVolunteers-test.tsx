@@ -103,6 +103,7 @@ test('coaches add slots, remove a volunteer by key and cancel a slot; households
   await waitFor(() => expect(release).toHaveBeenCalledWith('o', 'e', 't', 's1', 'r1', 'k1'));
   await fireEvent.press(screen.getByRole('button', { name: 'Slot kind Scorekeeping' }));
   await fireEvent.changeText(screen.getByLabelText('Slot title'), 'Scoreboard');
+  expect(screen.getByText('Volunteers needed')).toBeTruthy();
   await fireEvent.changeText(screen.getByLabelText('Number of volunteers needed'), '0');
   await fireEvent.press(screen.getByRole('button', { name: 'Add slot' }));
   expect(screen.getByText('Capacity must be 1 through 50.')).toBeTruthy();

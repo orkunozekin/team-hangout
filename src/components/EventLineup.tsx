@@ -90,6 +90,8 @@ function Chip({ label, text, selected, onPress, hint }: { label: string; text?: 
 function PublishedLineup({ eventId, teamId, participantId }: { eventId: string; teamId: string; participantId?: string }) {
   const [view, setView] = useState<PublishedLineupView | null>(null);
   const [error, setError] = useState('');
+  // iOS keeps cached text measurements when Dynamic Type changes; remount text on scale change.
+  const { fontScale } = useWindowDimensions();
   useEffect(() => {
     let live = true;
     getLineupView(eventId, teamId, participantId)
@@ -108,7 +110,7 @@ function PublishedLineup({ eventId, teamId, participantId }: { eventId: string; 
   if (view.state === 'unpublished') return <Text style={styles.copy}>The coach has not published a lineup for this event.</Text>;
   const preset = getSportPreset(view.sportPresetId);
   return (
-    <View>
+    <View key={`text-scale-${fontScale}`}>
       <Text accessibilityRole="header" style={styles.heading}>Published lineup</Text>
       {view.units.map((unit) => {
         const definition = preset.units.find((candidate) => candidate.id === unit.unitId);
@@ -134,6 +136,7 @@ function PublishedLineup({ eventId, teamId, participantId }: { eventId: string; 
 
 function LineupEditor({ orgId, eventId, teamId, onDenied }: { orgId: string; eventId: string; teamId: string; onDenied: () => void }) {
   const [lineup, setLineup] = useState<PrivateLineup | null>(null);
+  const { fontScale } = useWindowDimensions();
   const [draft, setDraft] = useState<LineupDraft | null>(null);
   const [dirty, setDirty] = useState(false);
   const [unitId, setUnitId] = useState('');
@@ -244,7 +247,7 @@ function LineupEditor({ orgId, eventId, teamId, onDenied }: { orgId: string; eve
   };
 
   return (
-    <View>
+    <View key={`text-scale-${fontScale}`}>
       <Text accessibilityRole="header" style={styles.heading}>Private lineup</Text>
       <Text style={styles.copy}>
         Only assigned coaches see this lineup and its notes. RSVP and attendance never change it.
