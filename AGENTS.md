@@ -20,7 +20,8 @@ This project uses Expo SDK 54. Read the exact versioned docs at https://docs.exp
 
 # AI reviews
 
-- Do not request, tag, or wait for AI review bots (for example `@codex review` or Greptile). This overrides any review-request or AI review follow-up steps in plan or feature documents. If a bot reviews on its own, treat its findings like any other review feedback.
+- Use one AI reviewer per PR. Greptile reviews PRs automatically, so it is that reviewer. Do not also request Codex (`@codex review`) or any other AI review bot on a PR Greptile is reviewing.
+- Do not wait on AI review bots as a merge gate. This overrides any review-request or AI review follow-up steps in plan or feature documents. Treat findings from the reviewer like any other review feedback: fix or explain them, reply, and resolve the bot threads.
 
 # Code Review Rules
 
