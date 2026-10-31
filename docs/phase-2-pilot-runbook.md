@@ -95,6 +95,7 @@ Every row needs a named owner, a date, and an attached result. Empty cells mean 
 | Push and email | Expo project, APNs, FCM, verified sender, bounce webhook, and physical iOS and Android receipt tests | Credentials and devices pending |
 | Native QA | Work the consolidated list in `docs/phase-2-ui-qa-backlog.md` | Open |
 | Monitoring | Alert on a publication or deletion job stuck over 10 minutes, three `SCAN_FAILED` rows in 15 minutes, and `CLEANUP_RETRY_REQUIRED` | Staging email channel and four log policies installed 2026-10-21; function deploy, config enablement, email verification, and synthetic alert exercise remain |
+| Ops drills 2026-10-31 | See docs/evidence/staging-ops-drills-2026-10-31.md | Monitors deployed and running; data-dependent drills blocked on staging credentials |
 | Pilot partners | One synthetic organization, then consenting organizations, flags one at a time | Not approved |
 | Commercial | No pricing, ads, or paid messaging | Still pending |
 
