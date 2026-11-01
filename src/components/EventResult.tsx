@@ -7,7 +7,7 @@ import { getEventResults, proposeResult } from '../firebase/competition';
 import { lineupRequestId } from '../firebase/lineups';
 import { draftFromValues, resultError, resultFromDraft, scoresTied, type ResultDraft, type ResultErrorKind } from '../lib/competition/resultDraft';
 import { colors, radius, spacing, type } from '../theme/theme';
-import { FieldLabel, PrimaryButton, SecondaryButton, TextField, CHIP_MAX_FONT_SCALE } from './ui';
+import { DestructiveButton, Accordion, FieldLabel, PrimaryButton, SecondaryButton, TextField, CHIP_MAX_FONT_SCALE } from './ui';
 
 function Text(props: TextProps) {
   return <NativeText maxFontSizeMultiplier={2} {...props} />;
@@ -152,7 +152,7 @@ function CompetitionResult({ data, competition, onChanged }: { data: EventResult
         disabled={'error' in built}
         onPress={() => void submit()}
       />
-      {error?.kind === 'offline' ? <SecondaryButton label="Discard and reload" onPress={() => { requestId.current = null; setError(null); void onChanged(); }} /> : null}
+      {error?.kind === 'offline' ? <DestructiveButton label="Discard and reload" confirm={{ title: 'Discard this proposal?', message: 'The score you entered is not saved and will be replaced with the latest result.', confirmLabel: 'Discard' }} onPress={() => { requestId.current = null; setError(null); void onChanged(); }} /> : null}
       {error?.kind === 'conflict' ? <SecondaryButton label="Reload result" onPress={() => { setError(null); void onChanged(); }} /> : null}
     </View>
   );
@@ -205,11 +205,11 @@ function ResultPanel({ eventId, teamId }: { eventId: string; teamId: string }) {
 
 /** Coach-only score proposal for canonical match events. Nothing is queued offline. */
 export default function EventResult({ eventId, teamId, initiallyOpen = false }: { eventId: string; teamId: string; initiallyOpen?: boolean }) {
-  const [open, setOpen] = useState(initiallyOpen);
   return (
     <View style={styles.section}>
-      <SecondaryButton label={open ? 'Hide match result' : 'Match result'} onPress={() => setOpen((value) => !value)} />
-      {open ? <ResultPanel eventId={eventId} teamId={teamId} /> : null}
+      <Accordion title="Match result" initiallyOpen={initiallyOpen}>
+        <ResultPanel eventId={eventId} teamId={teamId} />
+      </Accordion>
     </View>
   );
 }

@@ -5,7 +5,7 @@ import type { EventStandings as EventStandingsData, StandingsRow } from '../../s
 import { formatDifferential, STANDINGS_STATUS_LABELS, tieNote } from '../../shared/competition';
 import { getEventStandings } from '../firebase/competition';
 import { colors, radius, spacing, type } from '../theme/theme';
-import { SecondaryButton, CHIP_MAX_FONT_SCALE } from './ui';
+import { Accordion, SecondaryButton, CHIP_MAX_FONT_SCALE } from './ui';
 
 function Text(props: TextProps) {
   return <NativeText maxFontSizeMultiplier={2} {...props} />;
@@ -141,11 +141,11 @@ function StandingsPanel({ eventId, teamId }: { eventId: string; teamId: string }
 
 /** Published standings for viewers of this team. Shows only one complete generation; nothing is cached offline. */
 export default function EventStandings({ eventId, teamId, initiallyOpen = false }: { eventId: string; teamId: string; initiallyOpen?: boolean }) {
-  const [open, setOpen] = useState(initiallyOpen);
   return (
     <View style={styles.section}>
-      <SecondaryButton label={open ? 'Hide standings' : 'Standings'} onPress={() => setOpen((value) => !value)} />
-      {open ? <StandingsPanel eventId={eventId} teamId={teamId} /> : null}
+      <Accordion title="Standings" initiallyOpen={initiallyOpen}>
+        <StandingsPanel eventId={eventId} teamId={teamId} />
+      </Accordion>
     </View>
   );
 }

@@ -170,6 +170,7 @@ test("saved subscriptions remain removable while discovery is pending or failed"
   await fireEvent.press(
     screen.getByRole("button", { name: "Remove subscription" }),
   );
+  await fireEvent.press(screen.getByRole("button", { name: "Remove" }));
   await screen.findByText("No active subscriptions.");
   expect(
     calls.find((c) => c.name === "revokeCalendarSubscription")?.data

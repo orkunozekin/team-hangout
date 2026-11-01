@@ -6,7 +6,7 @@ import { areaProblem, RIDE_CHILDREN_MAX, RIDE_CONTACT_MAX, RIDE_DIRECTION_LABELS
 import { aliasProblem } from '../../shared/volunteers';
 import { confirmRideArrangement, getEventRides, getRideContacts, revokeRideConsent, rideRequestId, type RideConsent, type RideInput, saveRideRequest } from '../firebase/rides';
 import { colors, radius, spacing, type } from '../theme/theme';
-import { ConsentCheckbox, PrimaryButton, SecondaryButton, TextField, CHIP_MAX_FONT_SCALE } from './ui';
+import { DestructiveButton, Accordion, ConsentCheckbox, PrimaryButton, SecondaryButton, TextField, CHIP_MAX_FONT_SCALE } from './ui';
 
 function Text(props: TextProps) {
   return <NativeText maxFontSizeMultiplier={2} {...props} />;
@@ -382,7 +382,8 @@ function RidesPanel({ orgId, eventId, teamId }: Props) {
               (requestId) => saveRideRequest(orgId, eventId, teamId, ride.revision, { rideId: ride.rideId, ...input }, requestId), 'Ride updated.', 'Could not update the ride.')} />
           ) : null}
           {ride.status === 'open' && ride.canEdit ? (
-            <SecondaryButton label={`Cancel ${ride.kind === 'offer' ? 'offer' : 'request'} ${RIDE_DIRECTION_LABELS[ride.direction].toLowerCase()} near ${ride.area}`} disabled={busy}
+            <DestructiveButton label={`Cancel ${ride.kind === 'offer' ? 'offer' : 'request'} ${RIDE_DIRECTION_LABELS[ride.direction].toLowerCase()} near ${ride.area}`} disabled={busy}
+              confirm={{ title: `Cancel this ride ${ride.kind === 'offer' ? 'offer' : 'request'}?`, message: 'Other families will no longer see it. You can post a new one later.', confirmLabel: 'Cancel ride' }}
               onPress={() => void run(`cancel:${ride.rideId}:${ride.revision}`, (requestId) => saveRideRequest(orgId, eventId, teamId, ride.revision, { rideId: ride.rideId, action: 'cancel' }, requestId),
                 'Ride cancelled.', 'Could not cancel the ride.')} />
           ) : null}
@@ -411,7 +412,8 @@ function RidesPanel({ orgId, eventId, teamId }: Props) {
             <View key={row.arrangementId} style={styles.row}>
               <Text style={styles.copy}>{`${STATE_LABELS[row.state]}: ${row.driverAlias ?? 'Driver pending'} with ${row.riderAlias ?? 'family pending'}, ${row.seats} ${row.seats === 1 ? 'seat' : 'seats'}`}</Text>
               {row.state !== 'cancelled' ? (
-                <SecondaryButton label={`End arrangement for ${row.riderAlias ?? 'family'}`} disabled={busy}
+                <DestructiveButton label={`End arrangement for ${row.riderAlias ?? 'family'}`} disabled={busy}
+                  confirm={{ title: 'End this ride arrangement?', message: 'Consent is revoked and shared contact details stop being available to both families.', confirmLabel: 'End arrangement' }}
                   onPress={() => void run(`revoke:${row.arrangementId}`, (requestId) => revokeRideConsent(orgId, eventId, teamId, row.arrangementId, requestId),
                     'Arrangement ended.', 'Could not end the arrangement.')} />
               ) : null}
@@ -427,11 +429,11 @@ function RidesPanel({ orgId, eventId, teamId }: Props) {
 
 /** Private ride coordination for this team's event. Nothing is cached offline; contacts are fetched on demand. */
 export default function EventRides({ orgId, eventId, teamId, initiallyOpen = false }: Props & { initiallyOpen?: boolean }) {
-  const [open, setOpen] = useState(initiallyOpen);
   return (
     <View style={styles.section}>
-      <SecondaryButton label={open ? 'Hide rides' : 'Rides'} onPress={() => setOpen((value) => !value)} />
-      {open ? <RidesPanel orgId={orgId} eventId={eventId} teamId={teamId} /> : null}
+      <Accordion title="Rides" initiallyOpen={initiallyOpen}>
+        <RidesPanel orgId={orgId} eventId={eventId} teamId={teamId} />
+      </Accordion>
     </View>
   );
 }

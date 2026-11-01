@@ -306,6 +306,8 @@ it('maps active canonical captains to native management controls and rejects rev
   expect(mapMemberDoc('member', { schemaVersion: 2, roles: ['captain'], status: 'active' }).role).toBe('coach');
   expect(mapMemberDoc('member', { schemaVersion: 2, roles: ['captain'], status: 'revoked' }).role).toBe('player');
   expect(mapMemberDoc('member', { roles: ['captain'], role: 'player' }).role).toBe('player');
+  expect(mapMemberDoc('member', { schemaVersion: 2, roles: ['parent', 7], status: 'active' }).roles).toEqual(['parent']);
+  expect(mapMemberDoc('member', { schemaVersion: 2, roles: ['parent'], status: 'revoked' }).roles).toBeUndefined();
 });
 
 it('ignores revoked canonical preferred assignments and resolves an active team', async () => {

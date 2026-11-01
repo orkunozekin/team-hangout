@@ -19,7 +19,7 @@ import {
   recordEventAttendance,
   getAttendanceHistory,
 } from "../firebase/attendance";
-import { SecondaryButton, TextField } from "./ui";
+import { Accordion, SecondaryButton, TextField } from "./ui";
 import { colors, spacing, type } from "../theme/theme";
 const labels = {
   unknown: "Unknown",
@@ -138,12 +138,7 @@ export default function EventAttendance({
   }, [load, open]);
   return (
     <View style={styles.section}>
-      <SecondaryButton
-        label={open ? "Hide team attendance" : "Team attendance"}
-        onPress={() => setOpen((v) => !v)}
-      />
-      {open ? (
-        <>
+      <Accordion title="Team attendance" onToggle={setOpen}>
           <Text accessibilityRole="header" style={styles.heading}>
             Actual attendance
           </Text>
@@ -202,8 +197,7 @@ export default function EventAttendance({
             disabled={busy}
             onPress={() => void load()}
           />
-        </>
-      ) : null}
+      </Accordion>
     </View>
   );
 }

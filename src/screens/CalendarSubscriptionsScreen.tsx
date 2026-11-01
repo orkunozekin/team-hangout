@@ -22,6 +22,7 @@ import {
   type CalendarIssue,
 } from "../../shared/calendarSubscriptions";
 import { colors, type } from "../theme/theme";
+import { DestructiveButton } from "../components/ui";
 async function call<K extends keyof CalendarCommands>(
   name: K,
   payload: CalendarCommands[K]["input"],
@@ -425,42 +426,25 @@ export default function CalendarSubscriptionsScreen({
                 .join(", ")}
             </Text>
           ) : null}
-          <Button
+          <DestructiveButton
             label="Rotate URL"
             disabled={disabled}
-            onPress={() =>
-              Alert.alert(
-                "Replace private URL?",
-                "The old URL stops working. Update your calendar app with the replacement URL for the same scope.",
-                [
-                  { text: "Cancel", style: "cancel" },
-                  {
-                    text: "Rotate",
-                    onPress: () =>
-                      void action("rotateCalendarSubscription", row),
-                  },
-                ],
-              )
-            }
+            confirm={{
+              title: "Replace private URL?",
+              message: "The old URL stops working. Update your calendar app with the replacement URL for the same scope.",
+              confirmLabel: "Rotate",
+            }}
+            onPress={() => void action("rotateCalendarSubscription", row)}
           />
-          <Button
+          <DestructiveButton
             label="Remove subscription"
             disabled={disabled}
-            onPress={() =>
-              Alert.alert(
-                "Revoke this URL?",
-                "Also remove the subscribed calendar from your calendar app.",
-                [
-                  { text: "Cancel", style: "cancel" },
-                  {
-                    text: "Remove",
-                    style: "destructive",
-                    onPress: () =>
-                      void action("revokeCalendarSubscription", row),
-                  },
-                ],
-              )
-            }
+            confirm={{
+              title: "Revoke this URL?",
+              message: "Also remove the subscribed calendar from your calendar app.",
+              confirmLabel: "Remove",
+            }}
+            onPress={() => void action("revokeCalendarSubscription", row)}
           />
         </View>
       ))}

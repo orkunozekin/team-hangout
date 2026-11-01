@@ -36,6 +36,7 @@ import {
 } from '../lib/roles';
 
 import {
+  DestructiveButton,
   EmptyState,
   PrimaryButton,
   Screen,
@@ -117,39 +118,26 @@ export default function TeamScreen({ teamId, membership, appRole }: Props) {
   }
 
   async function onRegenerate() {
-    Alert.alert(
-      'Regenerate invite code?',
-      'The old code will stop working immediately.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Regenerate',
-          style: 'destructive',
-          onPress: async () => {
-            setLoadingCode(true);
-            try {
-              const result = await regenerateInviteCode({
-                teamId,
-                userId: membership.userId,
-                isSuperAdmin,
-              });
-              setTeam((prev) =>
-                prev
-                  ? { ...prev, inviteCode: result.inviteCode }
-                  : prev,
-              );
-            } catch (err) {
-              Alert.alert(
-                'Failed',
-                err instanceof Error ? err.message : 'Please try again',
-              );
-            } finally {
-              setLoadingCode(false);
-            }
-          },
-        },
-      ],
-    );
+    setLoadingCode(true);
+    try {
+      const result = await regenerateInviteCode({
+        teamId,
+        userId: membership.userId,
+        isSuperAdmin,
+      });
+      setTeam((prev) =>
+        prev
+          ? { ...prev, inviteCode: result.inviteCode }
+          : prev,
+      );
+    } catch (err) {
+      Alert.alert(
+        'Failed',
+        err instanceof Error ? err.message : 'Please try again',
+      );
+    } finally {
+      setLoadingCode(false);
+    }
   }
 
   return (
@@ -158,7 +146,7 @@ export default function TeamScreen({ teamId, membership, appRole }: Props) {
         <Title>{team?.name ?? 'Team'}</Title>
         <Subtitle>
           {team?.sport ? `${team.sport} · ` : ''}
-          Your role: {displayTeamRole(membership.role, appRole)}
+          Your role: {displayTeamRole(membership, appRole)}
         </Subtitle>
 
         {canManage && team && team.schemaVersion !== 2 ? (
@@ -166,9 +154,14 @@ export default function TeamScreen({ teamId, membership, appRole }: Props) {
             <Text style={styles.inviteLabel}>Invite code</Text>
             <Text style={styles.inviteCode}>{team.inviteCode}</Text>
             <PrimaryButton label="Share invite" onPress={onShareInvite} />
-            <SecondaryButton
+            <DestructiveButton
               label={loadingCode ? 'Working...' : 'Regenerate code'}
-              onPress={onRegenerate}
+              confirm={{
+                title: 'Regenerate invite code?',
+                message: 'The old code will stop working immediately.',
+                confirmLabel: 'Regenerate',
+              }}
+              onPress={() => void onRegenerate()}
               disabled={loadingCode}
             />
           </View>
@@ -208,7 +201,7 @@ export default function TeamScreen({ teamId, membership, appRole }: Props) {
               <View style={styles.memberRow}>
                 <View>
                   <Text style={styles.memberName}>{item.displayName}</Text>
-                  <Text style={styles.memberRole}>{item.role}</Text>
+                  <Text style={styles.memberRole}>{displayTeamRole(item)}</Text>
                 </View>
               </View>
             )}

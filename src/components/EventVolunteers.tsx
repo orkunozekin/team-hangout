@@ -5,7 +5,7 @@ import type { EventVolunteers as VolunteersData, VolunteerKind, VolunteerSlot } 
 import { aliasProblem, deadlineInput, parseDeadline, slotStatusLabel, VOLUNTEER_CAPACITY_MAX, VOLUNTEER_KIND_LABELS, VOLUNTEER_KINDS } from '../../shared/volunteers';
 import { claimVolunteerSlot, getEventVolunteers, releaseVolunteerSlot, saveVolunteerSlot, type SlotInput, volunteerRequestId } from '../firebase/volunteers';
 import { colors, radius, spacing, type } from '../theme/theme';
-import { ConsentCheckbox, FieldLabel, PrimaryButton, SecondaryButton, TextField, CHIP_MAX_FONT_SCALE } from './ui';
+import { DestructiveButton, Accordion, ConsentCheckbox, FieldLabel, PrimaryButton, SecondaryButton, TextField, CHIP_MAX_FONT_SCALE } from './ui';
 
 function Text(props: TextProps) {
   return <NativeText maxFontSizeMultiplier={2} {...props} />;
@@ -66,7 +66,7 @@ function SlotCard({ slot, data, busy, onClaim, onRelease, onRemove, onCancel, on
       <Text style={styles.copy}>{names ? `Volunteers: ${names}` : 'No volunteers yet.'}</Text>
       {own?.status === 'active' ? <>
         <Text style={styles.own}>{`You are signed up as ${own.alias.replace(/\.$/, '')}.`}</Text>
-        {slot.state === 'open' || slot.state === 'full' ? <SecondaryButton label={`Release my spot for ${slot.title}`} disabled={busy} onPress={() => onRelease(slot)} /> : null}
+        {slot.state === 'open' || slot.state === 'full' ? <DestructiveButton label={`Release my spot for ${slot.title}`} disabled={busy} confirm={{ title: 'Release your spot?', message: 'Someone else may take it before you can sign up again.', confirmLabel: 'Release spot' }} onPress={() => onRelease(slot)} /> : null}
       </> : null}
       {own?.status === 'cancelled' ? <Text accessibilityRole="alert" style={styles.state}>{`Your assignment as ${own.alias} was cancelled. No action is needed.`}</Text> : null}
       {!own && data.canClaim && slot.state === 'open' && !claiming ? (
@@ -85,12 +85,12 @@ function SlotCard({ slot, data, busy, onClaim, onRelease, onRemove, onCancel, on
       ) : null}
       {data.canManage && slot.state !== 'cancelled' ? <>
         {slot.assignees.map((row) => row.assigneeKey ? (
-          <SecondaryButton key={row.assigneeKey} label={`Remove ${row.alias}`} disabled={busy} onPress={() => onRemove(slot, row.assigneeKey!, row.alias)} />
+          <DestructiveButton key={row.assigneeKey} label={`Remove ${row.alias}`} disabled={busy} confirm={{ title: `Remove ${row.alias}?`, message: 'Their assignment is cancelled and they are told no action is needed.', confirmLabel: 'Remove volunteer' }} onPress={() => onRemove(slot, row.assigneeKey!, row.alias)} />
         ) : null)}
         {editing
           ? <SlotForm key={slot.revision} initial={slot} busy={busy} onSave={(input) => onEdit(slot, input)} onClose={() => setEditing(false)} />
           : <SecondaryButton label={`Edit slot ${slot.title}`} disabled={busy} onPress={() => setEditing(true)} />}
-        <SecondaryButton label={`Cancel slot ${slot.title}`} disabled={busy} onPress={() => onCancel(slot)} />
+        <DestructiveButton label={`Cancel slot ${slot.title}`} disabled={busy} confirm={{ title: `Cancel ${slot.title}?`, message: 'Every volunteer in this slot is released.', confirmLabel: 'Cancel slot' }} onPress={() => onCancel(slot)} />
       </> : null}
     </View>
   );
@@ -243,11 +243,11 @@ function VolunteersPanel({ orgId, eventId, teamId }: Props) {
 
 /** Volunteer slots for this team's event. Public lists show only the alias each adult chose; nothing is cached offline. */
 export default function EventVolunteers({ orgId, eventId, teamId, initiallyOpen = false }: Props & { initiallyOpen?: boolean }) {
-  const [open, setOpen] = useState(initiallyOpen);
   return (
     <View style={styles.section}>
-      <SecondaryButton label={open ? 'Hide volunteers' : 'Volunteers'} onPress={() => setOpen((value) => !value)} />
-      {open ? <VolunteersPanel orgId={orgId} eventId={eventId} teamId={teamId} /> : null}
+      <Accordion title="Volunteers" initiallyOpen={initiallyOpen}>
+        <VolunteersPanel orgId={orgId} eventId={eventId} teamId={teamId} />
+      </Accordion>
     </View>
   );
 }

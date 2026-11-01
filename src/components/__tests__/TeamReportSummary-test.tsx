@@ -47,15 +47,23 @@ test('shows the latest team snapshot with numerators, denominators and missing d
   expect(list).toHaveBeenCalledWith('o', 't');
   expect(screen.getByText('27 present or late of 30 present, late or absent')).toBeTruthy();
   expect(screen.getByText('34 recorded of 40 eligible')).toBeTruthy();
-  expect(screen.getByText('Excused 4 · Unknown 2 · Missing 4. Missing and unknown are not counted as absent.')).toBeTruthy();
-  expect(screen.getByText('4 completed events, 2 cancelled or postponed excluded, 1 awaiting completion.')).toBeTruthy();
-  expect(screen.getByLabelText(/Presence rate 90%, 27 present or late of 30/)).toBeTruthy();
+  expect(screen.getByText('Missing and unknown are not counted as absent.')).toBeTruthy();
+  for (const label of ['Present 24', 'Late 3', 'Absent 3', 'Excused 4', 'Unknown 2', 'Missing 4', 'Completed events 4', 'Cancelled or postponed, excluded 2', 'Awaiting completion 1']) {
+    expect(screen.getByLabelText(label)).toBeTruthy();
+  }
+  const presence = screen.getByLabelText(/Presence rate 90%, 27 present or late of 30/);
+  expect(presence.props.accessibilityRole).toBe('progressbar');
+  expect(presence.props.accessibilityValue).toEqual({ min: 0, max: 100, now: 90 });
+  expect(screen.getByTestId('Presence rate bar')).toHaveStyle({ width: '90%' });
+  expect(screen.getByTestId('Completion coverage bar')).toHaveStyle({ width: '85%' });
 });
 
 test('a zero denominator reads not enough data and a stale snapshot says to rebuild', async () => {
   list.mockResolvedValue({ items: [run({ stale: true, staleReason: 'attendanceCorrected', summary: counts({ presenceRate: { numerator: 0, denominator: 0, rate: null } }) })], nextCursor: null });
   await mount();
   await screen.findByText('Not enough data');
+  expect(screen.getByLabelText(/Presence rate Not enough data/).props.accessibilityValue).toEqual({ text: 'Not enough data' });
+  expect(screen.getByTestId('Presence rate bar')).toHaveStyle({ width: '0%' });
   expect(screen.getByRole('alert').props.children).toContain('Rebuild it');
   expect(screen.getByText(/Complete, stale/)).toBeTruthy();
 });

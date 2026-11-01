@@ -38,6 +38,8 @@ export interface TeamMember {
   teamId: string;
   userId: string;
   role: TeamRole;
+  /** Active canonical team roles (coach, captain, parent, guardian, player, staff) when the membership is schema v2. */
+  roles?: string[];
   displayName: string;
   joinedAt: Date;
 }
