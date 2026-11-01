@@ -12,22 +12,18 @@ import { httpsCallable } from "firebase/functions";
 import { runCommand } from "../../firebase/commands";
 let mockAgendaRefreshed: (() => void) | undefined;
 let mockAgendaDenied: (() => void) | undefined;
-let mockAgendaConversation: ((target: { orgId: string; scopeType: string; scopeId: string }) => void) | undefined;
 jest.mock(
   "../../components/HouseholdAgenda",
   () =>
     ({
       onAccessDenied,
       onAccessRefreshed,
-      onConversation,
     }: {
       onAccessDenied: () => void;
       onAccessRefreshed: () => void;
-      onConversation?: (target: { orgId: string; scopeType: string; scopeId: string }) => void;
     }) => {
       mockAgendaDenied = onAccessDenied;
       mockAgendaRefreshed = onAccessRefreshed;
-      mockAgendaConversation = onConversation;
       return null;
     },
 );
@@ -100,13 +96,12 @@ test("two children keep identity, acting label and edit permission when switchin
   await fireEvent.press(screen.getByText("Open Inbox"));
   expect(inbox).toHaveBeenCalledTimes(1);
 });
-test("forwards a household conversation to the signed-in navigator", async () => {
-  const onConversation = jest.fn();
-  await render(<HouseholdScreen user={user} onTeams={jest.fn()} onConversation={onConversation} />);
-  const target = { orgId: "org", scopeType: "team", scopeId: "team" };
-  expect(mockAgendaConversation).toBe(onConversation);
-  mockAgendaConversation?.(target);
-  expect(onConversation).toHaveBeenCalledWith(target);
+test("onboarding household opens conversations and hides calendar subscriptions when the sidebar owns them", async () => {
+  const conversations = jest.fn();
+  await render(<HouseholdScreen user={user} onTeams={jest.fn()} onConversations={conversations} showCalendarSubscriptions={false} />);
+  await fireEvent.press(screen.getByText("Open Conversations"));
+  expect(conversations).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText("Calendar subscriptions")).toBeNull();
 });
 test("save confirms account and participant, passes loaded revision and removes profile after revocation", async () => {
   const alert = jest.spyOn(Alert, "alert").mockImplementation(() => {});

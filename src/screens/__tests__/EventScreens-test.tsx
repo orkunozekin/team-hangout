@@ -49,7 +49,7 @@ test('offline event detail is visibly stale and read-only', async () => {
   expect(screen.getByRole('alert').props.children.join('')).toMatch(/Offline copy/);
   expect(screen.getByText(/Updates, responses, check-in, and attendance require a connection/)).toBeTruthy();
   expect(screen.queryByText('Edit event')).toBeNull();
-  expect(screen.queryByText('Open event conversation')).toBeNull();
+  expect(screen.queryByText('Conversation')).toBeNull();
   expect(screen.queryByText('Participant availability')).toBeNull();
 });
 test('canonical event detail offers the team lineup entry without loading it until opened', async () => {
@@ -101,7 +101,7 @@ test('published event detail opens the event conversation for the event organiza
   (getEvent as jest.Mock).mockResolvedValue({ ...event, orgId: 'org' });
   await render(<EventDetailScreen userId="user-a" cacheScope="a" membership={membership} navigation={navigation} route={{ params: { eventId: 'shared' } } as any} />);
   await screen.findByText('Falcons vs Comets');
-  await fireEvent.press(screen.getByText('Open event conversation'));
+  await fireEvent.press(screen.getByText('Conversation'));
   expect(navigation.navigate).toHaveBeenCalledWith('Conversation', { orgId: 'org', scopeType: 'event', scopeId: 'shared' });
 });
 test('bare Firestore permission denial clears event snapshots without offline fallback', async () => {

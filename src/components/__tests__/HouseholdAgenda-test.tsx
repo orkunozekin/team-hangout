@@ -69,36 +69,18 @@ test("shows a visibly stale read-only agenda after an offline restart", async ()
     savedAt: "2026-10-16T18:00:00.000Z",
     olderThanTtl: true,
   });
-  const onConversation = jest.fn();
-  await render(<HouseholdAgenda refresh={0} userId="user-a" onConversation={onConversation} />);
+  await render(<HouseholdAgenda refresh={0} userId="user-a" />);
   await screen.findByText("Sibling practice");
   expect(screen.getByRole("alert").props.children.join("")).toMatch(/Offline copy/);
   expect(screen.getByText(/more than 24 hours old/i)).toBeTruthy();
   expect(screen.queryByText("Responses for Sibling practice")).toBeNull();
-  expect(screen.queryByText("Open Stars conversation")).toBeNull();
-  expect(screen.queryByText("Open conversation for Sibling practice")).toBeNull();
-  expect(onConversation).not.toHaveBeenCalled();
   expect(screen.getByText(/Responses and check-in require a connection/)).toBeTruthy();
 });
-test("live household channels open organization, division, team, and event conversations", async () => {
-  const onConversation = jest.fn();
-  const live = {
-    ...page,
-    teams: [{ ...team, divisionId: "u12", divisionName: "U12" }],
-  };
-  api.mockResolvedValue(live);
-  await render(<HouseholdAgenda refresh={0} onConversation={onConversation} />);
+test("household agenda no longer renders conversation buttons; conversations live in the sidebar", async () => {
+  api.mockResolvedValue({ ...page, teams: [{ ...team, divisionId: "u12", divisionName: "U12" }] });
+  await render(<HouseholdAgenda refresh={0} />);
   await screen.findByText("Sibling practice");
-  await fireEvent.press(screen.getByText("Open Demo Club announcements"));
-  await fireEvent.press(screen.getByText("Open U12 announcements"));
-  await fireEvent.press(screen.getByText("Open Stars conversation"));
-  await fireEvent.press(screen.getByText("Open conversation for Sibling practice"));
-  expect(onConversation.mock.calls.map(call => call[0])).toEqual([
-    { orgId: "org", scopeType: "organization", scopeId: "org" },
-    { orgId: "org", scopeType: "division", scopeId: "u12" },
-    { orgId: "org", scopeType: "team", scopeId: "team" },
-    { orgId: "org", scopeType: "event", scopeId: "event" },
-  ]);
+  expect(screen.queryByText(/announcements|conversation/i)).toBeNull();
 });
 test("deduplicated sibling card, filters and timezone are sent to server", async () => {
   await render(<HouseholdAgenda refresh={0} />);

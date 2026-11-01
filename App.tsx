@@ -7,7 +7,9 @@ import React, {
 
 import {
   ActivityIndicator,
+  AppState,
   Linking,
+  ScrollView,
   StyleSheet,
   View,
 } from 'react-native';
@@ -15,6 +17,7 @@ import {
 import {
   NavigationContainer,
   createNavigationContainerRef,
+  useIsFocused,
 } from '@react-navigation/native';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
@@ -22,13 +25,16 @@ import Constants from 'expo-constants';
 import {
   createBottomTabNavigator,
 } from '@react-navigation/bottom-tabs';
+import SidebarShell, { type SidebarItem } from './src/navigation/SidebarShell';
 
 import {
   createNativeStackNavigator,
 } from '@react-navigation/native-stack';
 
 import {
+  SafeAreaInsetsContext,
   SafeAreaProvider,
+  useSafeAreaInsets,
 } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
@@ -43,10 +49,6 @@ import {
   Inter_600SemiBold,
   Inter_700Bold,
 } from '@expo-google-fonts/inter';
-
-import {
-  Ionicons,
-} from '@expo/vector-icons';
 
 import InvitationScreen from './src/screens/InvitationScreen';
 import { invitationTokenFromUrl } from './shared/invitations';
@@ -64,6 +66,10 @@ import CreateEditEventScreen from './src/screens/CreateEditEventScreen';
 import AdminScreen from './src/screens/AdminScreen';
 import NotificationsScreen from './src/screens/NotificationsScreen';
 import ConversationScreen from './src/screens/ConversationScreen';
+import ConversationsScreen from './src/screens/ConversationsScreen';
+import TeamsScreen from './src/screens/TeamsScreen';
+import CalendarSubscriptionsScreen from './src/screens/CalendarSubscriptionsScreen';
+import { Screen } from './src/components/ui';
 import type { ConversationRoute } from './src/lib/conversationNavigation';
 
 import {
@@ -114,6 +120,7 @@ export type AuthStackParamList = {
 export type OnboardingStackParamList = {
   Household: undefined;
   Inbox: undefined;
+  Conversations: undefined;
   Conversation: ConversationRoute;
   CreateTeam: undefined;
   JoinTeam: { code?: string } | undefined;
@@ -125,12 +132,15 @@ export type RootStackParamList = {
   EventDetail: { eventId: string };
   CreateEditEvent: { eventId?: string };
   Conversation: ConversationRoute;
+  TeamDetail: { teamId: string; teamName: string; membership: TeamMember };
 };
 
 export type MainTabParamList = {
   Household: undefined;
   Schedule: undefined;
   Team: undefined;
+  Conversations: undefined;
+  CalendarSubscriptions: undefined;
   Inbox: undefined;
   Admin: undefined;
   Profile: undefined;
@@ -183,10 +193,13 @@ function OnboardingNavigator({
       screenOptions={{ headerShown: false }}
     >
       <OnboardingStack.Screen name="Household">
-        {({ navigation }) => <HouseholdScreen user={user} onTeams={() => navigation.navigate('CreateTeam')} onInbox={() => navigation.navigate('Inbox')} onConversation={(target) => navigation.navigate('Conversation', target)} />}
+        {({ navigation }) => <HouseholdScreen user={user} onTeams={() => navigation.navigate('CreateTeam')} onInbox={() => navigation.navigate('Inbox')} onConversations={() => navigation.navigate('Conversations')} />}
       </OnboardingStack.Screen>
       <OnboardingStack.Screen name="Inbox" options={{ headerShown: true, title: 'Inbox' }}>
         {() => <NotificationsScreen userId={user.uid} pushProjectId={pushProjectId} notice={notice} />}
+      </OnboardingStack.Screen>
+      <OnboardingStack.Screen name="Conversations" options={{ headerShown: true, title: 'Conversations' }}>
+        {({ navigation }) => <ConversationsScreen onOpen={(target) => navigation.navigate('Conversation', target)} />}
       </OnboardingStack.Screen>
       <OnboardingStack.Screen name="Conversation" options={{ headerShown: true, title: 'Conversation' }}>
         {({ route }) => <ConversationScreen orgId={route.params.orgId} scopeType={route.params.scopeType} scopeId={route.params.scopeId} />}
@@ -228,7 +241,41 @@ function OnboardingNavigator({
   );
 }
 
-function MainTabs({
+// A native header already clears the top inset, so screens under it must not pad for it again.
+function TopInsetUnderHeader({ children }: { children: React.ReactNode }) {
+  const insets = useSafeAreaInsets();
+  return <SafeAreaInsetsContext.Provider value={{ ...insets, top: 0 }}>{children}</SafeAreaInsetsContext.Provider>;
+}
+
+// Private feed URLs must not outlive the visit: unmount on blur or background so they are discarded and reloaded fresh.
+export function CalendarSubscriptionsTab({ userId, onBack }: { userId: string; onBack: () => void }) {
+  const focused = useIsFocused();
+  const [appActive, setAppActive] = useState(AppState.currentState === 'active');
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', state => setAppActive(state === 'active'));
+    return () => sub.remove();
+  }, []);
+  return (
+    <Screen>
+      <ScrollView contentContainerStyle={styles.scroll}>
+        {focused && appActive ? <CalendarSubscriptionsScreen key={userId} onBack={onBack} /> : null}
+      </ScrollView>
+    </Screen>
+  );
+}
+
+export const SIDEBAR_ITEMS: (SidebarItem & { key: keyof MainTabParamList; superAdminOnly?: boolean })[] = [
+  { key: 'Household', label: 'Household', icon: 'home-outline' },
+  { key: 'Schedule', label: 'Schedule', icon: 'calendar-outline' },
+  { key: 'Team', label: 'Teams', icon: 'people-outline' },
+  { key: 'Conversations', label: 'Conversations', icon: 'chatbubbles-outline' },
+  { key: 'CalendarSubscriptions', label: 'Calendar subscriptions', icon: 'sync-outline' },
+  { key: 'Inbox', label: 'Inbox', icon: 'notifications-outline' },
+  { key: 'Admin', label: 'Admin', icon: 'shield-checkmark-outline', superAdminOnly: true },
+  { key: 'Profile', label: 'Profile', icon: 'person-outline' },
+];
+
+export function MainTabs({
   user,
   team,
   membership,
@@ -244,36 +291,29 @@ function MainTabs({
   notice?: string | null;
 }) {
   const isSuperAdmin = isSuperAdminRole(appRole);
+  const items = SIDEBAR_ITEMS.filter(item => !item.superAdminOnly || isSuperAdmin);
 
+  // The tab navigator keeps screen state and the existing route names; the sidebar replaces its tab bar.
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textFaint,
-        tabBarLabelStyle: {
-          fontFamily: fonts.medium,
-          fontSize: 12,
-        },
-        tabBarIcon: ({ color, size }) => {
-          const iconName =
-            route.name === 'Household'
-              ? 'home'
-              : route.name === 'Schedule'
-              ? 'calendar'
-              : route.name === 'Team'
-                ? 'people'
-                : route.name === 'Inbox'
-                  ? 'notifications'
-                : route.name === 'Admin'
-                  ? 'shield-checkmark'
-                  : 'person';
-          return <Ionicons name={iconName as never} size={size} color={color} />;
-        },
-      })}
+      tabBar={() => null}
+      screenOptions={{ headerShown: false }}
+      layout={({ state, navigation, children }) => {
+        const activeKey = state.routes[state.index]?.name ?? 'Household';
+        return (
+          <SidebarShell
+            items={items}
+            activeKey={activeKey}
+            title={items.find(item => item.key === activeKey)?.label ?? ''}
+            onSelect={(key) => navigation.navigate(key as never)}
+          >
+            {children}
+          </SidebarShell>
+        );
+      }}
     >
       <Tab.Screen name="Household">
-        {({ navigation }) => <HouseholdScreen user={user} onTeams={() => navigation.navigate('Team')} onConversation={(target) => navigation.navigate('Conversation', target)} />}
+        {({ navigation }) => <HouseholdScreen user={user} onTeams={() => navigation.navigate('Team')} showCalendarSubscriptions={false} />}
       </Tab.Screen>
       <Tab.Screen name="Schedule">
         {({ navigation }) => (
@@ -290,13 +330,20 @@ function MainTabs({
       </Tab.Screen>
       <Tab.Screen name="Team" options={{ title: 'Teams' }}>
         {({ navigation }) => (
-          <TeamScreen
-            teamId={team.id}
-            membership={membership}
+          <TeamsScreen
+            userId={user.uid}
+            activeTeam={team}
+            activeMembership={membership}
             appRole={appRole}
-            onConversation={(target) => navigation.navigate('Conversation', target)}
+            onOpenTeam={(entry) => navigation.navigate('TeamDetail', { teamId: entry.team.id, teamName: entry.team.name, membership: entry.membership })}
           />
         )}
+      </Tab.Screen>
+      <Tab.Screen name="Conversations">
+        {({ navigation }) => <ConversationsScreen activeTeam={team} onOpen={(target) => navigation.navigate('Conversation', target)} />}
+      </Tab.Screen>
+      <Tab.Screen name="CalendarSubscriptions" options={{ title: 'Calendar subscriptions' }}>
+        {({ navigation }) => <CalendarSubscriptionsTab userId={user.uid} onBack={() => navigation.navigate('Household')} />}
       </Tab.Screen>
       <Tab.Screen name="Inbox">{() => <NotificationsScreen userId={user.uid} pushProjectId={pushProjectId} notice={notice} />}</Tab.Screen>
       {isSuperAdmin ? (
@@ -369,6 +416,13 @@ function AppNavigator({
             navigation={navigation}
             route={route}
           />
+        )}
+      </RootStack.Screen>
+      <RootStack.Screen name="TeamDetail" options={({ route }) => ({ title: route.params.teamName, headerBackTitle: 'Teams' })}>
+        {({ route }) => (
+          <TopInsetUnderHeader>
+            <TeamScreen teamId={route.params.teamId} membership={route.params.membership} appRole={appRole} />
+          </TopInsetUnderHeader>
         )}
       </RootStack.Screen>
       <RootStack.Screen name="Conversation" options={{ title: 'Conversation' }}>
@@ -607,6 +661,9 @@ export default function App() {
 const styles = StyleSheet.create({
   gestureRoot: {
     flex: 1,
+  },
+  scroll: {
+    paddingBottom: 32,
   },
   boot: {
     flex: 1,
