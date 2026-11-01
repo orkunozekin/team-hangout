@@ -55,7 +55,12 @@ export function eventCardContent(event: EventCardInput, displayZone?: string): E
     && offsetLabel(event.startsAt!, displayZone) !== offsetLabel(event.startsAt!, event.timeZone!);
   const title = event.title.toLocaleLowerCase();
   const names = event.teamNames?.filter(Boolean) ?? [];
-  const teamsInTitle = names.every(name => title.includes(name.toLocaleLowerCase()));
+  // A team counts as named when the title has its full name or its nickname (last word, e.g. "Foxes").
+  const titleWords = new Set(title.split(/[\s.,:;!?()[\]{}"'/\\&+-]+/));
+  const teamsInTitle = names.every(name => {
+    const lower = name.toLocaleLowerCase();
+    return title.includes(lower) || titleWords.has(lower.split(/\s+/).pop()!);
+  });
   const contexts = [...new Set(event.contexts ?? [])];
   return {
     title: event.title,

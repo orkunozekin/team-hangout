@@ -23,6 +23,8 @@ test('team line is dropped when the title names every team and kept otherwise', 
   expect(eventCardContent(base).teams).toBeNull();
   expect(eventCardContent({ ...base, title: 'Saturday match' }).teams).toBe('Maple Foxes vs River Otters');
   expect(eventCardContent({ ...base, title: 'Maple Foxes home game' }).teams).toBe('Maple Foxes vs River Otters');
+  expect(eventCardContent({ ...base, title: 'League: Foxes vs Otters (today)' }).teams).toBeNull();
+  expect(eventCardContent({ ...base, title: 'Foxesville cup' }).teams).toBe('Maple Foxes vs River Otters');
   expect(eventCardContent({ ...base, type: 'practice', title: 'Maple Foxes practice', teamNames: ['Maple Foxes'] }).teams).toBeNull();
 });
 
