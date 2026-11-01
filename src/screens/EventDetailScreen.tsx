@@ -267,7 +267,7 @@ export default function EventDetailScreen({
 
         {cached ? <Text style={styles.row}>Updates, responses, check-in, and attendance require a connection. No offline changes are queued.</Text> : null}
         {!cached && event.schemaVersion === 2 ? <EventAvailability key={`${event.id}:${event.revision}`} eventId={event.id} canManage={canManage} /> : null}
-        {!cached && eventConversationTarget(event) ? <SecondaryButton label="Open event conversation" onPress={() => navigation.navigate('Conversation', { orgId: event.orgId!, scopeType: 'event', scopeId: event.id })} /> : null}
+        {!cached && eventConversationTarget(event) ? <SecondaryButton label="Conversation" onPress={() => navigation.navigate('Conversation', { orgId: event.orgId!, scopeType: 'event', scopeId: event.id })} /> : null}
         {!cached && event.schemaVersion === 2 ? <EventAttendance key={`attendance:${event.id}:${event.revision}`} eventId={event.id} teamId={membership.teamId} /> : null}
         {!cached && event.schemaVersion === 2 && event.orgId ? <EventLineup key={`lineup:${event.id}:${membership.teamId}`} orgId={event.orgId} eventId={event.id} teamId={membership.teamId} canCoach={membership.role === 'coach'} /> : null}
         {!cached && event.schemaVersion === 2 && event.orgId && membership.role === 'coach' ? <EventPlayTime key={`playtime:${event.id}:${membership.teamId}`} orgId={event.orgId} eventId={event.id} teamId={membership.teamId} /> : null}

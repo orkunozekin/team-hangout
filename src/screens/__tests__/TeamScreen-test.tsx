@@ -25,14 +25,11 @@ test('canonical Team tab loads its authorized name without querying the legacy d
   expect(listTeamMembers).not.toHaveBeenCalled();
 });
 
-test('canonical Team tab opens the team channel from the live organization', async () => {
-  const onConversation = jest.fn();
+test('canonical Team tab no longer shows conversation buttons; conversations live in the sidebar', async () => {
   (getTeam as jest.Mock).mockResolvedValue({ id: 'a', schemaVersion: 2, name: 'Falcons', orgId: 'org', divisionId: 'u12' });
-  await render(<TeamScreen teamId="a" membership={membership} onConversation={onConversation} />);
+  await render(<TeamScreen teamId="a" membership={membership} />);
   await screen.findByText('Falcons');
-  await fireEvent.press(screen.getByText('Open team conversation'));
-  expect(onConversation).toHaveBeenCalledWith({ orgId: 'org', scopeType: 'team', scopeId: 'a' });
-  expect(screen.queryByText('Open organization announcements')).toBeNull();
+  expect(screen.queryByText(/conversation/i)).toBeNull();
   expect(listTeamMembers).not.toHaveBeenCalled();
 });
 

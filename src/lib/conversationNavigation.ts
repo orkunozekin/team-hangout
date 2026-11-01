@@ -28,14 +28,14 @@ export function householdConversationTargets(
         orgId: team.orgId,
         scopeType: "organization",
         scopeId: team.orgId,
-        label: `Open ${team.organizationName} announcements`,
+        label: `${team.organizationName} announcements`,
       });
       if (team.divisionId) {
         add({
           orgId: team.orgId,
           scopeType: "division",
           scopeId: team.divisionId,
-          label: team.divisionName ? `Open ${team.divisionName} announcements` : "Open division announcements",
+          label: team.divisionName ? `${team.divisionName} announcements` : "Division announcements",
         });
       }
     }
@@ -43,7 +43,7 @@ export function householdConversationTargets(
       orgId: team.orgId,
       scopeType: "team",
       scopeId: team.id,
-      label: `Open ${team.name} conversation`,
+      label: team.name,
     });
   }
   for (const event of events) {
@@ -51,7 +51,7 @@ export function householdConversationTargets(
       orgId: event.orgId,
       scopeType: "event",
       scopeId: event.id,
-      label: `Open conversation for ${event.title}`,
+      label: event.title,
     });
   }
   return targets;
@@ -68,7 +68,7 @@ export function teamConversationTargets(team: {
     orgId: team.orgId,
     scopeType: "team",
     scopeId: team.id,
-    label: "Open team conversation",
+    label: team.name,
   }];
 }
 
@@ -82,6 +82,6 @@ export function eventConversationTarget(event: {
     orgId: event.orgId,
     scopeType: "event",
     scopeId: event.id,
-    label: "Open event conversation",
+    label: "Conversation",
   };
 }
