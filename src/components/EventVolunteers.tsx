@@ -5,7 +5,7 @@ import type { EventVolunteers as VolunteersData, VolunteerKind, VolunteerSlot } 
 import { aliasProblem, deadlineInput, parseDeadline, slotStatusLabel, VOLUNTEER_CAPACITY_MAX, VOLUNTEER_KIND_LABELS, VOLUNTEER_KINDS } from '../../shared/volunteers';
 import { claimVolunteerSlot, getEventVolunteers, releaseVolunteerSlot, saveVolunteerSlot, type SlotInput, volunteerRequestId } from '../firebase/volunteers';
 import { colors, radius, spacing, type } from '../theme/theme';
-import { ConsentCheckbox, FieldLabel, PrimaryButton, SecondaryButton, TextField } from './ui';
+import { ConsentCheckbox, FieldLabel, PrimaryButton, SecondaryButton, TextField, CHIP_MAX_FONT_SCALE } from './ui';
 
 function Text(props: TextProps) {
   return <NativeText maxFontSizeMultiplier={2} {...props} />;
@@ -127,7 +127,7 @@ function SlotForm({ initial, busy, onSave, onClose }: {
           return (
             <Pressable key={value} accessibilityRole="button" accessibilityLabel={`${prefix}Slot kind ${VOLUNTEER_KIND_LABELS[value]}`} accessibilityState={{ selected }}
               onPress={() => setKind(value)} style={[styles.chip, selected ? styles.chipSelected : null]}>
-              <Text style={[styles.chipText, selected ? styles.chipTextSelected : null]}>{VOLUNTEER_KIND_LABELS[value]}</Text>
+              <Text maxFontSizeMultiplier={CHIP_MAX_FONT_SCALE} style={[styles.chipText, selected ? styles.chipTextSelected : null]}>{VOLUNTEER_KIND_LABELS[value]}</Text>
             </Pressable>
           );
         })}

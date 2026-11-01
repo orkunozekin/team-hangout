@@ -35,6 +35,7 @@ import {
   Screen,
   Subtitle,
   Title,
+  CHIP_MAX_FONT_SCALE,
 } from '../components/ui';
 
 import {
@@ -224,7 +225,7 @@ export default function ScheduleScreen({
               <Subtitle>Practices and matches for {teamName || 'your team'}.</Subtitle>
 
               <View style={styles.filters}>
-                {(['upcoming', 'past'] as const).map(value => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: view === value }} onPress={() => setView(value)} style={[styles.chip, view === value ? styles.chipSelected : null]}><Text style={[styles.chipText, view === value ? styles.chipTextSelected : null]}>{value === 'upcoming' ? 'Upcoming' : 'Past events'}</Text></Pressable>)}
+                {(['upcoming', 'past'] as const).map(value => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: view === value }} onPress={() => setView(value)} style={[styles.chip, view === value ? styles.chipSelected : null]}><Text maxFontSizeMultiplier={CHIP_MAX_FONT_SCALE} style={[styles.chipText, view === value ? styles.chipTextSelected : null]}>{value === 'upcoming' ? 'Upcoming' : 'Past events'}</Text></Pressable>)}
               </View>
 
               <View style={styles.filters}>
@@ -242,6 +243,7 @@ export default function ScheduleScreen({
                       ]}
                     >
                       <Text
+                        maxFontSizeMultiplier={CHIP_MAX_FONT_SCALE}
                         style={[
                           styles.chipText,
                           selected ? styles.chipTextSelected : null,
@@ -333,7 +335,9 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     maxWidth: '100%',
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.xs,
+    minHeight: 36,
+    justifyContent: 'center',
     borderRadius: radius.full,
     backgroundColor: colors.card,
     borderWidth: 1,

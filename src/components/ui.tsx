@@ -58,6 +58,7 @@ export function Screen({
 export const TITLE_MAX_FONT_SCALE = 2;
 // Caps button labels so long words still fit on one line at the largest accessibility sizes.
 export const BUTTON_MAX_FONT_SCALE = 1.5;
+export const CHIP_MAX_FONT_SCALE = 1.3;
 
 export function Title({ children }: { children: React.ReactNode }) {
   return <Text accessibilityRole="header" maxFontSizeMultiplier={TITLE_MAX_FONT_SCALE} style={styles.title}>{children}</Text>;

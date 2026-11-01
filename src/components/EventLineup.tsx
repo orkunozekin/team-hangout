@@ -41,7 +41,7 @@ import {
 } from '../lib/coaching/lineupSurface';
 import { colors, radius, spacing, type } from '../theme/theme';
 import SurfaceMarkings from './LineupSurfaceMarkings';
-import { FieldLabel, PrimaryButton, SecondaryButton, TextField } from './ui';
+import { FieldLabel, PrimaryButton, SecondaryButton, TextField, CHIP_MAX_FONT_SCALE } from './ui';
 
 function Text(props: TextProps) {
   return <NativeText maxFontSizeMultiplier={2} {...props} />;
@@ -82,7 +82,7 @@ function Chip({ label, text, selected, onPress, hint }: { label: string; text?: 
       onPress={onPress}
       style={[styles.chip, selected ? styles.chipSelected : null]}
     >
-      <Text style={[styles.chipText, selected ? styles.chipTextSelected : null]}>{text ?? label}</Text>
+      <Text maxFontSizeMultiplier={CHIP_MAX_FONT_SCALE} style={[styles.chipText, selected ? styles.chipTextSelected : null]}>{text ?? label}</Text>
     </Pressable>
   );
 }

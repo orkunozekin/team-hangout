@@ -7,7 +7,7 @@ import { getEventResults, proposeResult } from '../firebase/competition';
 import { lineupRequestId } from '../firebase/lineups';
 import { draftFromValues, resultError, resultFromDraft, scoresTied, type ResultDraft, type ResultErrorKind } from '../lib/competition/resultDraft';
 import { colors, radius, spacing, type } from '../theme/theme';
-import { FieldLabel, PrimaryButton, SecondaryButton, TextField } from './ui';
+import { FieldLabel, PrimaryButton, SecondaryButton, TextField, CHIP_MAX_FONT_SCALE } from './ui';
 
 function Text(props: TextProps) {
   return <NativeText maxFontSizeMultiplier={2} {...props} />;
@@ -22,7 +22,7 @@ function Chip({ label, text, selected, onPress }: { label: string; text?: string
       onPress={onPress}
       style={[styles.chip, selected ? styles.chipSelected : null]}
     >
-      <Text style={[styles.chipText, selected ? styles.chipTextSelected : null]}>{text ?? label}</Text>
+      <Text maxFontSizeMultiplier={CHIP_MAX_FONT_SCALE} style={[styles.chipText, selected ? styles.chipTextSelected : null]}>{text ?? label}</Text>
     </Pressable>
   );
 }
