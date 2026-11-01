@@ -1,17 +1,17 @@
 ---
-name: delegate-feedback
-argument-hint: [numbered feedback list, or a pointer to it]
-description: Group a list of feedback items by logic and code proximity, start one sub-agent session per group, and have each one open a PR, loop on Greptile review with /address-pr-feedback until Greptile scores 5/5 with green CI, then merge its own PR.
+name: address-feedback
+argument-hint: [feedback in any form: pasted list, prose, file path, URL, screenshot]
+description: Take feedback in any form, split it into items, group them by logic and code proximity, start one sub-agent session per group, and have each one open a PR, loop on Greptile review with /address-pr-feedback until Greptile scores 5/5 with green CI, then merge its own PR.
 disable-model-invocation: true
 ---
 
-# /delegate-feedback
+# /address-feedback
 
 Invoking this skill is the user's standing instruction: "Group these feedback items by logic or code proximity, then start new agents in sub-agent sessions of this chat to address them. Each agent raises a PR, listens for Greptile's feedback, runs /address-pr-feedback, and repeats until Greptile scores 5/5. Then merge the PRs." Don't wait for them to repeat it. The merge authorization covers only PRs opened by this run, only after the gate below passes.
 
-## 1. Group the items
+## 1. Collect and group the items
 
-1. Number the feedback items if they aren't already.
+1. Gather the feedback from whatever was given: a numbered or bulleted list, free-form prose, a pasted chat or review, a file path, a URL or issue, or screenshots. Read files and links; describe what screenshots show. Split it into discrete, actionable items and number them, keeping the user's wording. Merge duplicates. If something is ambiguous, keep it as an item and note the open question rather than guessing.
 2. Read enough of the codebase to know which files each item touches. Group items that share screens, components or a concern (navigation shell, card content, design system, backend endpoint, and so on). Aim for 2 to 4 groups; one item can stand alone if it touches nothing else.
 3. Give each group explicit **file ownership**: the files it owns, and the files owned by other groups that it may only touch minimally (for example to swap in a shared component). Shared foundations (theme, shared UI kit) belong to exactly one group.
 4. Show the user the grouping as a short list (group letter, item numbers, one-line scope), then start the sessions without waiting for approval unless an item needs a product decision you can't make; ask about only that item.
