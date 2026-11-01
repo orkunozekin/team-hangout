@@ -229,7 +229,8 @@ test('household calendar labels cancelled, postponed and completed events truthf
   api.mockResolvedValue({ ...page, items: ['cancelled', 'postponed', 'completed'].map(status => ({ ...event, id: status, title: `${status} practice`, status, scheduleVersion: 3 })) });
   await render(<HouseholdAgenda refresh={0} />);
   await screen.findByText('cancelled practice');
-  expect(screen.getByText('Cancelled · Schedule version 3')).toBeTruthy();
-  expect(screen.getByText('Postponed: awaiting a new schedule · Schedule version 3')).toBeTruthy();
-  expect(screen.getByText('Completed · Schedule version 3')).toBeTruthy();
+  expect(screen.getByText('Cancelled')).toBeTruthy();
+  expect(screen.getByText('Postponed: awaiting a new schedule')).toBeTruthy();
+  expect(screen.getByText('Completed')).toBeTruthy();
+  expect(screen.queryByText(/Schedule version|Event timezone/)).toBeNull();
 });
