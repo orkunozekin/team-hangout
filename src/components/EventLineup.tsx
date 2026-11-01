@@ -41,7 +41,7 @@ import {
 } from '../lib/coaching/lineupSurface';
 import { colors, radius, spacing, type } from '../theme/theme';
 import SurfaceMarkings from './LineupSurfaceMarkings';
-import { FieldLabel, PrimaryButton, SecondaryButton, TextField, CHIP_MAX_FONT_SCALE } from './ui';
+import { DestructiveButton, Accordion, FieldLabel, PrimaryButton, SecondaryButton, TextField, CHIP_MAX_FONT_SCALE } from './ui';
 
 function Text(props: TextProps) {
   return <NativeText maxFontSizeMultiplier={2} {...props} />;
@@ -376,7 +376,7 @@ function LineupEditor({ orgId, eventId, teamId, onDenied }: { orgId: string; eve
             onPress={() => void changePublication('publish')}
           />
           {publication.state === 'published' ? (
-            <SecondaryButton label="Retract publication" disabled={busy} onPress={() => void changePublication('retract')} />
+            <DestructiveButton label="Retract publication" disabled={busy} confirm={{ title: 'Retract the published lineup?', message: 'Families stop seeing this lineup until you publish again.', confirmLabel: 'Retract' }} onPress={() => void changePublication('retract')} />
           ) : null}
         </View>
       ) : null}
@@ -400,17 +400,15 @@ export default function EventLineup({
   participantId?: string;
   initiallyOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(initiallyOpen);
   const [viewer, setViewer] = useState(!canCoach);
   const onDenied = useCallback(() => setViewer(true), []);
   return (
     <View style={styles.section}>
-      <SecondaryButton label={open ? 'Hide lineup' : 'Team lineup'} onPress={() => setOpen((value) => !value)} />
-      {open ? (
-        viewer
+      <Accordion title="Team lineup" initiallyOpen={initiallyOpen}>
+        {viewer
           ? <PublishedLineup eventId={eventId} teamId={teamId} participantId={participantId} />
-          : <LineupEditor orgId={orgId} eventId={eventId} teamId={teamId} onDenied={onDenied} />
-      ) : null}
+          : <LineupEditor orgId={orgId} eventId={eventId} teamId={teamId} onDenied={onDenied} />}
+      </Accordion>
     </View>
   );
 }

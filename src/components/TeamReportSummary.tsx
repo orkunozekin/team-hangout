@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text as NativeText, type TextProps, View } from 'react-native';
 
-import type { AttendanceCounts, ReportRun } from '../../shared/reports';
+import type { AttendanceCounts, Ratio, ReportRun } from '../../shared/reports';
 import { formatRate, REPORT_EXPORT_NOTE, REPORT_STATE_LABELS, reportStatusNote } from '../../shared/reports';
 import { exportReport, getReportRun, listTeamReports, reportRequestId, requestTeamAttendanceReport } from '../firebase/reports';
 import { clearReportExports, shareReportCsv } from '../lib/reportExport';
@@ -27,23 +27,70 @@ function explain(error: unknown) {
   return 'The summary could not be loaded. Try again.';
 }
 
+function RateMeter({ label, ratio, detail, accent, track }: { label: string; ratio: Ratio; detail: string; accent: string; track: string }) {
+  const percent = ratio.rate === null ? 0 : Math.max(0, Math.min(100, ratio.rate * 100));
+  return (
+    <View
+      accessible
+      accessibilityRole="progressbar"
+      accessibilityLabel={`${label} ${formatRate(ratio)}, ${detail}.`}
+      accessibilityValue={ratio.rate === null ? { text: 'Not enough data' } : { min: 0, max: 100, now: Math.round(percent) }}
+      style={[styles.metric, { borderLeftColor: accent }]}
+    >
+      <View style={styles.metricHead}>
+        <Text style={styles.label}>{label}</Text>
+        <Text style={[styles.value, { color: accent }]}>{formatRate(ratio)}</Text>
+      </View>
+      <View style={[styles.track, { backgroundColor: track }]}>
+        <View testID={`${label} bar`} style={[styles.fill, { width: `${percent}%`, backgroundColor: accent }]} />
+      </View>
+      <Text style={styles.copy}>{detail}</Text>
+    </View>
+  );
+}
+
+function StatTile({ label, value, tone }: { label: string; value: number; tone: { color: string; backgroundColor: string } }) {
+  return (
+    <View accessible accessibilityLabel={`${label} ${value}`} style={[styles.tile, { backgroundColor: tone.backgroundColor }]}>
+      <Text style={[styles.tileValue, { color: tone.color }]}>{String(value)}</Text>
+      <Text style={[styles.tileLabel, { color: tone.color }]}>{label}</Text>
+    </View>
+  );
+}
+
+const TONES = {
+  success: { color: colors.success, backgroundColor: colors.successBg },
+  warning: { color: colors.warning, backgroundColor: colors.warningBg },
+  danger: { color: colors.danger, backgroundColor: colors.dangerBg },
+  info: { color: colors.info, backgroundColor: colors.infoBg },
+  neutral: { color: colors.text, backgroundColor: colors.background },
+};
+
 export function Summary({ run }: { run: ReportRun }) {
   const s = run.summary as AttendanceCounts;
   const excluded = s.events.cancelled + s.events.postponed;
   return (
     <View>
-      <View accessible accessibilityLabel={`Presence rate ${formatRate(s.presenceRate)}, ${s.presenceRate.numerator} present or late of ${s.presenceRate.denominator} with a present, late or absent record.`} style={styles.metric}>
-        <Text style={styles.label}>Presence rate</Text>
-        <Text style={styles.value}>{formatRate(s.presenceRate)}</Text>
-        <Text style={styles.copy}>{`${s.presenceRate.numerator} present or late of ${s.presenceRate.denominator} present, late or absent`}</Text>
+      <RateMeter label="Presence rate" ratio={s.presenceRate} accent={colors.team} track={colors.teamBg}
+        detail={`${s.presenceRate.numerator} present or late of ${s.presenceRate.denominator} present, late or absent`} />
+      <RateMeter label="Completion coverage" ratio={s.completionCoverage} accent={colors.info} track={colors.infoBg}
+        detail={`${s.completionCoverage.numerator} recorded of ${s.completionCoverage.denominator} eligible`} />
+      <Text accessibilityRole="header" style={styles.subheading}>Attendance records</Text>
+      <View style={styles.tiles}>
+        <StatTile label="Present" value={s.present} tone={TONES.success} />
+        <StatTile label="Late" value={s.late} tone={TONES.warning} />
+        <StatTile label="Absent" value={s.absent} tone={TONES.danger} />
+        <StatTile label="Excused" value={s.excused} tone={TONES.info} />
+        <StatTile label="Unknown" value={s.unknown} tone={TONES.neutral} />
+        <StatTile label="Missing" value={s.missing} tone={TONES.neutral} />
       </View>
-      <View accessible accessibilityLabel={`Completion coverage ${formatRate(s.completionCoverage)}, ${s.completionCoverage.numerator} recorded of ${s.completionCoverage.denominator} eligible.`} style={styles.metric}>
-        <Text style={styles.label}>Completion coverage</Text>
-        <Text style={styles.value}>{formatRate(s.completionCoverage)}</Text>
-        <Text style={styles.copy}>{`${s.completionCoverage.numerator} recorded of ${s.completionCoverage.denominator} eligible`}</Text>
+      <Text style={styles.copy}>Missing and unknown are not counted as absent.</Text>
+      <Text accessibilityRole="header" style={styles.subheading}>Events</Text>
+      <View style={styles.tiles}>
+        <StatTile label={s.events.closed === 1 ? 'Completed event' : 'Completed events'} value={s.events.closed} tone={TONES.success} />
+        <StatTile label="Cancelled or postponed, excluded" value={excluded} tone={TONES.neutral} />
+        <StatTile label="Awaiting completion" value={s.events.awaitingClosure} tone={TONES.warning} />
       </View>
-      <Text style={styles.copy}>{`Excused ${s.excused} · Unknown ${s.unknown} · Missing ${s.missing}. Missing and unknown are not counted as absent.`}</Text>
-      <Text style={styles.copy}>{`${s.events.closed} completed ${s.events.closed === 1 ? 'event' : 'events'}, ${excluded} cancelled or postponed excluded, ${s.events.awaitingClosure} awaiting completion.`}</Text>
     </View>
   );
 }
@@ -187,7 +234,15 @@ const styles = StyleSheet.create({
   copy: { ...type.body, color: colors.textMuted, marginBottom: spacing.xs },
   label: { ...type.label, color: colors.text },
   value: { ...type.h2, color: colors.text },
-  metric: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, padding: spacing.sm, marginVertical: spacing.xs },
+  subheading: { ...type.label, color: colors.text, marginTop: spacing.sm, marginBottom: spacing.xs },
+  metric: { borderWidth: 1, borderLeftWidth: 4, borderColor: colors.border, borderRadius: radius.sm, padding: spacing.sm, marginVertical: spacing.xs, backgroundColor: colors.card },
+  metricHead: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'baseline', columnGap: spacing.sm },
+  track: { height: 10, borderRadius: radius.full, overflow: 'hidden', marginVertical: spacing.xs },
+  fill: { height: '100%', borderRadius: radius.full },
+  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.xs },
+  tile: { flexGrow: 1, flexBasis: '30%', minWidth: 96, borderRadius: radius.sm, paddingVertical: spacing.sm, paddingHorizontal: spacing.sm },
+  tileValue: { ...type.h2 },
+  tileLabel: { ...type.caption },
   pending: { ...type.label, color: colors.text, backgroundColor: colors.warningBg, borderRadius: radius.sm, padding: spacing.sm, marginVertical: spacing.sm, overflow: 'hidden' },
   error: { ...type.bodyMedium, color: colors.danger, marginVertical: spacing.sm },
 });

@@ -5,7 +5,7 @@ import type { CoachPracticePlan, CoachResource, EventPracticePlan as PlanData, H
 import { ageLabel, NOTICE_LABELS, parseAge, plannedProblem, PRACTICE_HOUSEHOLD_NOTE_MAX, PRACTICE_NOTE_MAX } from '../../shared/practiceResources';
 import { getEventPracticePlan, listTeamPracticeResources, practiceRequestId, savePracticePlan } from '../firebase/practice';
 import { colors, radius, spacing, type } from '../theme/theme';
-import { FieldLabel, PrimaryButton, SecondaryButton, TextField } from './ui';
+import { Accordion, FieldLabel, PrimaryButton, SecondaryButton, TextField } from './ui';
 
 function Text(props: TextProps) {
   return <NativeText maxFontSizeMultiplier={2} {...props} />;
@@ -248,11 +248,11 @@ function PlanPanel({ orgId, eventId, teamId }: Props) {
 
 /** Practice plan for this team's practice. Coaches build it from reviewed resources; households see only the shared copy. */
 export default function EventPracticePlan({ orgId, eventId, teamId, initiallyOpen = false }: Props & { initiallyOpen?: boolean }) {
-  const [open, setOpen] = useState(initiallyOpen);
   return (
     <View style={styles.section}>
-      <SecondaryButton label={open ? 'Hide practice plan' : 'Practice plan'} onPress={() => setOpen((value) => !value)} />
-      {open ? <PlanPanel orgId={orgId} eventId={eventId} teamId={teamId} /> : null}
+      <Accordion title="Practice plan" initiallyOpen={initiallyOpen}>
+        <PlanPanel orgId={orgId} eventId={eventId} teamId={teamId} />
+      </Accordion>
     </View>
   );
 }

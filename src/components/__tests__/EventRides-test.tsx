@@ -144,6 +144,7 @@ test('ride requests need a coarse area and a linked child, and stale edits expla
     { kind: 'need', direction: 'toEvent', area: 'Library', discoverable: true, participantIds: ['p1'] }, 'r1'));
   save.mockRejectedValueOnce({ code: 'functions/failed-precondition', details: { domainCode: 'STALE_REVISION' } });
   await fireEvent.press(screen.getByRole('button', { name: 'Cancel request to the event near Elm school' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Cancel ride' }));
   expect(await screen.findByText('This ride changed. The list has been refreshed.')).toBeTruthy();
 });
 

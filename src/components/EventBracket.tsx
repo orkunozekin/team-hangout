@@ -5,7 +5,7 @@ import type { BracketNodeView, EventBracket as EventBracketData } from '../../sh
 import { bracketNodeStatus, roundLabel } from '../../shared/competition';
 import { getEventBracket } from '../firebase/competition';
 import { colors, radius, spacing, type } from '../theme/theme';
-import { SecondaryButton, CHIP_MAX_FONT_SCALE } from './ui';
+import { Accordion, SecondaryButton, CHIP_MAX_FONT_SCALE } from './ui';
 
 function Text(props: TextProps) {
   return <NativeText maxFontSizeMultiplier={2} {...props} />;
@@ -94,11 +94,11 @@ function BracketPanel({ eventId, teamId }: { eventId: string; teamId: string }) 
 
 /** Published bracket for viewers of this team. Nothing is cached offline. */
 export default function EventBracket({ eventId, teamId, initiallyOpen = false }: { eventId: string; teamId: string; initiallyOpen?: boolean }) {
-  const [open, setOpen] = useState(initiallyOpen);
   return (
     <View style={styles.section}>
-      <SecondaryButton label={open ? 'Hide bracket' : 'Bracket'} onPress={() => setOpen((value) => !value)} />
-      {open ? <BracketPanel eventId={eventId} teamId={teamId} /> : null}
+      <Accordion title="Bracket" initiallyOpen={initiallyOpen}>
+        <BracketPanel eventId={eventId} teamId={teamId} />
+      </Accordion>
     </View>
   );
 }

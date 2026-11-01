@@ -157,6 +157,7 @@ test('football coaches switch the active unit, and an ended game finalizes once'
   await fireEvent.press(screen.getByRole('button', { name: 'Switch to Defense' }));
   await waitFor(() => expect(record).toHaveBeenCalledWith('o', 'e', 't', 3, { kind: 'switchUnit', unitId: 'defense' }));
   await fireEvent.press(await screen.findByRole('button', { name: 'Finalize playing time' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Finalize' }));
   await waitFor(() => expect(finalize).toHaveBeenCalledWith('o', 'e', 't', 3));
 });
 

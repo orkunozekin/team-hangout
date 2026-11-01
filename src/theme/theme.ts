@@ -23,6 +23,21 @@ export const colors = {
   warningBg: '#FFF4E0',
   danger: '#C62828',
   dangerBg: '#FDECEA',
+  dangerPressed: '#9E1F1F',
+  info: '#1F5FA8',
+  infoBg: '#E8F1FB',
+
+  // Per-section accents; each `*` color keeps 4.5:1 on its `*Bg` tint and on white cards.
+  team: '#1B5E45',
+  teamBg: '#E6F2ED',
+  schedule: '#1A4A7A',
+  scheduleBg: '#E8F1F8',
+  household: '#6B3FA0',
+  householdBg: '#F2ECFA',
+  messages: '#0B6670',
+  messagesBg: '#E3F4F5',
+  reports: '#8A4B08',
+  reportsBg: '#FFF1E0',
 
   practice: '#1B5E45',
   practiceBg: '#E6F2ED',

@@ -1,12 +1,18 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 import {
+  AccessibilityInfo,
   ActivityIndicator,
+  Animated,
+  LayoutAnimation,
+  Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
   TextInputProps,
+  UIManager,
   View,
   ViewStyle,
 } from 'react-native';
@@ -159,6 +165,149 @@ export function SecondaryButton({
   );
 }
 
+export type ConfirmCopy = {
+  title: string;
+  message: string;
+  confirmLabel: string;
+};
+
+/** Modal that asks before an action that cannot be undone; only the red confirm button runs it. */
+export function ConfirmDialog({
+  visible,
+  title,
+  message,
+  confirmLabel,
+  cancelLabel = 'Keep it',
+  onConfirm,
+  onCancel,
+}: ConfirmCopy & {
+  visible: boolean;
+  cancelLabel?: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+      <View style={styles.dialogBackdrop}>
+        <View accessibilityViewIsModal style={styles.dialog}>
+          <Text accessibilityRole="header" maxFontSizeMultiplier={TITLE_MAX_FONT_SCALE} style={styles.dialogTitle}>{title}</Text>
+          <Text style={styles.dialogMessage}>{message}</Text>
+          <DestructiveButton label={confirmLabel} onPress={onConfirm} />
+          <SecondaryButton label={cancelLabel} onPress={onCancel} />
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+/**
+ * Red button for actions that are hard or impossible to undo. With `confirm`, the press opens a
+ * ConfirmDialog and `onPress` runs only after the person confirms.
+ */
+export function DestructiveButton({
+  label,
+  onPress,
+  confirm,
+  loading,
+  disabled,
+}: {
+  label: string;
+  onPress: () => void;
+  confirm?: ConfirmCopy;
+  loading?: boolean;
+  disabled?: boolean;
+}) {
+  const [asking, setAsking] = useState(false);
+  const isDisabled = disabled || loading;
+  return (
+    <>
+      <Pressable
+        onPress={() => (confirm ? setAsking(true) : onPress())}
+        disabled={isDisabled}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityHint={confirm ? 'Asks for confirmation first' : undefined}
+        accessibilityState={{ disabled: !!isDisabled, busy: !!loading }}
+        style={({ pressed }) => [
+          styles.destructiveButton,
+          pressed ? styles.destructivePressed : null,
+          isDisabled ? styles.buttonDisabled : null,
+        ]}
+      >
+        {loading ? (
+          <ActivityIndicator color={colors.white} />
+        ) : (
+          <Text maxFontSizeMultiplier={BUTTON_MAX_FONT_SCALE} style={styles.primaryButtonText}>{label}</Text>
+        )}
+      </Pressable>
+      {confirm ? (
+        <ConfirmDialog
+          {...confirm}
+          visible={asking}
+          onCancel={() => setAsking(false)}
+          onConfirm={() => { setAsking(false); onPress(); }}
+        />
+      ) : null}
+    </>
+  );
+}
+
+if (Platform.OS === 'android') UIManager.setLayoutAnimationEnabledExperimental?.(true);
+
+function useReducedMotion() {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void Promise.resolve(AccessibilityInfo.isReduceMotionEnabled()).then(value => { if (live) setReduced(!!value); }).catch(() => {});
+    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduced);
+    return () => { live = false; sub?.remove(); };
+  }, []);
+  return reduced;
+}
+
+/** Disclosure section: a header row with a rotating chevron that shows or hides its content. */
+export function Accordion({
+  title,
+  initiallyOpen = false,
+  onToggle,
+  children,
+}: {
+  title: string;
+  initiallyOpen?: boolean;
+  onToggle?: (open: boolean) => void;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(initiallyOpen);
+  const reduced = useReducedMotion();
+  const turn = useRef(new Animated.Value(initiallyOpen ? 1 : 0)).current;
+  const toggle = () => {
+    const next = !open;
+    if (reduced) turn.setValue(next ? 1 : 0);
+    else {
+      LayoutAnimation.configureNext(LayoutAnimation.create(200, 'easeInEaseOut', 'opacity'));
+      Animated.timing(turn, { toValue: next ? 1 : 0, duration: 200, useNativeDriver: true }).start();
+    }
+    setOpen(next);
+    onToggle?.(next);
+  };
+  const rotate = turn.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] });
+  return (
+    <View style={styles.accordion}>
+      <Pressable
+        onPress={toggle}
+        accessibilityRole="button"
+        accessibilityLabel={title}
+        accessibilityState={{ expanded: open }}
+        style={({ pressed }) => [styles.accordionHeader, pressed ? styles.accordionPressed : null]}
+      >
+        <Text maxFontSizeMultiplier={BUTTON_MAX_FONT_SCALE} style={styles.accordionTitle}>{title}</Text>
+        <Animated.Text importantForAccessibility="no" accessibilityElementsHidden maxFontSizeMultiplier={BUTTON_MAX_FONT_SCALE} style={[styles.accordionChevron, { transform: [{ rotate }] }]}>⌄</Animated.Text>
+      </Pressable>
+      {open ? <View style={styles.accordionBody}>{children}</View> : null}
+    </View>
+  );
+}
+
 export function LinkButton({
   label,
   onPress,
@@ -289,6 +438,80 @@ const styles = StyleSheet.create({
     fontFamily: fonts.semiBold,
     fontSize: 16,
     color: colors.primary,
+  },
+  destructiveButton: {
+    backgroundColor: colors.danger,
+    borderRadius: radius.md,
+    minHeight: 48,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    marginTop: spacing.sm,
+  },
+  destructivePressed: {
+    backgroundColor: colors.dangerPressed,
+  },
+  dialogBackdrop: {
+    flex: 1,
+    backgroundColor: colors.overlay,
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  dialog: {
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    borderTopWidth: 4,
+    borderTopColor: colors.danger,
+    ...shadow.card,
+  },
+  dialogTitle: {
+    ...type.h2,
+    color: colors.text,
+    marginBottom: spacing.sm,
+  },
+  dialogMessage: {
+    ...type.body,
+    color: colors.textMuted,
+    marginBottom: spacing.sm,
+  },
+  accordion: {
+    marginTop: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: colors.card,
+    overflow: 'hidden',
+  },
+  accordionHeader: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    gap: spacing.sm,
+  },
+  accordionPressed: {
+    backgroundColor: colors.primarySoft,
+  },
+  accordionTitle: {
+    fontFamily: fonts.semiBold,
+    fontSize: 16,
+    color: colors.primary,
+    flex: 1,
+  },
+  accordionChevron: {
+    fontFamily: fonts.bold,
+    fontSize: 20,
+    lineHeight: 22,
+    color: colors.primary,
+  },
+  accordionBody: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
   buttonDisabled: {
     opacity: 0.5,

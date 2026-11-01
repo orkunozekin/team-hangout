@@ -46,6 +46,7 @@ import {
 } from '../firebase/events';
 
 import {
+  DestructiveButton,
   EmptyState,
   PrimaryButton,
   Screen,
@@ -182,26 +183,13 @@ export default function EventDetailScreen({
   }
 
   async function onDelete() {
-    Alert.alert(
-      'Delete event?',
-      'This removes the event from the team schedule.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              if (!event) throw new Error('Reload the event before deleting.');
-              await softDeleteEvent(route.params.eventId, event.revision ?? 0);
-              navigation.goBack();
-            } catch (error) {
-              Alert.alert('Could not delete event', error instanceof Error ? error.message : 'Please try again');
-            }
-          },
-        },
-      ],
-    );
+    try {
+      if (!event) throw new Error('Reload the event before deleting.');
+      await softDeleteEvent(route.params.eventId, event.revision ?? 0);
+      navigation.goBack();
+    } catch (error) {
+      Alert.alert('Could not delete event', error instanceof Error ? error.message : 'Please try again');
+    }
   }
 
   if (loading) {
@@ -302,9 +290,9 @@ export default function EventDetailScreen({
               <Text style={styles.row}>Reason for status change</Text>
               <TextInput accessibilityLabel="Reason for status change" value={reason} onChangeText={setReason} maxLength={500} style={{ ...styles.row, borderWidth: 1, borderColor: colors.border, padding: spacing.sm }} />
               {event.status === 'scheduled' ? <SecondaryButton label="Postpone" disabled={saving || !reason.trim()} onPress={() => lifecycle('postpone')} /> : null}
-              <SecondaryButton label="Cancel event" disabled={saving || !reason.trim()} onPress={() => lifecycle('cancel')} />
+              <DestructiveButton label="Cancel event" disabled={saving || !reason.trim()} confirm={{ title: 'Cancel this event?', message: 'The event is marked cancelled for everyone on the team, with the reason you entered.', confirmLabel: 'Yes, cancel' }} onPress={() => void lifecycle('cancel')} />
               {event.status === 'scheduled' ? <SecondaryButton label="Complete event" disabled={saving || !reason.trim()} onPress={() => lifecycle('complete')} /> : null}
-            </> : <SecondaryButton label="Delete event" onPress={onDelete} />}
+            </> : <DestructiveButton label="Delete event" confirm={{ title: 'Delete event?', message: 'This removes the event from the team schedule.', confirmLabel: 'Delete' }} onPress={() => void onDelete()} />}
           </>
         ) : null}
       </ScrollView>

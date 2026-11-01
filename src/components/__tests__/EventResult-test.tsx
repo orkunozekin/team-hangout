@@ -128,6 +128,7 @@ test('discarding an uncertain proposal reloads and unlocks editing', async () =>
   await fireEvent.press(screen.getByRole('button', { name: 'Outcome Void' }));
   await fireEvent.press(screen.getByRole('button', { name: 'Propose result' }));
   await fireEvent.press(await screen.findByRole('button', { name: 'Discard and reload' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Discard' }));
   await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
   expect(await screen.findByRole('button', { name: 'Propose result' })).toBeTruthy();
 });

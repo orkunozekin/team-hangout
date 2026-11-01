@@ -19,7 +19,7 @@ import {
   dateInZone,
   dayBoundary,
 } from "../lib/agendaTime";
-import { FieldLabel, TextField } from "./ui";
+import { Accordion, FieldLabel, TextField } from "./ui";
 import { colors, type } from "../theme/theme";
 import OfflineNotice from "./OfflineNotice";
 import {
@@ -91,7 +91,6 @@ export default function HouseholdAgenda({
   const [day, setDay] = useState(() => dateInZone(new Date(), defaultZone));
   const [dayInput, setDayInput] = useState(day);
   const [filters, setFilters] = useState(emptyFilters);
-  const [showFilters, setShowFilters] = useState(false);
   const [page, setPage] = useState<AgendaPage | null>(null);
   const [items, setItems] = useState<AgendaEvent[]>([]);
   const [busy, setBusy] = useState(false);
@@ -278,12 +277,7 @@ export default function HouseholdAgenda({
         Published schedules for your approved participants and team roles. Times
         use the display timezone below.
       </Text>
-      <Action
-        expanded={showFilters}
-        label={showFilters ? "Hide calendar filters" : "Calendar filters"}
-        onPress={() => setShowFilters((value) => !value)}
-      />
-      {showFilters ? (
+      <Accordion title="Calendar filters">
         <View>
           <FieldLabel>First day (YYYY-MM-DD)</FieldLabel>
           <TextField
@@ -398,7 +392,7 @@ export default function HouseholdAgenda({
             onPress={() => setFilters(emptyFilters)}
           />
         </View>
-      ) : null}
+      </Accordion>
       {error ? (
         <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>
           {error}

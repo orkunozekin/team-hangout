@@ -14,7 +14,7 @@ import {
   type PlayErrorKind,
 } from '../lib/coaching/playClock';
 import { colors, radius, spacing, type } from '../theme/theme';
-import { FieldLabel, PrimaryButton, SecondaryButton, TextField, CHIP_MAX_FONT_SCALE } from './ui';
+import { DestructiveButton, Accordion, FieldLabel, PrimaryButton, SecondaryButton, TextField, CHIP_MAX_FONT_SCALE } from './ui';
 
 function Text(props: TextProps) {
   return <NativeText maxFontSizeMultiplier={2} {...props} />;
@@ -260,7 +260,7 @@ function PlayTimePanel({ orgId, eventId, teamId }: { orgId: string; eventId: str
         <PrimaryButton label={`Start period ${session.currentPeriod + 1}`} loading={busy} onPress={() => void record({ kind: 'start' }, `Period ${session.currentPeriod + 1} started.`)} />
       ) : null}
       {session.status === 'ended' ? (
-        <PrimaryButton label="Finalize playing time" loading={busy} onPress={() => void mutate(() => finalizePlaySession(orgId, eventId, teamId, session.revision), 'Playing time finalized.')} />
+        <DestructiveButton label="Finalize playing time" loading={busy} confirm={{ title: 'Finalize playing time?', message: 'Final totals are locked and can no longer be corrected.', confirmLabel: 'Finalize' }} onPress={() => void mutate(() => finalizePlaySession(orgId, eventId, teamId, session.revision), 'Playing time finalized.')} />
       ) : null}
       {session.status === 'finalized' ? <Text style={styles.copy}>Final totals are locked.</Text> : null}
 
@@ -340,11 +340,11 @@ function PlayTimePanel({ orgId, eventId, teamId }: { orgId: string; eventId: str
 
 /** Coach-only playing-time entry. Writes need online acknowledgment; nothing is queued offline. */
 export default function EventPlayTime({ orgId, eventId, teamId, initiallyOpen = false }: { orgId: string; eventId: string; teamId: string; initiallyOpen?: boolean }) {
-  const [open, setOpen] = useState(initiallyOpen);
   return (
     <View style={styles.section}>
-      <SecondaryButton label={open ? 'Hide playing time' : 'Playing time'} onPress={() => setOpen((value) => !value)} />
-      {open ? <PlayTimePanel orgId={orgId} eventId={eventId} teamId={teamId} /> : null}
+      <Accordion title="Playing time" initiallyOpen={initiallyOpen}>
+        <PlayTimePanel orgId={orgId} eventId={eventId} teamId={teamId} />
+      </Accordion>
     </View>
   );
 }

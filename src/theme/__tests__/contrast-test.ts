@@ -14,6 +14,16 @@ it.each([
   ["success status", colors.success, colors.successBg],
   ["warning status", colors.warning, colors.warningBg],
   ["error", colors.danger, colors.dangerBg],
+  ["destructive button", colors.white, colors.danger],
+  ["pressed destructive button", colors.white, colors.dangerPressed],
+  ["info status", colors.info, colors.infoBg],
+  ["team accent", colors.team, colors.teamBg],
+  ["schedule accent", colors.schedule, colors.scheduleBg],
+  ["household accent", colors.household, colors.householdBg],
+  ["messages accent", colors.messages, colors.messagesBg],
+  ["reports accent", colors.reports, colors.reportsBg],
+  ["team accent on cards", colors.team, colors.card],
+  ["reports accent on cards", colors.reports, colors.card],
 ])(
   "%s maintains 4.5:1 contrast for normal text",
   (_, foreground, background) => {

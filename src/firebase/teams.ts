@@ -80,6 +80,9 @@ export function mapMemberDoc(
     teamId: String(data.teamId ?? ''),
     userId: String(data.userId ?? ''),
     role: (data.schemaVersion === 2 ? data.status === 'active' && Array.isArray(data.roles) && data.roles.some(role => role === 'coach' || role === 'captain') : data.role === 'coach') ? 'coach' : 'player',
+    ...(data.schemaVersion === 2 && data.status === 'active' && Array.isArray(data.roles)
+      ? { roles: data.roles.filter((role): role is string => typeof role === 'string') }
+      : {}),
     displayName: String(data.displayName ?? ''),
     joinedAt: toDate(data.joinedAt),
   };

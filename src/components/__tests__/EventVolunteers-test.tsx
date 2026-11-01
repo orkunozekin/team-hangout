@@ -100,6 +100,10 @@ test('coaches add slots, remove a volunteer by key and cancel a slot; households
   release.mockResolvedValue({ state: 'released' });
   await open();
   await fireEvent.press(await screen.findByRole('button', { name: 'Remove Jo' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Keep it' }));
+  expect(release).not.toHaveBeenCalled();
+  await fireEvent.press(screen.getByRole('button', { name: 'Remove Jo' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Remove volunteer' }));
   await waitFor(() => expect(release).toHaveBeenCalledWith('o', 'e', 't', 's1', 'r1', 'k1'));
   await fireEvent.press(screen.getByRole('button', { name: 'Slot kind Scorekeeping' }));
   await fireEvent.changeText(screen.getByLabelText('Slot title'), 'Scoreboard');
@@ -111,6 +115,7 @@ test('coaches add slots, remove a volunteer by key and cancel a slot; households
   await fireEvent.press(screen.getByRole('button', { name: 'Add slot' }));
   await waitFor(() => expect(save).toHaveBeenCalledWith('o', 'e', 't', 0, { kind: 'scorekeeping', title: 'Scoreboard', capacity: 2, claimDeadline: null }, 'r2'));
   await fireEvent.press(await screen.findByRole('button', { name: 'Cancel slot Halftime oranges' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Cancel slot' }));
   await waitFor(() => expect(save).toHaveBeenCalledWith('o', 'e', 't', 1, { slotId: 's1', action: 'cancel' }, 'r3'));
 });
 

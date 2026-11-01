@@ -42,8 +42,18 @@ describe('roles', () => {
   });
 
   it('formats display roles', () => {
-    expect(displayTeamRole('player')).toBe('player');
-    expect(displayTeamRole('coach', 'superAdmin')).toBe('super admin');
+    expect(displayTeamRole({ role: 'player' })).toBe('Player');
+    expect(displayTeamRole({ role: 'coach' })).toBe('Coach');
+    expect(displayTeamRole({ role: 'coach' }, 'superAdmin')).toBe('Super admin');
+  });
+
+  it('reads actual canonical roles instead of the mapped coach/player value', () => {
+    expect(displayTeamRole({ role: 'coach', roles: ['captain'] })).toBe('Captain');
+    expect(displayTeamRole({ role: 'player', roles: ['parent'] })).toBe('Parent/guardian');
+    expect(displayTeamRole({ role: 'player', roles: ['guardian', 'player'] })).toBe('Parent/guardian, Player');
+    expect(displayTeamRole({ role: 'coach', roles: ['captain', 'coach'] })).toBe('Coach, Captain');
+    expect(displayTeamRole({ role: 'player', roles: ['programStaff'] })).toBe('Staff');
+    expect(displayTeamRole({ role: 'player', roles: ['unknown'] })).toBe('Player');
   });
 
   it('builds synthetic coach membership for super admins', () => {
