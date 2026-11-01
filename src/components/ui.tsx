@@ -8,6 +8,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -190,10 +191,13 @@ export function ConfirmDialog({
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
       <View style={styles.dialogBackdrop}>
         <View accessibilityViewIsModal style={styles.dialog}>
-          <Text accessibilityRole="header" maxFontSizeMultiplier={TITLE_MAX_FONT_SCALE} style={styles.dialogTitle}>{title}</Text>
-          <Text style={styles.dialogMessage}>{message}</Text>
-          <DestructiveButton label={confirmLabel} onPress={onConfirm} />
-          <SecondaryButton label={cancelLabel} onPress={onCancel} />
+          {/* Scrolls so both buttons stay reachable when a long message meets large accessibility text. */}
+          <ScrollView contentContainerStyle={styles.dialogContent}>
+            <Text accessibilityRole="header" maxFontSizeMultiplier={TITLE_MAX_FONT_SCALE} style={styles.dialogTitle}>{title}</Text>
+            <Text style={styles.dialogMessage}>{message}</Text>
+            <DestructiveButton label={confirmLabel} onPress={onConfirm} />
+            <SecondaryButton label={cancelLabel} onPress={onCancel} />
+          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -455,13 +459,18 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.overlay,
     justifyContent: 'center',
-    padding: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xxl,
   },
   dialog: {
+    maxHeight: '100%',
     backgroundColor: colors.card,
     borderRadius: radius.lg,
-    padding: spacing.lg,
+    overflow: 'hidden',
     ...shadow.card,
+  },
+  dialogContent: {
+    padding: spacing.lg,
   },
   dialogTitle: {
     ...type.h2,
