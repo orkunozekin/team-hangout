@@ -1,9 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 import {
   AccessibilityInfo,
   ActivityIndicator,
-  Animated,
   LayoutAnimation,
   Modal,
   Platform,
@@ -283,18 +282,13 @@ export function Accordion({
 }) {
   const [open, setOpen] = useState(initiallyOpen);
   const reduced = useReducedMotion();
-  const turn = useRef(new Animated.Value(initiallyOpen ? 1 : 0)).current;
   const toggle = () => {
     const next = !open;
-    if (reduced) turn.setValue(next ? 1 : 0);
-    else {
-      LayoutAnimation.configureNext(LayoutAnimation.create(200, 'easeInEaseOut', 'opacity'));
-      Animated.timing(turn, { toValue: next ? 1 : 0, duration: 200, useNativeDriver: true }).start();
-    }
+    // LayoutAnimation runs natively, so the body and chevron ease without driving JS frames.
+    if (!reduced) LayoutAnimation.configureNext(LayoutAnimation.create(200, 'easeInEaseOut', 'opacity'));
     setOpen(next);
     onToggle?.(next);
   };
-  const rotate = turn.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] });
   return (
     <View style={styles.accordion}>
       <Pressable
@@ -305,7 +299,7 @@ export function Accordion({
         style={({ pressed }) => [styles.accordionHeader, pressed ? styles.accordionPressed : null]}
       >
         <Text maxFontSizeMultiplier={BUTTON_MAX_FONT_SCALE} style={styles.accordionTitle}>{title}</Text>
-        <Animated.Text importantForAccessibility="no" accessibilityElementsHidden maxFontSizeMultiplier={BUTTON_MAX_FONT_SCALE} style={[styles.accordionChevron, { transform: [{ rotate }] }]}>⌄</Animated.Text>
+        <Text importantForAccessibility="no" accessibilityElementsHidden maxFontSizeMultiplier={BUTTON_MAX_FONT_SCALE} style={[styles.accordionChevron, open ? styles.accordionChevronOpen : null]}>⌄</Text>
       </Pressable>
       {open ? <View style={styles.accordionBody}>{children}</View> : null}
     </View>
@@ -513,6 +507,9 @@ const styles = StyleSheet.create({
     fontSize: 20,
     lineHeight: 22,
     color: colors.primary,
+  },
+  accordionChevronOpen: {
+    transform: [{ rotate: '180deg' }],
   },
   accordionBody: {
     paddingHorizontal: spacing.md,
