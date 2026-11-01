@@ -461,13 +461,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     borderRadius: radius.lg,
     padding: spacing.lg,
-    borderTopWidth: 4,
-    borderTopColor: colors.danger,
     ...shadow.card,
   },
   dialogTitle: {
     ...type.h2,
-    color: colors.text,
+    color: colors.danger,
     marginBottom: spacing.sm,
   },
   dialogMessage: {

@@ -63,7 +63,7 @@ const TONES = {
   warning: { color: colors.warning, backgroundColor: colors.warningBg },
   danger: { color: colors.danger, backgroundColor: colors.dangerBg },
   info: { color: colors.info, backgroundColor: colors.infoBg },
-  neutral: { color: colors.text, backgroundColor: colors.background },
+  neutral: { color: colors.text, backgroundColor: colors.card },
 };
 
 export function Summary({ run }: { run: ReportRun }) {

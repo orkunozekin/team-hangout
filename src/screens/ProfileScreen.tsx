@@ -49,6 +49,7 @@ import {
 } from '../types/models';
 
 import {
+  displayTeamRole,
   isSuperAdminRole,
 } from '../lib/roles';
 
@@ -145,7 +146,7 @@ export default function ProfileScreen({
         <Subtitle>
           {isSuperAdmin ? 'Super Admin · ' : ''}
           {team
-            ? `${team.name} · ${membership?.role ?? 'member'}`
+            ? `${team.name} · ${membership ? displayTeamRole(membership, appRole) : 'Member'}`
             : 'No team selected'}
         </Subtitle>
 
