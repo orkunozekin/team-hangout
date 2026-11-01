@@ -25,6 +25,8 @@ test('team line is dropped when the title names every team and kept otherwise', 
   expect(eventCardContent({ ...base, title: 'Maple Foxes home game' }).teams).toBe('Maple Foxes vs River Otters');
   expect(eventCardContent({ ...base, title: 'League: Foxes vs Otters (today)' }).teams).toBeNull();
   expect(eventCardContent({ ...base, title: 'Foxesville cup' }).teams).toBe('Maple Foxes vs River Otters');
+  expect(eventCardContent({ ...base, title: 'U12 season opener', teamNames: ['North U12', 'South U12'] }).teams).toBe('North U12 vs South U12');
+  expect(eventCardContent({ ...base, title: 'Lions derby', teamNames: ['North Lions', 'South Lions'] }).teams).toBe('North Lions vs South Lions');
   expect(eventCardContent({ ...base, type: 'practice', title: 'Maple Foxes practice', teamNames: ['Maple Foxes'] }).teams).toBeNull();
 });
 
@@ -38,6 +40,11 @@ test('a cross-zone event shows display time plus the event local time, each with
   expect(content.when).toBe('Saturday, Oct 3 · 7:00 PM EDT – 8:30 PM EDT');
   expect(content.eventLocalWhen).toBe('Local time: Saturday, Oct 3 · 6:00 PM CDT – 7:30 PM CDT');
   expect(eventCardContent(base, 'America/Chicago').eventLocalWhen).toBeNull();
+});
+
+test('a zone pair that only diverges at the end instant still shows the event local time', () => {
+  const content = eventCardContent({ ...base, startsAt: '2026-11-01T06:30:00.000Z', endsAt: '2026-11-01T07:30:00.000Z' }, 'America/Panama');
+  expect(content.eventLocalWhen).toMatch(/CDT.*CST/);
 });
 
 test('DST fold times stay distinguishable by abbreviation', () => {

@@ -52,14 +52,17 @@ export function eventCardContent(event: EventCardInput, displayZone?: string): E
     ? agendaTime(event.startsAt!, event.endsAt!, zone)
     : event.legacyWhen ?? '';
   const crossZone = !!canonical && !!displayZone && displayZone !== event.timeZone
-    && offsetLabel(event.startsAt!, displayZone) !== offsetLabel(event.startsAt!, event.timeZone!);
-  const title = event.title.toLocaleLowerCase();
+    && [event.startsAt!, event.endsAt!].some(instant => offsetLabel(instant, displayZone) !== offsetLabel(instant, event.timeZone!));
   const names = event.teamNames?.filter(Boolean) ?? [];
-  // A team counts as named when the title has its full name or its nickname (last word, e.g. "Foxes").
-  const titleWords = new Set(title.split(/[\s.,:;!?()[\]{}"'/\\&+-]+/));
-  const teamsInTitle = names.every(name => {
-    const lower = name.toLocaleLowerCase();
-    return title.includes(lower) || titleWords.has(lower.split(/\s+/).pop()!);
+  // A team counts as named when the title has its full name, or its nickname (last word,
+  // e.g. "Foxes") when that nickname is alphabetic and not shared with another team.
+  const words = (value: string) => value.toLocaleLowerCase().split(/[\s.,:;!?()[\]{}"'/\\&+-]+/).filter(Boolean);
+  const titleText = ` ${words(event.title).join(' ')} `;
+  const nicknames = names.map(name => words(name).pop() ?? '');
+  const teamsInTitle = names.every((name, index) => {
+    const nickname = nicknames[index];
+    const uniqueNickname = /^[^\d]{3,}$/.test(nickname) && nicknames.filter(value => value === nickname).length === 1;
+    return titleText.includes(` ${words(name).join(' ')} `) || (uniqueNickname && titleText.includes(` ${nickname} `));
   });
   const contexts = [...new Set(event.contexts ?? [])];
   return {

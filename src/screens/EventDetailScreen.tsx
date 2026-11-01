@@ -249,6 +249,7 @@ export default function EventDetailScreen({
           {headerTeams ? <Text style={styles.row}>{headerTeams}</Text> : null}
           {event.status === 'postponed' ? <Text style={styles.row}>Awaiting a new schedule. The previous time is shown below.</Text> : null}
           {event.status === 'cancelled' ? <Text style={styles.row}>Cancelled. This event is retained in schedule history.</Text> : null}
+          {event.status === 'completed' ? <Text style={styles.row}>Completed.</Text> : null}
         </> : null}
 
         <Text style={styles.row}>
