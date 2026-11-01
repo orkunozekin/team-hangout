@@ -6,7 +6,7 @@ import { areaProblem, RIDE_CHILDREN_MAX, RIDE_CONTACT_MAX, RIDE_DIRECTION_LABELS
 import { aliasProblem } from '../../shared/volunteers';
 import { confirmRideArrangement, getEventRides, getRideContacts, revokeRideConsent, rideRequestId, type RideConsent, type RideInput, saveRideRequest } from '../firebase/rides';
 import { colors, radius, spacing, type } from '../theme/theme';
-import { ConsentCheckbox, PrimaryButton, SecondaryButton, TextField } from './ui';
+import { ConsentCheckbox, PrimaryButton, SecondaryButton, TextField, CHIP_MAX_FONT_SCALE } from './ui';
 
 function Text(props: TextProps) {
   return <NativeText maxFontSizeMultiplier={2} {...props} />;
@@ -57,7 +57,7 @@ function Choice<T extends string>({ label, value, options, onChange }: {
         return (
           <Pressable key={option.value} accessibilityRole="button" accessibilityLabel={`${label} ${option.label}`} accessibilityState={{ selected }}
             onPress={() => onChange(option.value)} style={[styles.chip, selected ? styles.chipSelected : null]}>
-            <Text style={[styles.chipText, selected ? styles.chipTextSelected : null]}>{option.label}</Text>
+            <Text maxFontSizeMultiplier={CHIP_MAX_FONT_SCALE} style={[styles.chipText, selected ? styles.chipTextSelected : null]}>{option.label}</Text>
           </Pressable>
         );
       })}

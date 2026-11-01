@@ -5,7 +5,7 @@ import type { BracketNodeView, EventBracket as EventBracketData } from '../../sh
 import { bracketNodeStatus, roundLabel } from '../../shared/competition';
 import { getEventBracket } from '../firebase/competition';
 import { colors, radius, spacing, type } from '../theme/theme';
-import { SecondaryButton } from './ui';
+import { SecondaryButton, CHIP_MAX_FONT_SCALE } from './ui';
 
 function Text(props: TextProps) {
   return <NativeText maxFontSizeMultiplier={2} {...props} />;
@@ -69,7 +69,7 @@ function BracketPanel({ eventId, teamId }: { eventId: string; teamId: string }) 
             return (
               <Pressable key={item.competitionId} accessibilityRole="button" accessibilityLabel={`Show ${item.name}`} accessibilityState={{ selected }}
                 onPress={() => void load(item.competitionId)} style={[styles.chip, selected ? styles.chipSelected : null]}>
-                <Text style={[styles.chipText, selected ? styles.chipTextSelected : null]}>{item.name}</Text>
+                <Text maxFontSizeMultiplier={CHIP_MAX_FONT_SCALE} style={[styles.chipText, selected ? styles.chipTextSelected : null]}>{item.name}</Text>
               </Pressable>
             );
           })}

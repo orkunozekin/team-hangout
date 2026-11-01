@@ -1,5 +1,6 @@
+import { CHIP_MAX_FONT_SCALE } from '../../components/ui';
 import React from 'react';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react-native';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react-native';
 import { AppState, StyleSheet } from 'react-native';
 import ScheduleScreen from '../ScheduleScreen';
 import { listTeamEventPage } from '../../firebase/events';
@@ -39,6 +40,10 @@ test('restores an offline schedule without restoring management authority', asyn
   let node = screen.getByRole('button', { name: 'Past events' }).parent;
   while (node && StyleSheet.flatten(node.props.style)?.flexDirection !== 'row') node = node.parent;
   expect(StyleSheet.flatten(node?.props.style)).toMatchObject({ flexWrap: 'wrap' });
+  // Chip labels cap their scaling so chips stay compact at large text sizes.
+  for (const label of ['Upcoming', 'Past events', 'All', 'Practice', 'Match']) {
+    expect(within(screen.getByRole('button', { name: label })).getByText(label).props.maxFontSizeMultiplier).toBe(CHIP_MAX_FONT_SCALE);
+  }
 });
 
 test('keeps a cached schedule read-only until foreground authorization succeeds and clears it on revocation', async () => {

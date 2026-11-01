@@ -39,6 +39,7 @@ import {
   Screen,
   TextField,
   Title,
+  CHIP_MAX_FONT_SCALE,
 } from '../components/ui';
 
 import {
@@ -245,15 +246,15 @@ export default function CreateEditEventScreen({
           <FieldLabel>Local time (HH:mm)</FieldLabel><TextField accessibilityLabel="Local time" value={time} onChangeText={value => { setTime(value); setOccurrence(undefined); setAmbiguous(false); }} placeholder="18:00" autoCapitalize="none" />
           <FieldLabel>Duration in minutes</FieldLabel><TextField accessibilityLabel="Duration in minutes" value={duration} onChangeText={setDuration} keyboardType="number-pad" />
           <FieldLabel>Event time zone: {timeZone.replace(/_/g, ' ')}</FieldLabel>
-          <Pressable accessibilityRole="button" accessibilityState={{ expanded: chooseZone }} onPress={() => setChooseZone(value => !value)} style={styles.typeChip}><Text style={styles.typeChipText}>Change time zone</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityState={{ expanded: chooseZone }} onPress={() => setChooseZone(value => !value)} style={styles.typeChip}><Text maxFontSizeMultiplier={CHIP_MAX_FONT_SCALE} style={styles.typeChipText}>Change time zone</Text></Pressable>
           {chooseZone ? [...new Set([timeZone, Intl.DateTimeFormat().resolvedOptions().timeZone, 'America/Chicago', 'America/New_York', 'America/Denver', 'America/Los_Angeles', 'UTC'])].map(zone =>
             <Pressable key={zone} accessibilityRole="button" accessibilityState={{ selected: timeZone === zone }} onPress={() => { setTimeZone(zone); setOccurrence(undefined); setChooseZone(false); }} style={styles.typeChip}>
-              <Text style={styles.typeChipText}>{timeZone === zone ? '✓ ' : ''}{zone.replace(/_/g, ' ')}</Text>
+              <Text maxFontSizeMultiplier={CHIP_MAX_FONT_SCALE} style={styles.typeChipText}>{timeZone === zone ? '✓ ' : ''}{zone.replace(/_/g, ' ')}</Text>
             </Pressable>) : null}
           {ambiguous ? <>
           <FieldLabel>If clocks repeat this time</FieldLabel>
           <View style={styles.typeRow}>{(['earlier', 'later'] as const).map(value => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: occurrence === value }} onPress={() => setOccurrence(value)} style={styles.typeChip}>
-            <Text style={styles.typeChipText}>{occurrence === value ? '✓ ' : ''}{value === 'earlier' ? 'First occurrence' : 'Second occurrence'}</Text>
+            <Text maxFontSizeMultiplier={CHIP_MAX_FONT_SCALE} style={styles.typeChipText}>{occurrence === value ? '✓ ' : ''}{value === 'earlier' ? 'First occurrence' : 'Second occurrence'}</Text>
           </Pressable>)}</View>
           </> : null}
         </> : null}
@@ -276,6 +277,7 @@ export default function CreateEditEventScreen({
                 ]}
               >
                 <Text
+                  maxFontSizeMultiplier={CHIP_MAX_FONT_SCALE}
                   style={[
                     styles.typeChipText,
                     selected ? styles.typeChipTextSelected : null,
@@ -293,9 +295,9 @@ export default function CreateEditEventScreen({
 
         {canonical && !isEdit && eventType === 'match' ? <>
           <FieldLabel>Opponent (optional)</FieldLabel>
-          <Pressable accessibilityRole="button" accessibilityState={{ selected: opponent === null }} onPress={() => setOpponent(null)} style={styles.typeChip}><Text style={styles.typeChipText}>{opponent === null ? '✓ ' : ''}Single-team match</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityState={{ selected: opponent === null }} onPress={() => setOpponent(null)} style={styles.typeChip}><Text maxFontSizeMultiplier={CHIP_MAX_FONT_SCALE} style={styles.typeChipText}>{opponent === null ? '✓ ' : ''}Single-team match</Text></Pressable>
           {teamChoices.filter(team => team.id !== teamId).map(team => <Pressable key={team.id} accessibilityRole="button" accessibilityState={{ selected: opponent === team.id }} onPress={() => setOpponent(team.id)} style={styles.typeChip}>
-            <Text style={styles.typeChipText}>{opponent === team.id ? '✓ ' : ''}{team.name}</Text>
+            <Text maxFontSizeMultiplier={CHIP_MAX_FONT_SCALE} style={styles.typeChipText}>{opponent === team.id ? '✓ ' : ''}{team.name}</Text>
           </Pressable>)}
           {choicesError ? <Text accessibilityRole="alert">{choicesError}</Text> : null}
           {!choicesLoaded || choicesCursor ? <Pressable accessibilityRole="button" accessibilityState={{ disabled: choicesLoading }} disabled={choicesLoading} onPress={() => { void loadChoices(); }}><Text>{choicesLoading ? 'Loading opponent teams...' : choicesLoaded ? 'Load more opponent teams' : 'Load opponent teams'}</Text></Pressable> : null}
@@ -371,7 +373,9 @@ const styles = StyleSheet.create({
   },
   typeChip: {
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.xs,
+    minHeight: 36,
+    justifyContent: 'center',
     borderRadius: radius.full,
     borderWidth: 1,
     borderColor: colors.border,
