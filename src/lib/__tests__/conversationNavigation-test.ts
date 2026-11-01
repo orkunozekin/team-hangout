@@ -15,14 +15,14 @@ test('household targets keep one announcement per organization and division and 
     { id: 'practice', orgId: 'org', title: 'Sibling practice' },
   ]);
   expect(targets.map(target => target.label)).toEqual([
-    'Open Demo Club announcements',
-    'Open U12 announcements',
-    'Open Stars conversation',
-    'Open Comets conversation',
-    'Open Other Club announcements',
-    'Open U10 announcements',
-    'Open Hawks conversation',
-    'Open conversation for Sibling practice',
+    'Demo Club announcements',
+    'U12 announcements',
+    'Stars',
+    'Comets',
+    'Other Club announcements',
+    'U10 announcements',
+    'Hawks',
+    'Sibling practice',
   ]);
   expect(targets.find(target => target.scopeType === 'division' && target.scopeId === 'u12')).toMatchObject({ orgId: 'org' });
   expect(targets.filter(target => target.scopeType === 'team')).toHaveLength(3);
@@ -35,7 +35,7 @@ test('a household team without a division still opens its organization and team 
 
 test('a division without a display name still opens one announcement', () => {
   const { divisionName: _name, ...team } = stars;
-  expect(householdConversationTargets([team], []).find(target => target.scopeType === 'division')?.label).toBe('Open division announcements');
+  expect(householdConversationTargets([team], []).find(target => target.scopeType === 'division')?.label).toBe('Division announcements');
 });
 
 test('a coach-only team opens its team channel and not family announcements', () => {
@@ -44,7 +44,7 @@ test('a coach-only team opens its team channel and not family announcements', ()
 
 test('canonical team navigation opens the team channel and skips legacy teams', () => {
   expect(teamConversationTargets({ id: 'stars', name: 'Stars', schemaVersion: 2, orgId: 'org' })).toEqual([
-    { orgId: 'org', scopeType: 'team', scopeId: 'stars', label: 'Open team conversation' },
+    { orgId: 'org', scopeType: 'team', scopeId: 'stars', label: 'Stars' },
   ]);
   expect(teamConversationTargets({ id: 'legacy', name: 'Legacy', orgId: 'org' })).toEqual([]);
   expect(teamConversationTargets({ id: 'stars', name: 'Stars', schemaVersion: 2 })).toEqual([]);

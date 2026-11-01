@@ -34,7 +34,6 @@ import {
   TextField,
 } from "../components/ui";
 import { colors, type } from "../theme/theme";
-import type { ConversationRoute } from "../lib/conversationNavigation";
 
 function errorMessage(e: unknown) {
   const code = (e as { code?: string }).code;
@@ -72,12 +71,15 @@ export default function HouseholdScreen({
   user,
   onTeams,
   onInbox,
-  onConversation,
+  onConversations,
+  showCalendarSubscriptions = true,
 }: {
   user: User;
   onTeams: () => void;
   onInbox?: () => void;
-  onConversation?: (target: ConversationRoute) => void;
+  onConversations?: () => void;
+  // The signed-in sidebar owns calendar subscriptions; only onboarding keeps the inline entry.
+  showCalendarSubscriptions?: boolean;
 }) {
   const scrollRef = useRef<ScrollView>(null);
   const [subscriptions, setSubscriptions] = useState(false);
@@ -183,6 +185,7 @@ export default function HouseholdScreen({
         </Subtitle>
         <Button label="Open Teams" onPress={onTeams} />
         {onInbox ? <Button label="Open Inbox" onPress={onInbox} /> : null}
+        {onConversations ? <Button label="Open Conversations" onPress={onConversations} /> : null}
         {error ? (
           <Text
             accessibilityRole="alert"
@@ -226,7 +229,6 @@ export default function HouseholdScreen({
                   setError("");
                   setDiscoveryVersion((n) => n + 1);
                 }}
-                onConversation={onConversation}
                 onAccessDenied={() => {
                   householdGeneration.current++;
                   setSelected(null);
@@ -237,10 +239,12 @@ export default function HouseholdScreen({
                 }}
               />
             ) : null}
-            <Button
-              label="Calendar subscriptions"
-              onPress={() => setSubscriptions(true)}
-            />
+            {showCalendarSubscriptions ? (
+              <Button
+                label="Calendar subscriptions"
+                onPress={() => setSubscriptions(true)}
+              />
+            ) : null}
             <Text accessibilityRole="header" style={styles.heading}>
               Your participants
             </Text>
