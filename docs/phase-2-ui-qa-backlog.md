@@ -17,6 +17,17 @@ Do these on synthetic data. Steps that already have a simulator capture still ne
 | P2.18–P2.19 | Native picker, transfer, and download | Rebuild so `expo-file-system` and `expo-document-picker` are in the binary. Pick a JPEG with location metadata, a PDF, an HTML file renamed to `photo.jpg`, and a file over 10 MB. Send the ready JPEG. Download it. Revoke the guardian and tombstone the message. Both downloads fail. Leave a quarantined upload for 24 hours and confirm the purge removes it. |
 | P2.20 | Staging only. No new native screen | Confirm the indexes in `docs/phase-2-pilot-runbook.md` are READY. Create `ATTACHMENT_UPLOAD_KEY`. Run the scanner, expiry, purge, and one 10 MiB JPEG plus one 10 MiB PDF drill before enabling `features.attachments`. The web pilot page is covered below and is not a device pass. |
 
+## 2026-10-31 iOS simulator pass
+
+Run on the iPhone 17 Pro simulator (iOS dev client) against local emulators (`demo-team-hangout`) with the synthetic Phase 3 seed (`p3demo-*@example.test`), signed in as the coach.
+
+- **Fixed:** At the largest accessibility text size, `PrimaryButton`, `SecondaryButton` and `LinkButton` labels grew past 3x and split words mid-word ("conversati / on"). Labels now cap at `BUTTON_MAX_FONT_SCALE` (1.5). Verified on the simulator at Accessibility XXXL on event detail; covered by `accessibility-test.tsx`.
+- **Fixed:** The closed Team attendance section on event detail added 16 pt of extra space below itself (`marginVertical`), unlike the other event sections. It now uses `marginTop: spacing.md`.
+- **Verified on simulator:** Phase 3 event sections (attendance, lineup, playing time, result, standings, volunteers, rides, bracket) render for a coach on canonical match detail; the private lineup editor opens with the soccer surface and the families-cannot-see notice. The household calendar opens organization, team and event conversation entries, and an organization without `features.conversations` shows the unavailable conversation.
+- **Still open (found here):** Schedule Upcoming filters by `startsAt >= now`, so a match already in progress drops to Past events while the coach still needs playing time. Needs a backend view change (`endsAt` cutoff and cursor semantics), not done in this pass.
+- **Still open (found here):** Some card headings and body text that are not buttons still split long words at Accessibility XXXL (for example "Maple Foxes responses" in availability). Needs a per-screen pass.
+- **Blocked, needs a human tester:** VoiceOver and TalkBack on the real `EventLineup` (turn on VoiceOver, open Team lineup as a coach, place a marker with the list alternative, save, reload and confirm the order is announced); every Android row (no Android SDK on this Mac); physical-device rows P2.11, P2.12, P2.14 and P2.18–P2.19 as listed in the table above; P2.15 needs `features.rsvpReminders` plus a reminder expansion and a cold start; P2.16 and P2.17 guardian before/after `policies.youthChannels` approval and revocation were not seeded in this pass.
+
 ## P2.20 Integrated pilot hardening
 
 - **PR:** this change, on `codex/p2-20-integrated-pilot-hardening-c838`.

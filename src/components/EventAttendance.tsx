@@ -20,7 +20,7 @@ import {
   getAttendanceHistory,
 } from "../firebase/attendance";
 import { SecondaryButton, TextField } from "./ui";
-import { colors, type } from "../theme/theme";
+import { colors, spacing, type } from "../theme/theme";
 const labels = {
   unknown: "Unknown",
   present: "Present",
@@ -427,7 +427,7 @@ function AttendanceEntry({
   );
 }
 const styles = StyleSheet.create({
-  section: { marginVertical: 16 },
+  section: { marginTop: spacing.md },
   heading: { ...type.h2, color: colors.text, marginBottom: 8 },
   copy: { ...type.body, color: colors.textMuted, marginBottom: 8 },
   small: { ...type.caption, color: colors.textMuted, marginBottom: 8 },
