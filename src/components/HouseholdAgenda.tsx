@@ -15,13 +15,13 @@ import type {
 import { listHouseholdAgenda } from "../firebase/agenda";
 import {
   addDays,
-  agendaTime,
   dateInZone,
   dayBoundary,
 } from "../lib/agendaTime";
 import { FieldLabel, TextField } from "./ui";
 import { colors, type } from "../theme/theme";
 import OfflineNotice from "./OfflineNotice";
+import EventCard from "./EventCard";
 import {
   clearGameDayCache,
   isGameDayCacheAccessLoss,
@@ -418,30 +418,24 @@ export default function HouseholdAgenda({
         </Text>
       ) : null}
       {items.map((event) => (
-        <View key={event.id} style={styles.card}>
-          <Text style={styles.eventTitle}>{event.title}</Text>
-          {event.status ? <Text style={styles.copy}>{event.status === "postponed" ? "Postponed: awaiting a new schedule" : event.status === "cancelled" ? "Cancelled" : event.status === "completed" ? "Completed" : "Scheduled"} · Schedule version {event.scheduleVersion ?? 1}</Text> : null}
-          <Text style={styles.copy}>
-            {event.participants.map((p) => p.displayName).join(" · ") ||
-              "Your team role"}
-          </Text>
-          <Text style={styles.time}>
-            {agendaTime(event.startsAt, event.endsAt, zone)}
-          </Text>
-          <Text style={styles.small}>Event timezone: {event.timeZone}</Text>
-          <Text style={styles.copy}>
-            {event.type === "practice" ? "Practice" : "Match"} ·{" "}
-            {event.teams.map((t) => t.name).join(" · ")}
-          </Text>
-          <Text style={styles.small}>
-            {event.teams
-              .map(
-                (t) =>
-                  `${t.organizationName} · ${t.seasonName}${t.archived ? " (archived)" : ""}`,
-              )
-              .filter((v, i, all) => all.indexOf(v) === i)
-              .join("\n")}
-          </Text>
+        <EventCard
+          key={event.id}
+          displayZone={zone}
+          event={{
+            title: event.title,
+            type: event.type,
+            status: event.status,
+            startsAt: event.startsAt,
+            endsAt: event.endsAt,
+            timeZone: event.timeZone,
+            teamNames: event.teams.map((t) => t.name),
+            location: event.location ?? { name: "Location to be confirmed" },
+            participants: event.participants.map((p) => p.displayName),
+            contexts: seasons.length > 1
+              ? event.teams.map((t) => `${t.organizationName} · ${t.seasonName}${t.archived ? " (archived)" : ""}`)
+              : event.teams.filter((t) => t.archived).map(() => "Archived season"),
+          }}
+        >
           {cached ? (
             <Text style={styles.small}>Responses and check-in require a connection. No offline changes are queued.</Text>
           ) : (
@@ -450,11 +444,7 @@ export default function HouseholdAgenda({
               {responseEvent === event.id ? <EventAvailability eventId={event.id} /> : null}
             </>
           )}
-          <Text style={styles.copy}>
-            {event.location?.name || "Location to be confirmed"}
-            {event.location?.address ? `\n${event.location.address}` : ""}
-          </Text>
-        </View>
+        </EventCard>
       ))}
       {page?.nextCursor ? (
         <Action
@@ -479,18 +469,8 @@ export default function HouseholdAgenda({
 const styles = StyleSheet.create({
   section: { marginTop: 20, marginBottom: 24 },
   heading: { ...type.h2, color: colors.text, marginBottom: 12 },
-  eventTitle: { ...type.h2, color: colors.text, marginBottom: 8 },
   copy: { ...type.body, color: colors.textMuted, marginBottom: 8 },
   small: { ...type.caption, color: colors.textMuted, marginBottom: 8 },
-  time: { ...type.bodyMedium, color: colors.text, marginBottom: 8 },
-  card: {
-    backgroundColor: colors.card,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 18,
-    marginVertical: 8,
-  },
   wrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   action: {
     backgroundColor: colors.primarySoft,

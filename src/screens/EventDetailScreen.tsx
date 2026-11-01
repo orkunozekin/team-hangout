@@ -1,4 +1,5 @@
 import { agendaTime } from '../lib/agendaTime';
+import { eventCardContent } from '../lib/eventCard';
 import { eventConversationTarget } from '../lib/conversationNavigation';
 import EventAttendance from '../components/EventAttendance';
 import EventAvailability from "../components/EventAvailability";
@@ -220,6 +221,7 @@ export default function EventDetailScreen({
     );
   }
 
+  const headerTeams = eventCardContent({ title: event.title, type: event.type, teamNames: event.teams?.map(team => team.name) }).teams;
   return (
     <Screen edges={['bottom']}>
       <ScrollView>
@@ -244,10 +246,10 @@ export default function EventDetailScreen({
 
         <Title>{event.title}</Title>
         {event.schemaVersion === 2 ? <>
-          <Text style={styles.row}>{event.status} · Schedule version {event.scheduleVersion}</Text>
-          <Text style={styles.row}>{event.teams?.map(team => team.name).join(' vs ')} · {event.timeZone}</Text>
+          {headerTeams ? <Text style={styles.row}>{headerTeams}</Text> : null}
           {event.status === 'postponed' ? <Text style={styles.row}>Awaiting a new schedule. The previous time is shown below.</Text> : null}
           {event.status === 'cancelled' ? <Text style={styles.row}>Cancelled. This event is retained in schedule history.</Text> : null}
+          {event.status === 'completed' ? <Text style={styles.row}>Completed.</Text> : null}
         </> : null}
 
         <Text style={styles.row}>

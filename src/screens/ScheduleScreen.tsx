@@ -66,6 +66,7 @@ import {
   type,
 } from '../theme/theme';
 import OfflineNotice from '../components/OfflineNotice';
+import EventCard from '../components/EventCard';
 import {
   clearGameDayCache,
   isGameDayCacheAccessLoss,
@@ -280,44 +281,20 @@ export default function ScheduleScreen({
           </View>
         }
         renderItem={({ item }) => (
-          <Pressable
-            style={styles.card}
-            accessibilityRole="button"
-            onPress={() =>
-              navigation.navigate('EventDetail', { eventId: item.id })
-            }
-          >
-            <View style={styles.cardTop}>
-              <View
-                style={[
-                  styles.badge,
-                  item.type === 'match'
-                    ? styles.badgeMatch
-                    : styles.badgePractice,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.badgeText,
-                    item.type === 'match'
-                      ? styles.badgeTextMatch
-                      : styles.badgeTextPractice,
-                  ]}
-                >
-                  {item.type === 'match' ? 'Match' : 'Practice'}
-                </Text>
-              </View>
-              <Text style={styles.time}>{item.time}</Text>
-            </View>
-            <Text style={styles.cardTitle}>{item.title}</Text>
-            {item.status ? <Text style={styles.meta}>{item.status} · Schedule version {item.scheduleVersion}</Text> : null}
-            {item.teams ? <Text style={styles.meta}>{item.teams.map(team => team.name).join(' vs ')}</Text> : null}
-            <Text style={styles.meta}>
-              {formatEventDateLabel(item.date)}
-              {item.location?.name ? ` · ${item.location.name}` : ''}
-              {item.timeZone ? ` · ${item.timeZone.replace(/_/g, ' ')}` : ''}
-            </Text>
-          </Pressable>
+          <EventCard
+            event={{
+              title: item.title,
+              type: item.type,
+              status: item.status,
+              startsAt: item.startsAt,
+              endsAt: item.endsAt,
+              timeZone: item.timeZone,
+              legacyWhen: `${formatEventDateLabel(item.date)} · ${item.time}`,
+              teamNames: item.teams?.map(team => team.name),
+              location: item.location?.name ? { name: item.location.name } : null,
+            }}
+            onPress={() => navigation.navigate('EventDetail', { eventId: item.id })}
+          />
         )}
       />
     </Screen>
@@ -357,50 +334,6 @@ const styles = StyleSheet.create({
   list: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.xxl,
-  },
-  card: {
-    backgroundColor: colors.card,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    ...shadow.card,
-  },
-  cardTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  badge: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: radius.full,
-  },
-  badgePractice: {
-    backgroundColor: colors.practiceBg,
-  },
-  badgeMatch: {
-    backgroundColor: colors.matchBg,
-  },
-  badgeText: {
-    ...type.tiny,
-    textTransform: 'uppercase',
-  },
-  badgeTextPractice: {
-    color: colors.practice,
-  },
-  badgeTextMatch: {
-    color: colors.match,
-  },
-  time: {
-    ...type.label,
-    color: colors.textMuted,
-  },
-  cardTitle: {
-    fontFamily: fonts.semiBold,
-    fontSize: 16,
-    color: colors.text,
-    marginBottom: 4,
   },
   meta: {
     ...type.caption,
