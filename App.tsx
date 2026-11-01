@@ -7,6 +7,7 @@ import React, {
 
 import {
   ActivityIndicator,
+  AppState,
   Linking,
   ScrollView,
   StyleSheet,
@@ -16,6 +17,7 @@ import {
 import {
   NavigationContainer,
   createNavigationContainerRef,
+  useIsFocused,
 } from '@react-navigation/native';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
@@ -30,7 +32,9 @@ import {
 } from '@react-navigation/native-stack';
 
 import {
+  SafeAreaInsetsContext,
   SafeAreaProvider,
+  useSafeAreaInsets,
 } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
@@ -237,6 +241,29 @@ function OnboardingNavigator({
   );
 }
 
+// A native header already clears the top inset, so screens under it must not pad for it again.
+function TopInsetUnderHeader({ children }: { children: React.ReactNode }) {
+  const insets = useSafeAreaInsets();
+  return <SafeAreaInsetsContext.Provider value={{ ...insets, top: 0 }}>{children}</SafeAreaInsetsContext.Provider>;
+}
+
+// Private feed URLs must not outlive the visit: unmount on blur or background so they are discarded and reloaded fresh.
+export function CalendarSubscriptionsTab({ userId, onBack }: { userId: string; onBack: () => void }) {
+  const focused = useIsFocused();
+  const [appActive, setAppActive] = useState(AppState.currentState === 'active');
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', state => setAppActive(state === 'active'));
+    return () => sub.remove();
+  }, []);
+  return (
+    <Screen>
+      <ScrollView contentContainerStyle={styles.scroll}>
+        {focused && appActive ? <CalendarSubscriptionsScreen key={userId} onBack={onBack} /> : null}
+      </ScrollView>
+    </Screen>
+  );
+}
+
 export const SIDEBAR_ITEMS: (SidebarItem & { key: keyof MainTabParamList; superAdminOnly?: boolean })[] = [
   { key: 'Household', label: 'Household', icon: 'home-outline' },
   { key: 'Schedule', label: 'Schedule', icon: 'calendar-outline' },
@@ -316,7 +343,7 @@ export function MainTabs({
         {({ navigation }) => <ConversationsScreen activeTeam={team} onOpen={(target) => navigation.navigate('Conversation', target)} />}
       </Tab.Screen>
       <Tab.Screen name="CalendarSubscriptions" options={{ title: 'Calendar subscriptions' }}>
-        {({ navigation }) => <Screen><ScrollView contentContainerStyle={styles.scroll}><CalendarSubscriptionsScreen key={user.uid} onBack={() => navigation.navigate('Household')} /></ScrollView></Screen>}
+        {({ navigation }) => <CalendarSubscriptionsTab userId={user.uid} onBack={() => navigation.navigate('Household')} />}
       </Tab.Screen>
       <Tab.Screen name="Inbox">{() => <NotificationsScreen userId={user.uid} pushProjectId={pushProjectId} notice={notice} />}</Tab.Screen>
       {isSuperAdmin ? (
@@ -392,7 +419,11 @@ function AppNavigator({
         )}
       </RootStack.Screen>
       <RootStack.Screen name="TeamDetail" options={({ route }) => ({ title: route.params.teamName, headerBackTitle: 'Teams' })}>
-        {({ route }) => <TeamScreen teamId={route.params.teamId} membership={route.params.membership} appRole={appRole} />}
+        {({ route }) => (
+          <TopInsetUnderHeader>
+            <TeamScreen teamId={route.params.teamId} membership={route.params.membership} appRole={appRole} />
+          </TopInsetUnderHeader>
+        )}
       </RootStack.Screen>
       <RootStack.Screen name="Conversation" options={{ title: 'Conversation' }}>
         {({ route }) => <ConversationScreen orgId={route.params.orgId} scopeType={route.params.scopeType} scopeId={route.params.scopeId} />}

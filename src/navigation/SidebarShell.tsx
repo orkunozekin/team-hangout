@@ -6,6 +6,7 @@ import {
   Easing,
   findNodeHandle,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -152,6 +153,7 @@ export default function SidebarShell({
             ]}
           >
             <Text style={styles.brand}>Team Hangout</Text>
+            <ScrollView>
             {items.map((item, index) => {
               const active = item.key === activeKey;
               return (
@@ -168,6 +170,7 @@ export default function SidebarShell({
                 </Pressable>
               );
             })}
+            </ScrollView>
           </Animated.View>
         </View>
       ) : null}

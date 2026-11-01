@@ -13,6 +13,8 @@ import { colors, fonts, spacing, type } from '../theme/theme';
 import type { ConversationScopeType } from '../../shared/conversations';
 
 const CONVERSATION_WINDOW_DAYS = 30;
+// Bounds the read cost of a very busy household; later pages are rare inside a 30 day window.
+const MAX_AGENDA_PAGES = 10;
 const SECTIONS: { title: string; scopes: ConversationScopeType[] }[] = [
   { title: 'Announcements', scopes: ['organization', 'division'] },
   { title: 'Teams', scopes: ['team'] },
@@ -27,6 +29,18 @@ export function mergeConversationTargets(...groups: ConversationTarget[][]): Con
     seen.add(key);
     return true;
   });
+}
+
+async function loadAgendaConversations(from: Date, to: Date): Promise<ConversationTarget[]> {
+  const found: ConversationTarget[][] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < MAX_AGENDA_PAGES; page++) {
+    const result = await listHouseholdAgenda({ from: from.toISOString(), to: to.toISOString(), pageSize: 50, ...(cursor ? { cursor } : {}) });
+    found.push(householdConversationTargets(result.teams, result.items));
+    cursor = result.nextCursor ?? undefined;
+    if (!cursor) break;
+  }
+  return mergeConversationTargets(...found);
 }
 
 export default function ConversationsScreen({
@@ -47,9 +61,9 @@ export default function ConversationsScreen({
     const from = new Date();
     const to = new Date(from.getTime() + CONVERSATION_WINDOW_DAYS * 86_400_000);
     const teamTargets = activeTeam ? teamConversationTargets(activeTeam) : [];
-    listHouseholdAgenda({ from: from.toISOString(), to: to.toISOString(), pageSize: 50 })
-      .then(page => {
-        if (active) setTargets(mergeConversationTargets(householdConversationTargets(page.teams, page.items), teamTargets));
+    loadAgendaConversations(from, to)
+      .then(found => {
+        if (active) setTargets(mergeConversationTargets(found, teamTargets));
       })
       .catch(() => {
         if (!active) return;

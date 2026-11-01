@@ -49,3 +49,14 @@ test('explains the empty state', async () => {
   await render(<ConversationsScreen onOpen={jest.fn()} />);
   await screen.findByText(/No conversations yet/);
 });
+
+test('follows the agenda cursor so later event conversations are listed', async () => {
+  (listHouseholdAgenda as jest.Mock)
+    .mockResolvedValueOnce({ items: [{ id: 'first', orgId: 'org', title: 'First practice' }], teams: [team], nextCursor: 'next', setupRequired: false, accessVersion: 'a' })
+    .mockResolvedValueOnce({ items: [{ id: 'later', orgId: 'org', title: 'Later match' }], teams: [team], nextCursor: null, setupRequired: false, accessVersion: 'a' });
+  await render(<ConversationsScreen onOpen={jest.fn()} />);
+  await screen.findByText('Later match');
+  expect(screen.getByText('First practice')).toBeTruthy();
+  expect((listHouseholdAgenda as jest.Mock).mock.calls[1][0]).toMatchObject({ cursor: 'next' });
+  expect(screen.getAllByText('Stars')).toHaveLength(1);
+});

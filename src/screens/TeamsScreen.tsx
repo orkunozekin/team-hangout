@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { getMembershipsForUser, getTeam } from '../firebase/teams';
 import { EmptyState, Screen, SecondaryButton, Title } from '../components/ui';
 import { colors, fonts, spacing, type } from '../theme/theme';
@@ -53,6 +54,12 @@ export default function TeamsScreen({
   }, [userId, activeTeam, activeMembership, version]);
 
   const reload = useCallback(() => setVersion(v => v + 1), []);
+  // Memberships change outside this screen, and the single-team shortcut has no refresh control.
+  const focused = useRef(false);
+  useFocusEffect(useCallback(() => {
+    if (focused.current) reload();
+    focused.current = true;
+  }, [reload]));
 
   if (!entries) return <Screen><EmptyState message="Loading teams..." /></Screen>;
 
