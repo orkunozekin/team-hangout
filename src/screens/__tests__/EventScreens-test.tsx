@@ -152,6 +152,14 @@ test('postponed event preserves its previous time and history, while management 
   expect(screen.queryByText('Edit event')).toBeNull();
   expect(screen.queryByText('Delete event')).toBeNull();
 });
+test('detail header labels completed events, hides the schedule version and drops team names the title already shows', async () => {
+  (getEvent as jest.Mock).mockResolvedValue({ ...event, status: 'completed', canManage: false });
+  await render(<EventDetailScreen membership={membership} navigation={navigation} route={{ params: { eventId: 'shared' } } as any} />);
+  await screen.findByText('Completed.');
+  expect(screen.getAllByText('Falcons vs Comets')).toHaveLength(1);
+  expect(screen.queryByText(/Schedule version|America\/Chicago/)).toBeNull();
+});
+
 test('reschedule edits local date/time independently from other details', async () => {
   await render(<CreateEditEventScreen teamId="a" membership={membership} navigation={navigation} route={{ params: { eventId: 'shared', action: 'reschedule' } } as any} />);
   await screen.findByDisplayValue('2026-10-20');
