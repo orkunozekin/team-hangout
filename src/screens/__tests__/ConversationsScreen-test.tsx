@@ -2,8 +2,10 @@ import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import ConversationsScreen from '../ConversationsScreen';
 import { listHouseholdAgenda } from '../../firebase/agenda';
+import { listModeratedOrganizations } from '../../firebase/conversations';
 
 jest.mock('../../firebase/agenda', () => ({ listHouseholdAgenda: jest.fn() }));
+jest.mock('../../firebase/conversations', () => ({ listModeratedOrganizations: jest.fn() }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 
 const team = {
@@ -59,4 +61,25 @@ test('follows the agenda cursor so later event conversations are listed', async 
   expect(screen.getByText('First practice')).toBeTruthy();
   expect((listHouseholdAgenda as jest.Mock).mock.calls[1][0]).toMatchObject({ cursor: 'next' });
   expect(screen.getAllByText('Stars')).toHaveLength(1);
+});
+
+test('offers one safety entry per household organization plus organizations the caller moderates', async () => {
+  (listHouseholdAgenda as jest.Mock).mockResolvedValue({ items: [], teams: [team], nextCursor: null, setupRequired: false, accessVersion: 'a' });
+  (listModeratedOrganizations as jest.Mock).mockResolvedValue([{ orgId: 'org', organizationName: 'Demo Club' }, { orgId: 'staff-org', organizationName: 'Staff League' }]);
+  const onSafety = jest.fn();
+  await render(<ConversationsScreen onOpen={jest.fn()} onSafety={onSafety} />);
+  await fireEvent.press(await screen.findByText('Safety and reports · Staff League'));
+  expect(screen.getAllByText(/^Safety and reports/)).toHaveLength(2);
+  await fireEvent.press(screen.getByText('Safety and reports · Demo Club'));
+  expect(onSafety.mock.calls.map(call => call[0])).toEqual([
+    { orgId: 'staff-org', organizationName: 'Staff League' },
+    { orgId: 'org', organizationName: 'Demo Club' },
+  ]);
+});
+
+test('keeps the household safety entry when the staff lookup fails', async () => {
+  (listHouseholdAgenda as jest.Mock).mockResolvedValue({ items: [], teams: [team], nextCursor: null, setupRequired: false, accessVersion: 'a' });
+  (listModeratedOrganizations as jest.Mock).mockRejectedValue(new Error('offline'));
+  await render(<ConversationsScreen onOpen={jest.fn()} onSafety={jest.fn()} />);
+  expect(await screen.findByText('Safety and reports · Demo Club')).toBeTruthy();
 });

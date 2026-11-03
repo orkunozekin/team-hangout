@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { CONVERSATION_REPORT_REASONS, type ConversationReportReason } from '../../shared/conversations';
-import { CHIP_MAX_FONT_SCALE, DestructiveButton, LinkButton, PrimaryButton, SecondaryButton } from './ui';
+import { CHIP_MAX_FONT_SCALE, ConfirmDialog, LinkButton, PrimaryButton, SecondaryButton } from './ui';
 import { colors, radius, spacing, type } from '../theme/theme';
 
 /** Report and block actions under someone else's message. Reports go to organization moderators only. */
@@ -19,6 +19,7 @@ export function MessageSafety({
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const [confirmingBlock, setConfirmingBlock] = useState(false);
   async function submit() {
     if (!reason) return;
     setSaving(true); setStatus(null);
@@ -52,16 +53,16 @@ export function MessageSafety({
       <SecondaryButton label="Cancel report" onPress={() => { setOpen(false); setReason(null); setNote(''); }} />
     </View> : <View style={styles.actions}>
       <LinkButton label="Report message" onPress={() => { setOpen(true); setStatus(null); }} />
+      {canBlock ? <LinkButton label="Block author" onPress={() => setConfirmingBlock(true)} /> : null}
     </View>}
-    {canBlock && !open ? <DestructiveButton
-      label="Block author"
-      onPress={() => void block()}
-      confirm={{
-        title: 'Block this member?',
-        message: 'You will stop seeing their messages in this organization’s team and event channels. Staff still see everything, and you can unblock them from Conversations › Safety.',
-        confirmLabel: 'Block member',
-      }}
-    /> : null}
+    <ConfirmDialog
+      visible={confirmingBlock}
+      title="Block this member?"
+      message="You will stop seeing their messages in this organization’s team and event channels. Staff still see everything, and you can unblock them from Conversations › Safety."
+      confirmLabel="Block member"
+      onCancel={() => setConfirmingBlock(false)}
+      onConfirm={() => { setConfirmingBlock(false); void block(); }}
+    />
     {status ? <Text accessibilityRole="alert" style={styles.caption}>{status}</Text> : null}
   </View>;
 }

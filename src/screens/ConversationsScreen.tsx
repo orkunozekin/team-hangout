@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { listHouseholdAgenda } from '../firebase/agenda';
+import { listModeratedOrganizations } from '../firebase/conversations';
 import {
   householdConversationTargets,
   teamConversationTargets,
@@ -34,13 +35,16 @@ export function mergeConversationTargets(...groups: ConversationTarget[][]): Con
 const ANNOUNCEMENT_SUFFIX = ' announcements';
 
 /** One safety entry per organization, named from its announcement channel when the household has one. */
-export function safetyOrganizations(targets: ConversationTarget[]) {
+export function safetyOrganizations(targets: ConversationTarget[], moderated: { orgId: string; organizationName?: string }[] = []) {
   const orgs = new Map<string, { orgId: string; organizationName?: string }>();
   for (const target of targets) {
     const named = target.scopeType === 'organization' && target.label.endsWith(ANNOUNCEMENT_SUFFIX)
       ? target.label.slice(0, -ANNOUNCEMENT_SUFFIX.length) : undefined;
     const current = orgs.get(target.orgId);
     if (!current || (!current.organizationName && named)) orgs.set(target.orgId, { orgId: target.orgId, ...(named ? { organizationName: named } : {}) });
+  }
+  for (const org of moderated) {
+    if (!orgs.get(org.orgId)?.organizationName) orgs.set(org.orgId, org);
   }
   return [...orgs.values()];
 }
@@ -69,6 +73,8 @@ export default function ConversationsScreen({
   const [targets, setTargets] = useState<ConversationTarget[] | null>(null);
   const [error, setError] = useState('');
   const [version, setVersion] = useState(0);
+  const showSafety = onSafety != null;
+  const [moderated, setModerated] = useState<{ orgId: string; organizationName?: string }[]>([]);
 
   useEffect(() => {
     let active = true;
@@ -86,8 +92,13 @@ export default function ConversationsScreen({
         setTargets(teamTargets);
         setError('Unable to load all conversations. Check your connection and try again.');
       });
+    if (showSafety) {
+      listModeratedOrganizations()
+        .then(found => { if (active) setModerated(found); })
+        .catch(() => { if (active) setModerated([]); });
+    }
     return () => { active = false; };
-  }, [activeTeam, version]);
+  }, [activeTeam, version, showSafety]);
 
   const reload = useCallback(() => setVersion(v => v + 1), []);
 
@@ -126,7 +137,7 @@ export default function ConversationsScreen({
             </React.Fragment>
           );
         }) : null}
-        {targets && onSafety ? safetyOrganizations(targets).map(org => (
+        {targets && onSafety ? safetyOrganizations(targets, moderated).map(org => (
           <SecondaryButton
             key={org.orgId}
             label={org.organizationName ? `Safety and reports · ${org.organizationName}` : 'Safety and reports'}

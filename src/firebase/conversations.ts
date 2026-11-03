@@ -46,3 +46,10 @@ export async function moderateConversationMessage(input: ChannelQuery & { messag
 export async function resolveConversationReport(input: { orgId: string; reportId: string; resolution: 'dismissed' | 'removed' }) {
   return runCommand('resolveConversationReport', input, requestId());
 }
+/** Organizations where the caller is current staff, so moderators without household channels reach the report queue. */
+export async function listModeratedOrganizations(): Promise<{ orgId: string; organizationName?: string }[]> {
+  const result = (await httpsCallable<{ pageSize: number }, { items: { id: string; name?: string; roles: string[] }[] }>(functions, 'listMyOrganizations')({ pageSize: 50 })).data;
+  return result.items
+    .filter(item => item.roles.includes('orgAdmin') || item.roles.includes('programStaff'))
+    .map(item => ({ orgId: item.id, ...(item.name ? { organizationName: item.name } : {}) }));
+}
