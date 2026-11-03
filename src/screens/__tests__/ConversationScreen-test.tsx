@@ -222,3 +222,43 @@ test('keeps the closed-policy banner when the channel has no messages yet', asyn
   expect(screen.getByText(/Youth posting is closed/)).toBeTruthy();
   expect(screen.getByLabelText('Send message')).toBeTruthy();
 });
+
+const parentMessage = { id: 'm2', sequence: 2, authorUid: 'parent', body: 'Unkind words', tombstoned: false, pinned: false, createdAt: '2026-10-21T12:00:00.000Z', mine: false };
+
+test('reports another member’s message with a reason and note', async () => {
+  (api.listConversationMessages as jest.Mock).mockResolvedValue({ ...page, items: [parentMessage], canBlock: true });
+  (api.reportConversationMessage as jest.Mock).mockResolvedValue({ id: 'r1', status: 'open' });
+  await render(<ConversationScreen orgId="org" scopeType="team" scopeId="team" />);
+  await fireEvent.press(await screen.findByText('Report message'));
+  expect(screen.getByText('Send report')).toBeTruthy();
+  await fireEvent.press(screen.getByLabelText('Harassment or bullying'));
+  await fireEvent.changeText(screen.getByLabelText('Report details (optional)'), ' Aimed at my child ');
+  await fireEvent.press(screen.getByText('Send report'));
+  expect(await screen.findByText('Reported. Organization moderators will review it.')).toBeTruthy();
+  expect(api.reportConversationMessage).toHaveBeenCalledWith({ orgId: 'org', scopeType: 'team', scopeId: 'team', messageId: 'm2', reason: 'harassment', note: 'Aimed at my child' });
+  expect(screen.getByText('Unkind words')).toBeTruthy();
+});
+
+test('blocks an author only after confirmation and reloads the filtered page', async () => {
+  (api.listConversationMessages as jest.Mock)
+    .mockResolvedValueOnce({ ...page, items: [parentMessage], canBlock: true })
+    .mockResolvedValueOnce({ ...page, items: [], canBlock: true });
+  (api.blockConversationMember as jest.Mock).mockResolvedValue({ id: 'b1', blocked: true });
+  await render(<ConversationScreen orgId="org" scopeType="team" scopeId="team" />);
+  await fireEvent.press(await screen.findByLabelText('Block author'));
+  expect(api.blockConversationMember).not.toHaveBeenCalled();
+  await fireEvent.press(screen.getByText('Block member'));
+  await waitFor(() => expect(screen.queryByText('Unkind words')).toBeNull());
+  expect(api.blockConversationMember).toHaveBeenCalledWith({ orgId: 'org', scopeType: 'team', scopeId: 'team', messageId: 'm2' });
+});
+
+test('hides block for staff views and safety actions on your own or removed messages', async () => {
+  (api.listConversationMessages as jest.Mock).mockResolvedValue({
+    ...page,
+    canBlock: false,
+    items: [parentMessage, { ...parentMessage, id: 'm3', mine: true, body: 'Mine' }, { ...parentMessage, id: 'm4', tombstoned: true, body: null }],
+  });
+  await render(<ConversationScreen orgId="org" scopeType="team" scopeId="team" />);
+  expect(await screen.findAllByText('Report message')).toHaveLength(1);
+  expect(screen.queryByLabelText('Block author')).toBeNull();
+});

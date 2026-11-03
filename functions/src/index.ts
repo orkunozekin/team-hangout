@@ -60,6 +60,7 @@ export { listPilotOperations, applyPilotRollback } from './operations/pilot';
 export { monitorPhase2Pilot } from './operations/monitoring';
 export { monitorPhase3Pilot } from './operations/phase3Monitoring';
 export { postConversationMessage, listConversationMessages, setConversationPin, moderateConversationMessage, editConversationMessage, reactToConversationMessage, searchConversationMessages, postStaffNote, listStaffNotes } from './communications/conversations';
+export { reportConversationMessage, listConversationReports, resolveConversationReport, blockConversationMember, unblockConversationMember, listConversationBlocks } from './communications/conversationSafety';
 export { createAttachmentUpload, finalizeAttachment, attachmentTransport, purgeAttachmentQuarantine } from './communications/attachments';
 export { resumeNotificationInbox } from './notifications/worker';
 export { resumeRsvpReminders } from './notifications/reminders';

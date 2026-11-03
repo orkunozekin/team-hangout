@@ -195,6 +195,13 @@ service cloud.firestore {
     match /organizations/{orgId}/messageSearch/{messageId} {
       allow read, write: if false;
     }
+    // Conversation safety records are callable-only; reporter identity reaches moderators through the queue command.
+    match /organizations/{orgId}/conversationReports/{reportId} {
+      allow read, write: if false;
+    }
+    match /organizations/{orgId}/userBlocks/{blockId} {
+      allow read, write: if false;
+    }
     match /platformConfig/{docId} {
       allow read, write: if false;
     }

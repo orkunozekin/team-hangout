@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { createAttachmentUpload, finalizeAttachment } from '../firebase/attachments';
-import { editConversationMessage, listConversationMessages, postConversationMessage, reactToConversationMessage, searchConversationMessages } from '../firebase/conversations';
+import { blockConversationMember, editConversationMessage, reportConversationMessage, listConversationMessages, postConversationMessage, reactToConversationMessage, searchConversationMessages } from '../firebase/conversations';
 import { pickConversationAttachment, uploadConversationFile } from '../lib/attachmentTransport';
-import { CONVERSATION_REACTIONS, type ConversationMessage, type ConversationPage, type ConversationScopeType, type ConversationSearchPage } from '../../shared/conversations';
+import { CONVERSATION_REACTIONS, type ConversationMessage, type ConversationPage, type ConversationReportReason, type ConversationScopeType, type ConversationSearchPage } from '../../shared/conversations';
+import { MessageSafety } from '../components/MessageSafety';
 import { EmptyState, PrimaryButton, Screen, SecondaryButton, Subtitle, Title } from '../components/ui';
 import { colors, radius, spacing, type } from '../theme/theme';
 
@@ -83,6 +84,20 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
       setError('That reaction was not saved.');
     }
   }
+  async function report(item: ConversationMessage, reason: ConversationReportReason, note: string) {
+    await reportConversationMessage({ orgId, scopeType, scopeId, messageId: item.id, reason, ...(note ? { note } : {}) });
+  }
+  async function block(item: ConversationMessage) {
+    try {
+      await blockConversationMember({ orgId, scopeType, scopeId, messageId: item.id });
+    } catch (caught) {
+      const code = (caught as { details?: { domainCode?: string } }).details?.domainCode;
+      throw new Error(code === 'BLOCK_NOT_ALLOWED' ? 'Staff and coaches cannot be blocked. Report the message instead.' : 'This member was not blocked.');
+    }
+    searchToken.current += 1;
+    setSearch(null);
+    await refresh();
+  }
   async function find(cursor?: string) {
     if (!query.trim()) return;
     const token = searchToken.current;
@@ -140,6 +155,7 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
           return <Pressable key={choice.code} accessibilityRole="button" accessibilityLabel={`React with ${choice.emoji}`} accessibilityState={{ selected: reaction?.mine === true }} onPress={() => void react(item, choice.emoji)}><Text style={styles.pin}>{choice.emoji} {reaction?.count ?? 0}</Text></Pressable>;
         })}</View>}
         {item.mine && !item.tombstoned ? <SecondaryButton label="Edit message" onPress={() => { setEditing(item); setDraft(item.body ?? ''); }} /> : null}
+        {!item.mine && !item.tombstoned && item.authorUid ? <MessageSafety canBlock={page?.canBlock === true} onReport={(reason, note) => report(item, reason, note)} onBlock={() => block(item)} /> : null}
       </View>)}
       {page?.nextCursor ? <SecondaryButton label={loadingOlder ? 'Loading older messages' : 'Load older messages'} disabled={loadingOlder} onPress={() => void older()} /> : null}
       {page?.attachments === 'enabled' && page.canPost ? <SecondaryButton label={uploading ? 'Uploading file' : 'Choose a JPEG, PNG, or PDF'} disabled={uploading} onPress={() => void chooseFile()} /> : null}

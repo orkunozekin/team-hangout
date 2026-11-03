@@ -19,7 +19,7 @@ Ship Team Hangout in a state that can pass App Store review for an account-based
 | App Privacy nutrition labels | 5.1.2 | `blocked_on_human` | Suggested answers below; file in ASC |
 | PrivacyInfo.xcprivacy verify | Required Reason APIs | `deferred` | After `expo prebuild` |
 | Age gate / COPPA | 1.3 / 5.1.4 | `deferred` | Document ASC age rating only |
-| UGC report/block | 1.2 | `deferred` | Display names + event notes only |
+| UGC report/block | 1.2 | `done` | Report and block on conversation messages, staff report queue under Conversations › Safety; semantics in `docs/conversations.md` |
 | Restrict team `get` inviteCode | Security | `deferred` | |
 | Data export | GDPR nicety | `deferred` | |
 

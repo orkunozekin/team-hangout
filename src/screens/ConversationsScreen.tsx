@@ -31,6 +31,20 @@ export function mergeConversationTargets(...groups: ConversationTarget[][]): Con
   });
 }
 
+const ANNOUNCEMENT_SUFFIX = ' announcements';
+
+/** One safety entry per organization, named from its announcement channel when the household has one. */
+export function safetyOrganizations(targets: ConversationTarget[]) {
+  const orgs = new Map<string, { orgId: string; organizationName?: string }>();
+  for (const target of targets) {
+    const named = target.scopeType === 'organization' && target.label.endsWith(ANNOUNCEMENT_SUFFIX)
+      ? target.label.slice(0, -ANNOUNCEMENT_SUFFIX.length) : undefined;
+    const current = orgs.get(target.orgId);
+    if (!current || (!current.organizationName && named)) orgs.set(target.orgId, { orgId: target.orgId, ...(named ? { organizationName: named } : {}) });
+  }
+  return [...orgs.values()];
+}
+
 async function loadAgendaConversations(from: Date, to: Date): Promise<ConversationTarget[]> {
   const found: ConversationTarget[][] = [];
   let cursor: string | undefined;
@@ -46,9 +60,11 @@ async function loadAgendaConversations(from: Date, to: Date): Promise<Conversati
 export default function ConversationsScreen({
   activeTeam,
   onOpen,
+  onSafety,
 }: {
   activeTeam?: { id: string; name: string; schemaVersion?: number; orgId?: string } | null;
   onOpen: (target: ConversationRoute) => void;
+  onSafety?: (target: { orgId: string; organizationName?: string }) => void;
 }) {
   const [targets, setTargets] = useState<ConversationTarget[] | null>(null);
   const [error, setError] = useState('');
@@ -110,6 +126,13 @@ export default function ConversationsScreen({
             </React.Fragment>
           );
         }) : null}
+        {targets && onSafety ? safetyOrganizations(targets).map(org => (
+          <SecondaryButton
+            key={org.orgId}
+            label={org.organizationName ? `Safety and reports · ${org.organizationName}` : 'Safety and reports'}
+            onPress={() => onSafety(org)}
+          />
+        )) : null}
         <SecondaryButton label="Refresh conversations" onPress={reload} />
       </ScrollView>
     </Screen>

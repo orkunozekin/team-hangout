@@ -57,6 +57,40 @@ export type ConversationPage = {
   nextCursor: string | null;
   attachments: "enabled" | "disabled";
   canPost: boolean;
+  /** True for household readers of team and event channels, the only views a block filters. */
+  canBlock?: boolean;
+};
+
+/** Keep aligned with REPORT_REASONS in functions/src/communications/conversationSafety.ts. */
+export const CONVERSATION_REPORT_REASONS = [
+  { code: "harassment", label: "Harassment or bullying" },
+  { code: "inappropriate", label: "Inappropriate content" },
+  { code: "safety", label: "Safety concern" },
+  { code: "spam", label: "Spam" },
+  { code: "other", label: "Something else" },
+] as const;
+export type ConversationReportReason = (typeof CONVERSATION_REPORT_REASONS)[number]["code"];
+
+export type ConversationReport = {
+  id: string;
+  scopeType: ConversationScopeType;
+  scopeId: string;
+  messageId: string;
+  authorUid: string | null;
+  reporterUid: string | null;
+  reason: ConversationReportReason;
+  note: string | null;
+  reportedBody: string | null;
+  messageRemoved: boolean;
+  editedSinceReport: boolean;
+  createdAt: string;
+};
+
+export type ConversationBlock = {
+  id: string;
+  scopeType: ConversationScopeType;
+  scopeId: string;
+  createdAt: string;
 };
 
 export type StaffNote = {
