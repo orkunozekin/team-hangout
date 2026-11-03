@@ -42,6 +42,20 @@ Already-shipped binaries perform direct Firestore writes. Rules deny those write
 
 Use the existing development client with a Metro server from this checkout, and explicitly set `EXPO_PUBLIC_USE_EMULATORS=1`, `EXPO_PUBLIC_FIREBASE_PROJECT_ID=demo-team-hangout`, a synthetic API key, auth domain and app ID. Start the same loopback emulators with `firebase emulators:start --config firebase.emulators.json --project demo-team-hangout --only auth,firestore,functions`. Native simulator opt-in is development-only and rejects non-demo project IDs; demo projects refuse to run without opt-in. The loopback addresses target iOS Simulator; Android device routing is not configured by this step. Seed disposable users through the local Admin SDK. Never use production credentials or data for captures.
 
+### Phase 3 synthetic demo seed
+
+`scripts/seed-phase3-demo.mjs` creates the synthetic Maple Valley Youth Soccer org with the Maple Foxes, finished and live league matches, a lineup, a running playing-time session, results, standings, a published knockout bracket, volunteer slots, an approved practice plan and a completed attendance report run. It refuses to run unless `GCLOUD_PROJECT` is `demo-team-hangout`, every emulator host is loopback, and no `GOOGLE_APPLICATION_CREDENTIALS` or other project override is set. Each run deletes the previous demo competitions, reports, practice resources and events first, so it is safe to rerun.
+
+1. Install: `yarn install --ignore-engines` and `yarn --cwd functions install --ignore-engines`.
+2. Build functions: `npm --prefix functions run build`.
+3. Start emulators (background triggers must stay enabled): `firebase emulators:start --config firebase.emulators.json --project demo-team-hangout --only auth,firestore,functions`.
+4. Seed in another terminal: `GCLOUD_PROJECT=demo-team-hangout FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 FUNCTIONS_EMULATOR_HOST=127.0.0.1:5001 yarn seed:phase3`. Change the three host variables if you run the emulators on other ports.
+5. Move `.env.local` aside so Metro cannot load real config: `mv .env.local .env.local.bak`.
+6. Start Metro: `EXPO_NO_DOTENV=1 EXPO_PUBLIC_USE_EMULATORS=1 EXPO_PUBLIC_FIREBASE_PROJECT_ID=demo-team-hangout EXPO_PUBLIC_FIREBASE_API_KEY=demo-key EXPO_PUBLIC_FIREBASE_APP_ID=1:000:ios:demo yarn start`, then open the iOS development client.
+7. When done, restore it: `mv .env.local.bak .env.local`.
+
+Logins all use password `SyntheticPassword123!`: `p3demo-coach@example.test` (Foxes coach), `p3demo-guardian@example.test` (guardian of Jamie Parent), `p3demo-manager@example.test` (org admin) and `p3demo-editor@example.test` (program staff practice editor).
+
 Canonical contract fixtures independently reject mismatched organization/program/season/division references, cross-org event team sets, malformed roles/revisions/timestamps and invalid event lifecycle/publication values. These pure validators do not grant authorization, implement hierarchy commands, prove future tenant access, or prove production indexes. Later steps must test those policies against their actual handlers and rules.
 
 CI runs both the existing native unit/coverage job and a separate emulator job without live secrets. Native UI evidence for Step 2 is recorded in its PR and feature handoff.
