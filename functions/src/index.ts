@@ -1,5 +1,6 @@
 import { initializeApp } from 'firebase-admin/app';
 import { setGlobalOptions } from 'firebase-functions/v2';
+import { demoRuntime, essentialEmailProviderConfigured } from './email/transport';
 
 // Bound the isolated staging project without changing production resource settings.
 if (process.env.GCLOUD_PROJECT === 'team-hangout-staging') {
@@ -28,11 +29,11 @@ export { uploadRosterImport, getRosterImport, resolveRosterImportRow, commitRost
 export { uploadScheduleImport, getScheduleImport, resolveScheduleImportRow, commitScheduleImport, refreshScheduleImport } from "./imports/roster";
 export { prepareSchedulePublication, publishScheduleImport } from "./imports/publication";
 
-// Do not register provider secrets or a sending schedule in isolated staging.
+// Register provider secrets and a sending schedule only where an email provider is configured.
 export const resumeEssentialEmail: typeof import('./email/worker').resumeEssentialEmail | undefined =
-  process.env.GCLOUD_PROJECT === 'team-hangout-staging'
-    ? undefined
-    : require('./email/worker').resumeEssentialEmail;
+  demoRuntime() || essentialEmailProviderConfigured()
+    ? require('./email/worker').resumeEssentialEmail
+    : undefined;
 export { getPrivateEventInformation } from "./email/access";
 export { listEssentialEmail, getEssentialEmailPreference, setEssentialEmailPreference } from "./email/commands";
 
