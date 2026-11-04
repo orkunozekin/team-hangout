@@ -83,3 +83,16 @@ test('keeps the household safety entry when the staff lookup fails', async () =>
   await render(<ConversationsScreen onOpen={jest.fn()} onSafety={jest.fn()} />);
   expect(await screen.findByText('Safety and reports · Demo Club')).toBeTruthy();
 });
+
+test('a staff-only moderator sees the discovery failure instead of an empty conversation list', async () => {
+  (listHouseholdAgenda as jest.Mock).mockResolvedValue({ items: [], teams: [], nextCursor: null, setupRequired: false, accessVersion: 'a' });
+  (listModeratedOrganizations as jest.Mock)
+    .mockRejectedValueOnce(new Error('offline'))
+    .mockResolvedValueOnce([{ orgId: 'staff-org', organizationName: 'Staff League' }]);
+  await render(<ConversationsScreen onOpen={jest.fn()} onSafety={jest.fn()} />);
+  expect(await screen.findByText('Unable to load the organizations you moderate. Refresh conversations to try again.')).toBeTruthy();
+  expect(screen.queryByText(/No conversations yet/)).toBeNull();
+  await fireEvent.press(screen.getByText('Refresh conversations'));
+  expect(await screen.findByText('Safety and reports · Staff League')).toBeTruthy();
+  expect(screen.queryByText(/Unable to load the organizations you moderate/)).toBeNull();
+});

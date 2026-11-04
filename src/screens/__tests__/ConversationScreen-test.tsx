@@ -1,5 +1,5 @@
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import ConversationScreen from '../ConversationScreen';
 import * as api from '../../firebase/conversations';
 import * as attachments from '../../firebase/attachments';
@@ -268,4 +268,23 @@ test('keeps reporting for a deleted author but offers no block', async () => {
   await render(<ConversationScreen orgId="org" scopeType="team" scopeId="team" />);
   expect(await screen.findByText('Report message')).toBeTruthy();
   expect(screen.queryByLabelText('Block author')).toBeNull();
+});
+
+test('an older page still loading when a block completes cannot re-add the blocked author', async () => {
+  let finishOlder: (value: unknown) => void = () => {};
+  (api.listConversationMessages as jest.Mock)
+    .mockResolvedValueOnce({ ...page, items: [parentMessage], canBlock: true, nextCursor: 's1_m1' })
+    .mockReturnValueOnce(new Promise(resolve => { finishOlder = resolve; }))
+    .mockResolvedValueOnce({ ...page, items: [], canBlock: true, nextCursor: null });
+  (api.blockConversationMember as jest.Mock).mockResolvedValue({ id: 'b1', blocked: true });
+  await render(<ConversationScreen orgId="org" scopeType="team" scopeId="team" />);
+  await fireEvent.press(await screen.findByText('Load older messages'));
+  await fireEvent.press(screen.getByLabelText('Block author'));
+  await fireEvent.press(screen.getByText('Block member'));
+  await waitFor(() => expect(screen.queryByText('Unkind words')).toBeNull());
+  await act(async () => {
+    finishOlder({ ...page, items: [{ ...parentMessage, id: 'm-old', body: 'Older unkind words' }], canBlock: true, nextCursor: null });
+    await new Promise(resolve => setTimeout(resolve, 0));
+  });
+  expect(screen.queryByText('Older unkind words')).toBeNull();
 });

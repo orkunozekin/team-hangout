@@ -75,6 +75,7 @@ export default function ConversationsScreen({
   const [version, setVersion] = useState(0);
   const showSafety = onSafety != null;
   const [moderated, setModerated] = useState<{ orgId: string; organizationName?: string }[]>([]);
+  const [safetyError, setSafetyError] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -94,8 +95,12 @@ export default function ConversationsScreen({
       });
     if (showSafety) {
       listModeratedOrganizations()
-        .then(found => { if (active) setModerated(found); })
-        .catch(() => { if (active) setModerated([]); });
+        .then(found => { if (active) { setModerated(found); setSafetyError(''); } })
+        .catch(() => {
+          if (!active) return;
+          setModerated([]);
+          setSafetyError('Unable to load the organizations you moderate. Refresh conversations to try again.');
+        });
     }
     return () => { active = false; };
   }, [activeTeam, version, showSafety]);
@@ -108,7 +113,8 @@ export default function ConversationsScreen({
         <Title>Conversations</Title>
         {error ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{error}</Text> : null}
         {!targets ? <ActivityIndicator accessibilityLabel="Loading conversations" /> : null}
-        {targets && !targets.length && !error ? (
+        {safetyError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{safetyError}</Text> : null}
+        {targets && !targets.length && !error && !safetyError ? (
           <Text style={styles.copy}>No conversations yet. Team, event and organization conversations appear here once your organization publishes them.</Text>
         ) : null}
         {targets ? SECTIONS.map(section => {

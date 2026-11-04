@@ -51,3 +51,12 @@ test('safety commands send one request id each and reads page the queue', async 
   expect(await listModeratedOrganizations()).toEqual([{ orgId: 'staff-org', organizationName: 'Staff League' }, { orgId: 'admin-org' }]);
   expect(mockCall.mock.calls.map(call => call[0])).toEqual([{ orgId: 'org' }, { orgId: 'org', cursor: 'r0', pageSize: 25 }, { pageSize: 50 }]);
 });
+
+test('moderated organization discovery follows cursors past pages with no staff organizations', async () => {
+  mockCall
+    .mockResolvedValueOnce({ data: { items: [], nextCursor: 'link-50' } })
+    .mockResolvedValueOnce({ data: { items: [{ id: 'home', roles: ['guardian'] }], nextCursor: 'link-100' } })
+    .mockResolvedValueOnce({ data: { items: [{ id: 'late-org', name: 'Late League', roles: ['orgAdmin'] }], nextCursor: null } });
+  expect(await listModeratedOrganizations()).toEqual([{ orgId: 'late-org', organizationName: 'Late League' }]);
+  expect(mockCall.mock.calls.map(call => call[0])).toEqual([{ pageSize: 50 }, { pageSize: 50, cursor: 'link-50' }, { pageSize: 50, cursor: 'link-100' }]);
+});

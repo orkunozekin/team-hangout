@@ -26,15 +26,20 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
   const [uploading, setUploading] = useState(false);
   const searchToken = useRef(0);
   const uploadGeneration = useRef(0);
+  // Each refresh starts a new generation so an older-page response read before a block cannot re-add hidden messages.
+  const pageGeneration = useRef(0);
   async function refresh(initial = false) {
+    const generation = ++pageGeneration.current;
     if (initial) { setLoading(true); setPage(null); setItems([]); setDenied(false); }
     setError(null);
     try {
       const next = await listConversationMessages({ orgId, scopeType, scopeId });
+      if (generation !== pageGeneration.current) return;
       setPage(next);
       setItems(next.items);
       setDenied(false);
     } catch {
+      if (generation !== pageGeneration.current) return;
       searchToken.current += 1;
       setPage(null);
       setItems([]);
@@ -46,13 +51,16 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
   }
   async function older() {
     if (!page?.nextCursor || loadingOlder) return;
+    const generation = pageGeneration.current;
     setLoadingOlder(true);
     setError(null);
     try {
       const next = await listConversationMessages({ orgId, scopeType, scopeId, cursor: page.nextCursor });
+      if (generation !== pageGeneration.current) return;
       setItems(current => [...current, ...next.items.filter(item => !current.some(row => row.id === item.id))]);
       setPage(next);
     } catch {
+      if (generation !== pageGeneration.current) return;
       setError('Older messages could not be loaded. Try again.');
     } finally { setLoadingOlder(false); }
   }

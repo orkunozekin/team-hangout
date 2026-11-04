@@ -47,9 +47,19 @@ export async function resolveConversationReport(input: { orgId: string; reportId
   return runCommand<{ id: string; status: string; remaining: boolean }>('resolveConversationReport', input, requestId());
 }
 /** Organizations where the caller is current staff, so moderators without household channels reach the report queue. */
+const MAX_ORGANIZATION_PAGES = 20;
 export async function listModeratedOrganizations(): Promise<{ orgId: string; organizationName?: string }[]> {
-  const result = (await httpsCallable<{ pageSize: number }, { items: { id: string; name?: string; roles: string[] }[] }>(functions, 'listMyOrganizations')({ pageSize: 50 })).data;
-  return result.items
-    .filter(item => item.roles.includes('orgAdmin') || item.roles.includes('programStaff'))
-    .map(item => ({ orgId: item.id, ...(item.name ? { organizationName: item.name } : {}) }));
+  const call = httpsCallable<{ pageSize: number; cursor?: string }, { items: { id: string; name?: string; roles: string[] }[]; nextCursor?: string | null }>(functions, 'listMyOrganizations');
+  const found: { orgId: string; organizationName?: string }[] = [];
+  let cursor: string | undefined;
+  // Discovery pages count stale and household links too, so a page can be empty while later pages still hold staff organizations.
+  for (let page = 0; page < MAX_ORGANIZATION_PAGES; page++) {
+    const result = (await call({ pageSize: 50, ...(cursor ? { cursor } : {}) })).data;
+    for (const item of result.items) {
+      if (item.roles.includes('orgAdmin') || item.roles.includes('programStaff')) found.push({ orgId: item.id, ...(item.name ? { organizationName: item.name } : {}) });
+    }
+    cursor = result.nextCursor ?? undefined;
+    if (!cursor) break;
+  }
+  return found;
 }
