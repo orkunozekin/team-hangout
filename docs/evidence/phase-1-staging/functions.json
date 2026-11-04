@@ -1,0 +1,1458 @@
+{
+  "projectId": "team-hangout-staging",
+  "implementationSha": "2152c66b72ee345e9fb302c0d0d4d371ea522c37",
+  "verifiedAt": "2026-10-13T19:59:36.837217+00:00",
+  "functionCount": 62,
+  "allActive": true,
+  "emailWorkerAbsent": true,
+  "functions": [
+    {
+      "name": "acceptInvitation",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "acceptinvitation-00001-sis",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "acceptInvitation/function-source.zip",
+          "generation": "1791921048560427"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "approveGuardian",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "approveguardian-00001-voq",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "approveGuardian/function-source.zip",
+          "generation": "1791920811975685"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "approveSelfLink",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "approveselflink-00001-huw",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "approveSelfLink/function-source.zip",
+          "generation": "1791920811851043"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "archiveSeason",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "archiveseason-00001-mem",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "archiveSeason/function-source.zip",
+          "generation": "1791920698775222"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "calendarFeed",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "calendarfeed-00001-nin",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "calendarFeed/function-source.zip",
+          "generation": "1791921172706275"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 120,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "calendarSubscriptionOptions",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "calendarsubscriptionoptions-00001-mob",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "calendarSubscriptionOptions/function-source.zip",
+          "generation": "1791921172790571"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "commitRosterImport",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "commitrosterimport-00001-dun",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "commitRosterImport/function-source.zip",
+          "generation": "1791921174009130"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "commitScheduleImport",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "commitscheduleimport-00001-wab",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "commitScheduleImport/function-source.zip",
+          "generation": "1791921296599501"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "createCalendarSubscription",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "createcalendarsubscription-00001-cug",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "createCalendarSubscription/function-source.zip",
+          "generation": "1791921048433903"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "createEvent",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "createevent-00001-diz",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "createEvent/function-source.zip",
+          "generation": "1791920565552163"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "createInvitation",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "createinvitation-00001-fiv",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "createInvitation/function-source.zip",
+          "generation": "1791920945298490"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "createOrganization",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "createorganization-00001-xoz",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "createOrganization/function-source.zip",
+          "generation": "1791920698791101"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "createTeam",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "createteam-00001-dep",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "createTeam/function-source.zip",
+          "generation": "1791920565600124"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "deleteAccount",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "deleteaccount-00001-qop",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "deleteAccount/function-source.zip",
+          "generation": "1791920565586079"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 120,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "editParticipantProfile",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "editparticipantprofile-00001-jij",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "editParticipantProfile/function-source.zip",
+          "generation": "1791920945284161"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "expireRosterImports",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "expirerosterimports-00001-xew",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "expireRosterImports/function-source.zip",
+          "generation": "1791921297078880"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 540,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "getAdminWorkspace",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "getadminworkspace-00001-fix",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "getAdminWorkspace/function-source.zip",
+          "generation": "1791920811824089"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "getEssentialEmailPreference",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "getessentialemailpreference-00001-ten",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "getEssentialEmailPreference/function-source.zip",
+          "generation": "1791921449811605"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "getParticipantProfile",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "getparticipantprofile-00001-joz",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "getParticipantProfile/function-source.zip",
+          "generation": "1791920945209623"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "getPrivateEventInformation",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "getprivateeventinformation-00001-rim",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "getPrivateEventInformation/function-source.zip",
+          "generation": "1791921449732724"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "getRosterImport",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "getrosterimport-00001-sen",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "getRosterImport/function-source.zip",
+          "generation": "1791921172779586"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "getScheduleImport",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "getscheduleimport-00001-vog",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "getScheduleImport/function-source.zip",
+          "generation": "1791921296573720"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "inspectInvitation",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "inspectinvitation-00001-qur",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "inspectInvitation/function-source.zip",
+          "generation": "1791921048492849"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "joinTeamWithInvite",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "jointeamwithinvite-00001-quy",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "joinTeamWithInvite/function-source.zip",
+          "generation": "1791920565513896"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "listCalendarSubscriptions",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "listcalendarsubscriptions-00001-tus",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "listCalendarSubscriptions/function-source.zip",
+          "generation": "1791921048400409"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "listEssentialEmail",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "listessentialemail-00001-zoy",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "listEssentialEmail/function-source.zip",
+          "generation": "1791921450403699"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "listHouseholdAgenda",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "listhouseholdagenda-00001-xul",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "listHouseholdAgenda/function-source.zip",
+          "generation": "1791921048450542"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "listInvitations",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "listinvitations-00001-nob",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "listInvitations/function-source.zip",
+          "generation": "1791921048444305"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "listLegacyTeams",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "listlegacyteams-00001-cem",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "listLegacyTeams/function-source.zip",
+          "generation": "1791920811960177"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "listMyOrganizations",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "listmyorganizations-00001-gig",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "listMyOrganizations/function-source.zip",
+          "generation": "1791920698822604"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "listMyParticipants",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "listmyparticipants-00001-qem",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "listMyParticipants/function-source.zip",
+          "generation": "1791920945238948"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "listOrganizationHierarchy",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "listorganizationhierarchy-00001-fop",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "listOrganizationHierarchy/function-source.zip",
+          "generation": "1791920811848325"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "listOrganizationParticipants",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "listorganizationparticipants-00001-hap",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "listOrganizationParticipants/function-source.zip",
+          "generation": "1791920945265560"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "listOrganizationStaff",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "listorganizationstaff-00001-zub",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "listOrganizationStaff/function-source.zip",
+          "generation": "1791920812395189"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "listRoster",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "listroster-00001-qat",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "listRoster/function-source.zip",
+          "generation": "1791920945254107"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "prepareSchedulePublication",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "prepareschedulepublication-00001-him",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "prepareSchedulePublication/function-source.zip",
+          "generation": "1791921449716744"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "processRosterImports",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "processrosterimports-00001-ril",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "processRosterImports/function-source.zip",
+          "generation": "1791921449614744"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "512Mi",
+      "timeoutSeconds": 120,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": {
+        "trigger": "projects/team-hangout-staging/locations/us-central1/triggers/processrosterimports-484269",
+        "triggerRegion": "us-central1",
+        "eventType": "google.cloud.firestore.document.v1.written",
+        "eventFilters": [
+          {
+            "attribute": "document",
+            "value": "importJobs/{jobId}",
+            "operator": "match-path-pattern"
+          },
+          {
+            "attribute": "database",
+            "value": "(default)"
+          },
+          {
+            "attribute": "namespace",
+            "value": "(default)"
+          }
+        ],
+        "pubsubTopic": "projects/team-hangout-staging/topics/eventarc-us-central1-processrosterimports-484269-842",
+        "serviceAccountEmail": "130060287753-compute@developer.gserviceaccount.com",
+        "retryPolicy": "RETRY_POLICY_DO_NOT_RETRY"
+      }
+    },
+    {
+      "name": "publishScheduleImport",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "publishscheduleimport-00001-zax",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "publishScheduleImport/function-source.zip",
+          "generation": "1791921449763370"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "refreshRosterImport",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "refreshrosterimport-00001-jef",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "refreshRosterImport/function-source.zip",
+          "generation": "1791921297419734"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "refreshScheduleImport",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "refreshscheduleimport-00001-ceh",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "refreshScheduleImport/function-source.zip",
+          "generation": "1791921449756640"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "regenerateInvite",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "regenerateinvite-00001-luj",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "regenerateInvite/function-source.zip",
+          "generation": "1791920698726298"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "renameTeam",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "renameteam-00001-tiy",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "renameTeam/function-source.zip",
+          "generation": "1791920525423361"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "resendInvitation",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "resendinvitation-00001-qov",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "resendInvitation/function-source.zip",
+          "generation": "1791921048428138"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "resolveRosterImportRow",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "resolverosterimportrow-00001-juh",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "resolveRosterImportRow/function-source.zip",
+          "generation": "1791921172792701"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "resolveScheduleImportRow",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "resolvescheduleimportrow-00001-qut",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "resolveScheduleImportRow/function-source.zip",
+          "generation": "1791921296561500"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "resumeAccountDeletions",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "resumeaccountdeletions-00001-rod",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "resumeAccountDeletions/function-source.zip",
+          "generation": "1791920565704541"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 540,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "resumeRosterImports",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "resumerosterimports-00001-ziz",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "resumeRosterImports/function-source.zip",
+          "generation": "1791921296535910"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "revokeCalendarSubscription",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "revokecalendarsubscription-00001-voc",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "revokeCalendarSubscription/function-source.zip",
+          "generation": "1791921172687736"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "revokeGuardian",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "revokeguardian-00001-zas",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "revokeGuardian/function-source.zip",
+          "generation": "1791920945219556"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "revokeInvitation",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "revokeinvitation-00001-yol",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "revokeInvitation/function-source.zip",
+          "generation": "1791921048421806"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "rotateCalendarSubscription",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "rotatecalendarsubscription-00001-rip",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "rotateCalendarSubscription/function-source.zip",
+          "generation": "1791921172801462"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "saveHierarchyEntity",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "savehierarchyentity-00001-qak",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "saveHierarchyEntity/function-source.zip",
+          "generation": "1791920698775339"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "saveParticipant",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "saveparticipant-00001-new",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "saveParticipant/function-source.zip",
+          "generation": "1791920811931374"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "saveParticipantPrivateProfile",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "saveparticipantprivateprofile-00001-say",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "saveParticipantPrivateProfile/function-source.zip",
+          "generation": "1791920811935149"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "saveTeam",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "saveteam-00001-joh",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "saveTeam/function-source.zip",
+          "generation": "1791920698773664"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "setEssentialEmailPreference",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "setessentialemailpreference-00001-pec",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "setEssentialEmailPreference/function-source.zip",
+          "generation": "1791921449713694"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "setRosterEnrollment",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "setrosterenrollment-00001-sej",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "setRosterEnrollment/function-source.zip",
+          "generation": "1791920945315382"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "setStaffAssignment",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "setstaffassignment-00001-diz",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "setStaffAssignment/function-source.zip",
+          "generation": "1791920698817260"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "softDeleteEvent",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "softdeleteevent-00001-yok",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "softDeleteEvent/function-source.zip",
+          "generation": "1791920698754709"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "updateEvent",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "updateevent-00001-boz",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "updateEvent/function-source.zip",
+          "generation": "1791920525792594"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "256Mi",
+      "timeoutSeconds": 60,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "uploadRosterImport",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "uploadrosterimport-00001-yab",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "uploadRosterImport/function-source.zip",
+          "generation": "1791921172832252"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "512Mi",
+      "timeoutSeconds": 120,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    },
+    {
+      "name": "uploadScheduleImport",
+      "state": "ACTIVE",
+      "region": "us-central1",
+      "runtime": "nodejs22",
+      "revision": "uploadscheduleimport-00001-jow",
+      "source": {
+        "storageSource": {
+          "bucket": "gcf-v2-sources-130060287753-us-central1",
+          "object": "uploadScheduleImport/function-source.zip",
+          "generation": "1791921296501426"
+        }
+      },
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "maxInstances": 2,
+      "minInstances": 0,
+      "concurrency": 1,
+      "memory": "512Mi",
+      "timeoutSeconds": 120,
+      "emailEnabled": "false",
+      "emailPolicyApproved": "false",
+      "trigger": null
+    }
+  ]
+}

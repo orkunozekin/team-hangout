@@ -1,0 +1,99 @@
+{
+  "environment": {
+    "kind": "local-emulator",
+    "project": "demo-team-hangout",
+    "region": "none, loopback; handler default us-central1 unmeasured",
+    "node": "v26.3.0",
+    "os": "darwin 25.5.0 arm64",
+    "cpu": "Apple M5 Pro",
+    "cores": 18,
+    "memoryGiB": 24,
+    "commit": "992a13308e4a43f18b627ddee30232434106619b",
+    "dirty": true,
+    "recordedAt": "2026-10-13T13:08:50.850Z",
+    "invocation": "real callable .run and service workers in one local Node process; excludes HTTP/auth/network/cold start and scheduled wait",
+    "readMetric": "transaction snapshot requests; includes retries, missing documents and repeated reads; excludes index-entry/billing accounting, setup/poll reconciliation reads and worker reads outside transactions"
+  },
+  "gates": {
+    "staging": "not run",
+    "ownerAcceptance": "pending",
+    "pilotReady": false
+  },
+  "scenarios": {
+    "agenda": {
+      "ms": 20095.095167,
+      "transactionReads": {
+        "requests": 10437,
+        "documents": 20958,
+        "emptyQueries": 63
+      },
+      "teamCount": 20,
+      "eventCount": 1860,
+      "days": 93,
+      "pageSize": 20,
+      "sampleCount": 20,
+      "firstCallMs": 1275.093583,
+      "warmSamplesMs": [
+        1101.340333,
+        957.4477080000001,
+        895.0917920000002,
+        971.5256250000002,
+        909.3310000000001,
+        912.7693330000002,
+        984.564792000001,
+        941.1660000000011,
+        920.9021670000002,
+        898.1958749999994,
+        856.9954999999991,
+        905.3885000000009,
+        895.7608749999999,
+        932.9950829999998,
+        909.0752499999999,
+        1129.6460410000018,
+        981.567665999999,
+        879.3916669999999,
+        899.7110420000026,
+        936.9671660000022
+      ],
+      "p95Ms": 1101.340333,
+      "localTargetPass": true
+    },
+    "roster5000": {
+      "ms": 291245.354542,
+      "transactionReads": {
+        "requests": 125835,
+        "documents": 210865,
+        "emptyQueries": 10000
+      },
+      "count": 5000,
+      "workerBudget": 25,
+      "previewMs": 116424.47112500001,
+      "commitMs": 174792.7695,
+      "totalMs": 291217.240625,
+      "rowsPerSecond": 28.605302234770072,
+      "localTargetPass": true,
+      "replay": "confirmed, no new outbox"
+    },
+    "schedule5000": {
+      "ms": 242924.38404100004,
+      "transactionReads": {
+        "requests": 90835,
+        "documents": 155995,
+        "emptyQueries": 4870
+      },
+      "count": 5000,
+      "workerBudget": 25,
+      "previewMs": 139535.46129200002,
+      "commitMs": 103133.12470799999,
+      "totalMs": 242668.586,
+      "rowsPerSecond": 48.481028904694405,
+      "localTargetPass": true,
+      "replay": "confirmed, no new outbox"
+    }
+  },
+  "passed": false,
+  "failure": {
+    "code": "ERR_ASSERTION",
+    "message": "Expected values to be strictly deep-equal:\n+ actual - expected\n\n+ [\n+   {\n+     path: 'teams/migration-mapped',\n+     reason: 'Invalid timestamp'\n+   }\n+ ]\n- []\n"
+  }
+}

@@ -12,6 +12,20 @@ export default ({ config }: ConfigContext): ExpoConfig => {
 
   const plugins: ExpoConfig['plugins'] = [
     'expo-font',
+    ['expo-notifications', {
+      color: '#0F3D2E',
+      defaultChannel: 'team-updates',
+      enableRemoteNotifications: true,
+      enableBackgroundRemoteNotifications: false,
+    }],
+    ['expo-location', {
+      locationWhenInUsePermission: 'Use your location once to assist with participant check-in. Location is optional and does not prove presence.',
+      locationAlwaysPermission: false,
+      locationAlwaysAndWhenInUsePermission: false,
+      isIosBackgroundLocationEnabled: false,
+      isAndroidBackgroundLocationEnabled: false,
+      isAndroidForegroundServiceEnabled: false,
+    }],
     'expo-apple-authentication',
     '@react-native-google-signin/google-signin',
   ];
@@ -26,7 +40,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     slug: 'team-hangout',
     version: '1.0.0',
     scheme: 'teamhangout',
-    orientation: 'portrait',
+    orientation: !isProduction && process.env.EXPO_PUBLIC_PHASE3_SURFACE_HARNESS === 'true'
+      ? 'default'
+      : 'portrait',
     icon: './assets/icon.png',
     userInterfaceStyle: 'light',
     splash: {
@@ -56,6 +72,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     web: {
       favicon: './assets/favicon.png',
     },
+    extra: process.env.EXPO_PUBLIC_EAS_PROJECT_ID
+      ? { eas: { projectId: process.env.EXPO_PUBLIC_EAS_PROJECT_ID } }
+      : config.extra,
     plugins,
     owner: 'orkunozekin',
   };

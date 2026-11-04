@@ -1,0 +1,74 @@
+{
+  "projectId": "team-hangout-staging",
+  "schedules": [
+    {
+      "name": "projects/team-hangout-staging/locations/us-central1/jobs/firebase-schedule-expireRosterImports-us-central1",
+      "state": "ENABLED",
+      "schedule": "every 5 minutes",
+      "oidc": {
+        "serviceAccountEmail": "130060287753-compute@developer.gserviceaccount.com",
+        "audience": "https://us-central1-team-hangout-staging.cloudfunctions.net/expireRosterImports"
+      },
+      "lastAttemptTime": null,
+      "status": {
+        "code": -1
+      }
+    },
+    {
+      "name": "projects/team-hangout-staging/locations/us-central1/jobs/firebase-schedule-resumeRosterImports-us-central1",
+      "state": "ENABLED",
+      "schedule": "every 5 minutes",
+      "oidc": {
+        "serviceAccountEmail": "130060287753-compute@developer.gserviceaccount.com",
+        "audience": "https://us-central1-team-hangout-staging.cloudfunctions.net/resumeRosterImports"
+      },
+      "lastAttemptTime": null,
+      "status": {
+        "code": -1
+      }
+    },
+    {
+      "name": "projects/team-hangout-staging/locations/us-central1/jobs/firebase-schedule-resumeAccountDeletions-us-central1",
+      "state": "ENABLED",
+      "schedule": "every 5 minutes",
+      "oidc": {
+        "serviceAccountEmail": "130060287753-compute@developer.gserviceaccount.com",
+        "audience": "https://us-central1-team-hangout-staging.cloudfunctions.net/resumeAccountDeletions"
+      },
+      "lastAttemptTime": "2026-10-13T19:58:05.291301Z",
+      "status": {}
+    }
+  ],
+  "eventarcTriggers": [
+    {
+      "name": "projects/team-hangout-staging/locations/us-central1/triggers/processrosterimports-484269",
+      "eventFilters": [
+        {
+          "attribute": "document",
+          "value": "importJobs/{jobId}",
+          "operator": "match-path-pattern"
+        },
+        {
+          "attribute": "type",
+          "value": "google.cloud.firestore.document.v1.written"
+        },
+        {
+          "attribute": "database",
+          "value": "(default)"
+        },
+        {
+          "attribute": "namespace",
+          "value": "(default)"
+        }
+      ],
+      "serviceAccount": "130060287753-compute@developer.gserviceaccount.com",
+      "destination": {
+        "cloudFunction": "projects/team-hangout-staging/locations/us-central1/functions/processRosterImports"
+      }
+    }
+  ],
+  "limitations": [
+    "Configured schedules are not proof of interrupted-import/deletion recovery.",
+    "Deletion scheduler had a successful natural authenticated invocation; other first invocations were pending at this inventory."
+  ]
+}

@@ -1,0 +1,326 @@
+import { test, expect, type Page } from "@playwright/test";
+import { createRequire } from "node:module";
+import { createDecipheriv } from "node:crypto";
+import { mkdir } from "node:fs/promises";
+// @ts-ignore Shared synthetic fixture.
+import {
+  seedHouseholdDemo,
+  householdOrg,
+  demoPassword,
+} from "../../scripts/seed-household-demo.mjs";
+const require = createRequire(
+  new URL("../../functions/package.json", import.meta.url),
+);
+const { initializeApp, deleteApp } = require("firebase-admin/app");
+const { getFirestore } = require("firebase-admin/firestore");
+const { getAuth } = require("firebase-admin/auth");
+if (process.env.ADMIN_EMULATOR_TESTS !== "1")
+  throw new Error("Run through test:admin.");
+test.describe.configure({ mode: "serial" });
+async function capture(page: Page, name: string, fullPage = true) {
+  if (!process.env.ADMIN_EVIDENCE_DIR) return;
+  await mkdir(process.env.ADMIN_EVIDENCE_DIR, { recursive: true });
+  await page.screenshot({
+    path: `${process.env.ADMIN_EVIDENCE_DIR}/${name}.png`,
+    fullPage,
+  });
+}
+async function signIn(page: Page, uid: string) {
+  await page.getByLabel("Email address").fill(`${uid}@example.test`);
+  await page.getByLabel("Password", { exact: true }).fill(demoPassword);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByText(`${uid}@example.test`, { exact: true }),
+  ).toBeVisible();
+}
+async function token(email: string) {
+  const app = initializeApp(
+    { projectId: "demo-team-hangout" },
+    `invitation-read-${Date.now()}`,
+  );
+  try {
+    const docs = await getFirestore(app)
+      .collection("emailOutbox")
+      .where("recipientEmail", "==", email)
+      .get();
+    const row = docs.docs
+      .map((d: any) => d.data())
+      .find((r: any) => r.status === "queued");
+    const p = row.payload;
+    const c = createDecipheriv(
+      "aes-256-gcm",
+      Buffer.from("11".repeat(32), "hex"),
+      Buffer.from(p.iv, "base64"),
+    );
+    c.setAuthTag(Buffer.from(p.tag, "base64"));
+    return Buffer.concat([
+      c.update(Buffer.from(p.ciphertext, "base64")),
+      c.final(),
+    ]).toString();
+  } finally {
+    await deleteApp(app);
+  }
+}
+let acceptanceToken: string;
+test.beforeAll(async () => {
+  await seedHouseholdDemo();
+  const app = initializeApp(
+    { projectId: "demo-team-hangout" },
+    "invitation-browser-setup",
+  );
+  try {
+    await getFirestore(app).doc(`organizations/${householdOrg}/participants/invite-adult-demo`).set({ schemaVersion: 2, orgId: householdOrg, kind: "adult", displayName: "Synthetic Adult", status: "active", revision: 1, linkedUserId: null });
+    for (const uid of ["ui-admin", "ui-outsider"])
+      await getAuth(app).updateUser(uid, { emailVerified: true });
+  } finally {
+    await deleteApp(app);
+  }
+});
+const invitationStatus = (page: Page) => page.locator("section").filter({ has: page.getByRole("heading", { name: "Invitation status", exact: true }) });
+
+test("admin queues, rotates and revokes an invitation with clear delivery status", async ({
+  page,
+}) => {
+  await page.goto(`/organizations/${householdOrg}/invitation`);
+  await signIn(page, "ui-admin");
+  await expect(page.getByText("No invitations yet.")).toBeVisible();
+  await capture(page, "step9-browser-empty");
+  await page
+    .getByRole("combobox", { name: "Participant", exact: true })
+    .selectOption("child-a");
+  await page.getByLabel("Recipient email").fill("ui-outsider@example.test");
+  await page
+    .getByRole("button", { name: "Send invitation", exact: true })
+    .click();
+  await expect(
+    invitationStatus(page).getByRole("cell", { name: "queued", exact: true }),
+  ).toBeVisible();
+  await expect(invitationStatus(page).locator("tbody")).toContainText(/(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday), [A-Z][a-z]{2} \d{1,2}/);
+  const old = await token("ui-outsider@example.test");
+  await page.getByRole("button", { name: "Actions for ui-outsider@example.test", exact: true }).click();
+  await expect(page.getByRole("menuitem", {name:"Resend with new link",exact:true})).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByRole("menuitem", {name:"Revoke invitation",exact:true})).toBeFocused();
+  await capture(page,"refinement-desktop-menu",false);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menuitem", {name:"Resend with new link",exact:true})).toBeHidden();
+  await page.getByRole("button", {name:"Actions for ui-outsider@example.test",exact:true}).click();
+  await expect(page.getByRole("menu")).toBeVisible();
+  await page.setViewportSize({width:390,height:844});
+  await expect(page.getByRole("menu")).toBeHidden();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(null)))));
+  await page.getByRole("button", {name:"Actions for ui-outsider@example.test",exact:true}).click();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  const bounds = await page.getByRole("menu").boundingBox();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
+  await capture(page,"refinement-mobile-menu",false);
+  let lost = false;
+  let release!: () => void;
+  let committed!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const savedOnServer = new Promise<void>(resolve => { committed = resolve; });
+  await page.route("**/resendInvitation", async route => {
+    if (lost) return route.continue();
+    lost = true;
+    await route.fetch(); // Commit the real operation, then lose only its response.
+    committed();
+    await held;
+    await route.abort("failed");
+  });
+  await page.getByRole("menuitem", {name:"Resend with new link",exact:true}).click();
+  await savedOnServer;
+  try {
+    await expect(page.getByRole("menuitem", {name:"Saving…",exact:true})).toBeDisabled();
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", {name:"Actions for ui-outsider@example.test",exact:true}).click();
+    await expect(page.getByRole("menuitem", {name:"Revoke invitation",exact:true})).toBeFocused();
+    await page.keyboard.press("Home");
+    await expect(page.getByRole("menuitem", {name:"Revoke invitation",exact:true})).toBeFocused();
+    await capture(page,"refinement-menu-busy",false);
+  } finally { release(); }
+  await expect(page.getByRole("menuitem", {name:"Retry same action",exact:true})).toBeVisible();
+  const retryBounds = await page.getByRole("menu").boundingBox();
+  expect(retryBounds!.y + retryBounds!.height).toBeLessThanOrEqual(844);
+  await capture(page,"refinement-mobile-retry",false);
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", {name:"Actions for ui-outsider@example.test",exact:true}).click();
+  await expect(page.getByRole("menuitem", {name:"Retry same action",exact:true})).toBeVisible();
+  const once = await token("ui-outsider@example.test");
+  await page.getByRole("menuitem", {name:"Retry same action",exact:true}).click();
+  await expect(page.getByRole("menu")).toBeHidden();
+  expect(await token("ui-outsider@example.test")).toBe(once);
+  await page.setViewportSize({width:1440,height:1000});
+  await expect(
+    page.getByRole("button", { name: "Actions for ui-outsider@example.test", exact: true }),
+  ).toBeEnabled();
+  await expect.poll(() => token("ui-outsider@example.test")).not.toBe(old);
+  await page.getByRole("button", {name:"Actions for ui-outsider@example.test",exact:true}).click();
+  await page.getByRole("menuitem", {name:"Revoke invitation",exact:true}).click();
+  await expect(
+    invitationStatus(page).getByRole("cell", { name: "revoked", exact: true }),
+  ).toBeVisible();
+  await capture(page, "step9-browser-revoked");
+  await page
+    .getByRole("combobox", { name: "Participant", exact: true })
+    .selectOption("child-b");
+  await page.getByLabel("Recipient email").fill("ui-outsider@example.test");
+  await page
+    .getByRole("button", { name: "Send invitation", exact: true })
+    .click();
+  await expect(
+    invitationStatus(page).getByRole("cell", { name: "pending", exact: true }),
+  ).toBeVisible();
+  await capture(page, "step9-browser-queued");
+  acceptanceToken = await token("ui-outsider@example.test");
+  await page.getByRole("combobox", {name:"Relationship",exact:true}).selectOption("self");
+  await page.getByRole("combobox", {name:"Participant",exact:true}).selectOption("invite-adult-demo");
+  await expect(page.getByText("Approved access: view your profile and schedule, and edit your contact details and respond to enrolled events.")).toBeVisible();
+  await capture(page,"step9-browser-self-rights");
+});
+test("link survives login, requires confirmation, clears on logout and accepts only intended email", async ({
+  page,
+}) => {
+  await page.goto(`/invitation#token=${acceptanceToken}`);
+  await expect(page).toHaveURL(/\/invitation$/);
+  await expect(
+    page.getByText("Sign in to review your invitation.", { exact: false }),
+  ).toBeVisible();
+  await signIn(page, "ui-admin");
+  await expect(
+    page.getByText("This invitation is for another email address.", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  await capture(page, "step9-browser-wrong-email");
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await signIn(page, "ui-outsider");
+  await expect(
+    page.getByRole("heading", { name: "Review your invitation" }),
+  ).toBeHidden();
+  await page.goto(`/invitation#token=${acceptanceToken}`);
+  await expect(
+    page.getByRole("heading", { name: "Casey Rivera" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Confirm and accept invitation" }),
+  ).toBeVisible();
+  const card = await page.locator(".invitation-acceptance").boundingBox();
+  const help = await page.locator(".invitation-help").boundingBox();
+  expect(card!.y + card!.height - (help!.y + help!.height)).toBeLessThan(45);
+  await capture(page, "step9-browser-confirm");
+  await page
+    .getByRole("button", { name: "Confirm and accept invitation" })
+    .click();
+  await expect(
+    page.getByText(
+      "Invitation accepted. Open your household to check current access.",
+    ),
+  ).toBeVisible();
+  await capture(page, "step9-browser-accepted");
+});
+
+test("new household account verifies email before confirmation and uses no native installation", async ({
+  page,
+}) => {
+  const email = `invitation-new-${Date.now()}@example.test`;
+  await page.goto(`/organizations/${householdOrg}/participant`);
+  await signIn(page, "ui-admin");
+  await expect(page.getByRole("link", {name:"Manage invitations",exact:true})).toBeVisible();
+  await capture(page, "step9-browser-participant-entry");
+  await page.getByRole("link", {name:"Manage invitations",exact:true}).click();
+  await page
+    .getByRole("combobox", { name: "Participant", exact: true })
+    .selectOption("child-a");
+  await page.getByLabel("Recipient email").fill(email);
+  await page
+    .getByRole("button", { name: "Send invitation", exact: true })
+    .click();
+  await expect(
+    invitationStatus(page).getByRole("cell", { name: email, exact: true }),
+  ).toBeVisible();
+  const raw = await token(email);
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Sign in", exact: true }),
+  ).toBeVisible();
+  await page.goto(`/invitation#token=${raw}`);
+  await page.getByLabel("Email address").fill(email);
+  await page.getByLabel("Password", { exact: true }).fill(demoPassword);
+  await page
+    .getByRole("button", { name: "Create household account", exact: true })
+    .click();
+  await expect(
+    page.getByText("Verify your email address before accepting.", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Confirm and accept invitation" }),
+  ).toBeHidden();
+  await capture(page, "step9-browser-verify-email");
+  const app = initializeApp(
+    { projectId: "demo-team-hangout" },
+    "invitation-verify-new",
+  );
+  try {
+    const user = await getAuth(app).getUserByEmail(email);
+    await getAuth(app).updateUser(user.uid, { emailVerified: true });
+  } finally {
+    await deleteApp(app);
+  }
+  const staleApp = initializeApp({projectId: "demo-team-hangout"}, "invitation-stale-preview");
+  const participant = getFirestore(staleApp).doc(`organizations/${householdOrg}/participants/child-a`);
+  const previous = (await participant.get()).data();
+  await participant.update({accessRevision: (previous.accessRevision ?? 0) + 1});
+  await page.getByRole("button", {name: "Check invitation again", exact: true}).click();
+  await expect(page.getByText("Participant access changed. Ask your organization to review and resend this invitation.")).toBeVisible();
+  await expect(page.getByRole("button", {name: "Confirm and accept invitation"})).toBeHidden();
+  await capture(page, "step9-browser-needs-review");
+  await participant.update({accessRevision: previous.accessRevision ?? 0});
+  await deleteApp(staleApp);
+  await page.getByRole("button", {name: "Check invitation again", exact: true}).click();
+  await expect(page.getByRole("heading", {name: "Jamie Rivera", exact: true})).toBeVisible();
+  await page
+    .getByRole("button", { name: "Confirm and accept invitation" })
+    .click();
+  await expect(
+    page.getByText(
+      "Invitation accepted. Open your household to check current access.",
+    ),
+  ).toBeVisible();
+});
+
+test("denial invalidates delayed authorized invitation responses", async ({ page }) => {
+  await page.goto(`/organizations/${householdOrg}/invitation`);
+  await signIn(page, "ui-admin");
+  await expect(invitationStatus(page).getByRole("cell", {name: "ui-outsider@example.test", exact: true}).first()).toBeVisible();
+  let release!: () => void;
+  let loaded!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const requested = new Promise<void>(resolve => { loaded = resolve; });
+  await page.route("**/listOrganizationParticipants", async route => {
+    const response = await route.fetch();
+    loaded();
+    await held;
+    await route.fulfill({response});
+  });
+  const app = initializeApp({projectId: "demo-team-hangout"}, "invitation-revoke-race");
+  const member = getFirestore(app).doc(`organizations/${householdOrg}/members/ui-admin`);
+  try {
+    await page.getByRole("button", {name: "Reload invitations", exact: true}).click();
+    await requested;
+    await member.update({status: "revoked"});
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(page.getByText("Invitation access unavailable. Reload to recheck your permissions.")).toBeVisible();
+    release();
+    await page.unrouteAll({behavior: "wait"});
+    await expect(page.getByRole("heading", {name: "New invitation", exact: true})).toBeHidden();
+    await expect(invitationStatus(page).getByRole("cell", {name: "ui-outsider@example.test", exact: true})).toHaveCount(0);
+    await capture(page, "step9-browser-denied-race");
+  } finally {
+    release();
+    await member.update({status: "active"});
+    await deleteApp(app);
+  }
+});

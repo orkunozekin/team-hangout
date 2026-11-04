@@ -106,12 +106,118 @@ service cloud.firestore {
     }
 
     match /events/{eventId} {
-      allow get: if legacyTeam(resource.data.teamId) && (isTeamMember(resource.data.teamId) || isSuperAdmin())
+      allow get: if isLegacy(resource.data) && legacyTeam(resource.data.teamId) && (isTeamMember(resource.data.teamId) || isSuperAdmin())
         && resource.data.deletedAt == null;
-      allow list: if legacyTeam(resource.data.teamId) && (isTeamMember(resource.data.teamId) || isSuperAdmin())
+      allow list: if isLegacy(resource.data) && legacyTeam(resource.data.teamId) && (isTeamMember(resource.data.teamId) || isSuperAdmin())
         && resource.data.deletedAt == null;
       // Update Team Hangout: event writes now require revisioned callable commands.
       allow create, update, delete: if false;
+
+      // Phase 3 private and derived records remain server-only until their owning step adds
+      // a callable plus live scoped authorization. A platform role or parent event read is not access.
+      // Step 3 lineups stay callable-only: getLineup/saveLineup/publishLineup recheck the live coach
+      // assignment, and getLineupView rechecks team, staff or household access before returning the
+      // sanitized publication. Direct client reads would bypass roster and guardian checks.
+      match /coaching/{teamId}/{document=**} {
+        allow read, write: if false;
+      }
+      match /lineupViews/{teamId}/{document=**} {
+        allow read, write: if false;
+      }
+      // Step 4 playing time is callable-only: recordPlayAction/finalizePlaySession/getPlaySession recheck the
+      // live coach assignment, and immutable action rows are backend-written. Households never read playtime.
+      match /playSessions/{teamId}/{document=**} {
+        allow read, write: if false;
+      }
+      // Step 8 volunteer slots and claims are callable-only: saveVolunteerSlot rechecks the live coach assignment,
+      // claim/release recheck adult eligibility in the capacity transaction, and getEventVolunteers returns aliases only.
+      match /volunteerSlots/{slotId}/{document=**} {
+        allow read, write: if false;
+      }
+      // Step 9 rides are callable-only and stay disabled until the organization records its transport policy.
+      // Discovery returns sanitized opt-in rows; contacts live under arrangements and only getRideContacts reads them
+      // after rechecking confirmed consent and both adults' live authority.
+      match /rideRequests/{requestId}/{document=**} {
+        allow read, write: if false;
+      }
+      match /rideArrangements/{arrangementId}/{document=**} {
+        allow read, write: if false;
+      }
+      // Step 13 practice plans are callable-only: savePracticePlan rechecks the live coach assignment and resource
+      // availability, private notes sit in a separate document, and households read only the published view.
+      match /practicePlans/{teamId}/{document=**} {
+        allow read, write: if false;
+      }
+    }
+
+    // Step 5 competitions are callable-only: saveCompetitionRules/finalizeResult/correctResult/getCompetition recheck
+    // live orgAdmin or assigned programStaff grants, and proposeResult/getEventResults recheck the active side coach.
+    // Results, rules versions and history are backend-written. Step 6 standings generations and rows are backend-written by
+    // the rebuild worker and read only through getStandings/getEventStandings, which recheck staff or team viewer access.
+    // Step 7 bracket nodes and bracket history are backend-written by publishBracket/linkBracketEvent/finalizeResult/
+    // correctResult/correctBracket and read only through getBracket/getEventBracket.
+    match /organizations/{orgId}/competitions/{competitionId}/{document=**} {
+      allow read, write: if false;
+    }
+    // Transport policy evidence is recorded by organization operators outside the app; no client or callable writes it.
+    match /organizations/{orgId}/transportPolicy/{policyId} {
+      allow read, write: if false;
+    }
+    match /organizations/{orgId}/reportRuns/{runId}/{document=**} {
+      allow read, write: if false;
+    }
+    match /organizations/{orgId}/rolloverJobs/{jobId}/{document=**} {
+      allow read, write: if false;
+    }
+    // Step 13 resources are callable-only. Reviewer designations are recorded by organization operators outside the app.
+    match /organizations/{orgId}/practiceResources/{resourceId}/{document=**} {
+      allow read, write: if false;
+    }
+    match /organizations/{orgId}/resourceReviewers/{uid} {
+      allow read, write: if false;
+    }
+
+    match /organizations/{orgId}/rsvpReminders/{reminderId} {
+      allow read, write: if false;
+    }
+    match /organizations/{orgId}/conversations/{conversationId} {
+      allow read, write: if false;
+      match /messages/{messageId} {
+        allow read, write: if false;
+        match /reactions/{reactionId} {
+          allow read, write: if false;
+        }
+        match /edits/{editId} {
+          allow read, write: if false;
+        }
+      }
+    }
+    match /organizations/{orgId}/messageSearch/{messageId} {
+      allow read, write: if false;
+    }
+    match /platformConfig/{docId} {
+      allow read, write: if false;
+    }
+    match /organizations/{orgId}/attachments/{attachmentId} {
+      allow read, write: if false;
+    }
+    match /organizations/{orgId}/attachmentSlots/{slotId} {
+      allow read, write: if false;
+    }
+    match /organizations/{orgId}/staffNotes/{scopeKey} {
+      allow read, write: if false;
+      match /entries/{noteId} {
+        allow read, write: if false;
+      }
+    }
+    match /organizations/{orgId}/deliveryIssues/{issueId} {
+      allow read, write: if false;
+    }
+    match /organizations/{orgId}/criticalUpdates/{updateId} {
+      allow read, write: if false;
+    }
+    match /rsvpReminderScans/{scanId} {
+      allow read, write: if false;
     }
   }
 }

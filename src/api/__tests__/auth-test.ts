@@ -80,16 +80,22 @@ jest.mock('expo-apple-authentication', () => ({
     WHITE: 1,
   },
 }));
+const mockRevokePushNotifications = jest.fn();
+jest.mock('../../lib/pushRegistration', () => ({ revokePushNotifications: (...args: unknown[]) => mockRevokePushNotifications(...args) }));
 
 jest.mock('react-native', () => ({
   Platform: { OS: 'ios' },
 }));
 
 const mockEnsureUserDocument = jest.fn();
+const mockClearGameDayCache = jest.fn();
 
 jest.mock('../../firebase/users', () => ({
   ensureUserDocument: (...args: unknown[]) =>
     mockEnsureUserDocument(...args),
+}));
+jest.mock('../../lib/gameDayCache', () => ({
+  clearGameDayCache: (...args: unknown[]) => mockClearGameDayCache(...args),
 }));
 
 const ORIGINAL_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
@@ -103,6 +109,7 @@ import {
   loginWithEmail,
   loginWithGoogle,
   logout,
+  PUSH_REVOCATION_TIMEOUT_MS,
   registerWithEmail,
   resetPassword,
   subscribeToAuthChanges,
@@ -121,6 +128,8 @@ describe('api/auth', () => {
     mockHasPlayServices.mockResolvedValue(true);
     mockHasPreviousSignIn.mockReturnValue(false);
     mockAppleIsAvailable.mockResolvedValue(true);
+    mockClearGameDayCache.mockResolvedValue(undefined);
+    mockRevokePushNotifications.mockResolvedValue(undefined);
   });
 
   afterAll(() => {
@@ -469,6 +478,63 @@ describe('api/auth', () => {
     expect(mockGoogleSignOut).toHaveBeenCalled();
     expect(mockSignOut).toHaveBeenCalledWith(auth);
     expect(getCurrentUser()).toBeNull();
+  });
+
+  it('clears the signed-in account cache before Firebase sign-out', async () => {
+    (auth as { currentUser: unknown }).currentUser = { uid: 'cached-user' };
+    mockSignOut.mockResolvedValue(undefined);
+
+    await logout();
+
+    expect(mockClearGameDayCache).toHaveBeenCalledWith('cached-user');
+    expect(mockClearGameDayCache.mock.invocationCallOrder[0]).toBeLessThan(
+      mockSignOut.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('does not sign out when durable cache cleanup fails', async () => {
+    (auth as { currentUser: unknown }).currentUser = { uid: 'cached-user' };
+    mockClearGameDayCache.mockRejectedValueOnce(new Error('storage unavailable'));
+
+    await expect(logout()).rejects.toThrow('storage unavailable');
+    expect(mockSignOut).not.toHaveBeenCalled();
+  });
+
+  it('still clears cache and signs out when endpoint revocation is unavailable', async () => {
+    (auth as { currentUser: unknown }).currentUser = { uid: 'cached-user' };
+    mockRevokePushNotifications.mockRejectedValueOnce(new Error('functions unavailable'));
+    mockSignOut.mockResolvedValue(undefined);
+
+    await logout();
+
+    expect(mockClearGameDayCache).toHaveBeenCalledWith('cached-user');
+    expect(mockSignOut).toHaveBeenCalledWith(auth);
+  });
+
+  it('signs out after a bounded wait when endpoint revocation never settles', async () => {
+    jest.useFakeTimers();
+    try {
+      (auth as { currentUser: unknown }).currentUser = { uid: 'cached-user' };
+      mockRevokePushNotifications.mockReturnValueOnce(new Promise(() => undefined));
+      mockSignOut.mockResolvedValue(undefined);
+
+      let settled = false;
+      const pending = logout().then(() => { settled = true; });
+      await jest.advanceTimersByTimeAsync(PUSH_REVOCATION_TIMEOUT_MS - 1);
+      expect(settled).toBe(false);
+      expect(mockSignOut).not.toHaveBeenCalled();
+
+      await jest.advanceTimersByTimeAsync(1);
+      await pending;
+
+      expect(mockClearGameDayCache).toHaveBeenCalledWith('cached-user');
+      expect(mockClearGameDayCache.mock.invocationCallOrder[0]).toBeLessThan(
+        mockSignOut.mock.invocationCallOrder[0],
+      );
+      expect(mockSignOut).toHaveBeenCalledWith(auth);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('still signs out of Firebase if Google sign-out fails', async () => {

@@ -52,3 +52,31 @@ test('null-division events can span divisions within one canonical program and s
     assert.throws(() => decodeEvent(sharedEvent, parentsA, { ...teams, 'team-a2': { ...otherDivision, [field]: parentsB[field] } }));
   }
 });
+
+import operations from '../../shared/operations.ts';
+import operationalAdapter from '../../src/firebase/operationalEvents.ts';
+const { decodeOperationalEvent } = operations;
+test('operational reader accepts Phase 1 null-marker events without guessing matchup or venue', () => {
+  const event = decodeOperationalEvent('event-a', eventV2, parentsA, { 'team-a': parentsA });
+  assert.equal(event.scheduleVersion, 1);
+  assert.equal(event.homeTeamId, null); assert.equal(event.awayTeamId, null);
+  assert.equal(event.resourceId, null); assert.equal(event.facilityId, null);
+  assert.equal(event.publicationOperationId, null);
+  assert.equal(event.location, null); assert.equal(event.notes, null);
+  const native = operationalAdapter.mapOperationalEventDoc('event-a', eventV2, parentsA, { 'team-a': parentsA });
+  assert.equal(native.startsAt.toISOString(), event.startsAt);
+  assert.equal(native.endsAt.toISOString(), event.endsAt);
+  assert.equal(native.deletedAt, null);
+});
+test('operational metadata rejects foreign matchup, missing facility and invalid revision history', () => {
+  const teams = { 'team-a': parentsA, 'team-a2': parentsA };
+  const fixture = { ...eventV2, teamIds: ['team-a', 'team-a2'], homeTeamId: 'team-a', awayTeamId: 'team-a2',
+    facilityId: 'facility-a', resourceId: 'field-1', scheduleVersion: 2, revision: 3, rescheduledFromRevision: 1 };
+  assert.equal(decodeOperationalEvent('event-a', fixture, parentsA, teams).resourceId, 'field-1');
+  assert.deepEqual(decodeOperationalEvent('event-a', { ...fixture, location: { name: 'Field', address: '1 Main' }, notes: 'Bring ball' }, parentsA, teams).location, { name: 'Field', address: '1 Main' });
+  for (const patch of [{ awayTeamId: 'team-b' }, { homeTeamId: 'team-a2' }, { awayTeamId: null }, { facilityId: null },
+    { scheduleVersion: 0 }, { scheduleVersion: 1.5 }, { scheduleVersion: null }, { rescheduledFromRevision: 3 }, { completedAt: 'bad' }, { location: [] }, { location: { name: '' } }, { location: { name: 'Field', address: 2 } }, { notes: {} }]) {
+    assert.throws(() => decodeOperationalEvent('event-a', { ...fixture, ...patch }, parentsA, teams));
+  }
+  assert.throws(() => operationalAdapter.mapOperationalEventDoc('legacy', { date: stamp, time: '18:00' }, parentsA, teams));
+});

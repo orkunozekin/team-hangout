@@ -1,3 +1,4 @@
+import { formatCalendarDate } from "../../shared/dates";
 import {
   EventType,
 } from '../types/models';
@@ -70,12 +71,7 @@ export function parseEventDate(dateStr: string): Date {
 }
 
 export function formatEventDateLabel(date: Date): string {
-  return date.toLocaleDateString(undefined, {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
+  return formatCalendarDate(date);
 }
 
 export function validateTeamName(name: string): string | null {

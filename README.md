@@ -133,3 +133,7 @@ yarn test:coverage
 ## Deep link
 
 Invite deep link scheme: `teamhangout://join?code=XXXXXXXX`
+
+## Browser admin workspace
+
+Phase 1 hierarchy and staff management lives in the isolated React/Vite `admin/` package. See [browser setup, emulator validation and staging Hosting](docs/browser-admin.md). `yarn test:admin` builds the production browser app and tests real Auth/callable flows against synthetic emulators. Browser dependencies are separate from the Expo application. Workspace rollout requires a server-owned organization flag; no deployment or live flag changes are performed by this repository setup.

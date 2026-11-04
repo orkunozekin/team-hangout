@@ -3,6 +3,7 @@ import {
 } from '../types/models';
 
 function eventSortKey(event: TeamEvent): string {
+  if (event.schemaVersion === 2 && event.startsAt) return new Date(event.startsAt).toISOString();
   const date = event.date instanceof Date
     ? event.date
     : new Date(event.date);

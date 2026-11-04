@@ -9,6 +9,13 @@
 
 ## Lessons
 
+### 2026-10-17 — Keep cached identity and authorization loss atomic
+
+- **Source:** PR #36 · GitHub Codex review
+- **Gap:** A refresh removed the cached/read-only marker before live authorization succeeded, bare Firestore denials and pagination denials could restore or retain revoked snapshots, and an account transition did not await durable cleanup.
+- **Going forward:** Keep cached views visibly read-only until an authorized live response succeeds. Classify callable and direct-database denials consistently on every page, including stale responses and pagination, clear rendered and durable data together on revocation, serialize pending snapshot writes before cleanup, and journal cleanup before exposing another identity. Treat version-invalidated cursors as a page-one reconciliation boundary rather than a recoverable load-more error.
+- **Pointers:** `src/lib/gameDayCache.ts`, `src/screens/ScheduleScreen.tsx`, `src/screens/EventDetailScreen.tsx`, `src/components/HouseholdAgenda.tsx`, `App.tsx`.
+
 ### 2026-10-10: Trace publication visibility through every state
 
 - **Source:** PR #4, Greptile review.
@@ -43,3 +50,262 @@
 - **Gap:** Contact-edit normalization converted omitted fields to null, so a phone-only edit erased the saved email and an email-only edit erased the phone.
 - **Going forward:** Preserve key presence when normalizing patches. Distinguish omitted fields from explicit clearing, and test edits against fully populated records, including preservation of private fields and retry payload identity.
 - **Pointers:** `functions/src/participants/commands.ts`, `tests/backend/participants.test.mjs`.
+
+### 2026-10-12 — Reauthorize without discarding active actions
+
+- **Source:** PR #12 · Greptile
+- **Gap:** A window-focus refresh changed the workspace React key, silently discarding unsaved fields and the request ID retained after an uncertain save. Entry also awaited unrelated history on sections that did not use it.
+- **Going forward:** Recheck canonical authority without remounting an unchanged authorized scope. Clear tenant state on actual account/scope loss. Test focus during both an unsaved edit and an accepted write whose response is lost, proving the same request is replayed once. Fetch only the records and parents required by the current section.
+- **Pointers:** `admin/src/App.tsx`, `admin/src/Workspace.tsx`, `admin/src/Mutation.tsx`, `admin/tests/workspace.spec.ts`.
+
+### 2026-10-12 — Separate visibility and transient read failures from authorization
+
+- **Source:** PR #13 · Greptile
+- **Gap:** Returning to the foreground reloaded a hidden household tab, and temporary browser read errors cleared unsaved participant edits as though permission had been revoked.
+- **Going forward:** Require both navigation focus and active app state before loading private household data. Clear editors only for confirmed authorization loss; preserve unsaved fields and provide scoped retries for temporary read failures. Test background transitions while another tab is selected and interrupted reads during active edits.
+- **Pointers:** `src/screens/HouseholdScreen.tsx`, `admin/src/Participants.tsx` and their regression tests.
+
+### 2026-10-12 — Invitation generations and delayed access reads
+
+- **Source:** PR #14 · Greptile
+- **Gap:** Resend retained a former approver, inspection omitted acceptance eligibility checks, and delayed invitation reads could restore data after denial.
+- **Going forward:** Bind each invitation generation to its current approving actor while preserving creator history, share eligibility checks between preview and acceptance, and invalidate in-flight reads when authority is denied.
+- **Pointers:** `functions/src/invitations/commands.ts`, `admin/src/Invitations.tsx`, invitation backend/browser regressions.
+
+### 2026-10-12 — Keep popover menus reachable during async work
+
+- **Source:** PR #15 · Greptile
+- **Gap:** Reopening a menu focused a disabled action, and fixed popover coordinates outlived their viewport size.
+- **Going forward:** Focus the first enabled action on open, close or reposition menus on viewport changes, and exercise reopen-during-request behavior alongside safe retry.
+- **Pointers:** `admin/src/InvitationActions.tsx`, `admin/tests/invitations.spec.ts`.
+
+### 2026-10-12 — Successful reads can reveal revoked scope
+
+- **Source:** PR #16 · Greptile
+- **Gap:** Calendar-only reloads cleared events on explicit denial, but a successful response with fewer authorized participants left stale names and profile buttons in surrounding household discovery.
+- **Going forward:** Reconcile related private views after successful canonical refreshes as well as denied reads. Keep discovery refresh generations separate from calendar refresh dependencies to avoid loops, and cancel older responses before loading current scope.
+- **Pointers:** `src/components/HouseholdAgenda.tsx`, `src/screens/HouseholdScreen.tsx`, native calendar/discovery regressions.
+
+### 2026-10-13 — Keep owner cleanup independent of discovery
+
+- **Source:** PR #17 · Greptile
+- **Gap:** Combining saved subscription reads with team discovery hid removal controls when discovery exceeded its fanout limit, despite owner revocation remaining authorized.
+- **Going forward:** Load owner cleanup records independently from optional scope discovery. Test pending and failed discovery while verifying saved records remain visible and removable.
+- **Pointers:** `admin/src/CalendarSubscriptions.tsx`, `src/screens/CalendarSubscriptionsScreen.tsx`, calendar subscription UI regressions.
+
+### 2026-10-13 — Bind confirmation to the mutable plan
+
+- **Source:** PR #19 · Greptile
+- **Gap:** CSV resolution changes retained the preview version, letting another tab broaden a checked confirmation. Team queries also applied season filters after a limit; invalid divisions stopped all row review; later rows conflicted with earlier writes in their own job; daily cleanup capped throughput at 25 jobs.
+- **Going forward:** Version both source previews and mutable resolution plans and require the confirmed plan version at commit. Filter the complete target scope before limits, record row-specific failures as skippable errors, distinguish job-local revisions from outside edits, and drain bounded cleanup pages with scheduled continuation. Cover these with multi-tab, cross-season, bad-row, multi-team and multi-page regressions.
+- **Pointers:** `functions/src/imports/roster.ts`, `tests/backend/imports.test.mjs`, `admin/tests/imports.spec.ts`.
+
+### 2026-10-13 — Bound invalid preview values separately from source bytes
+
+- **Source:** PR #19 · local acceptance audit
+- **Gap:** A CSV within the 5 MB file limit could contain a field larger than Firestore's document limit, preventing the invalid row from reaching review/skip controls. Large base64 validation also needed a canonical, linear bound.
+- **Going forward:** Keep canonical source bytes intact, but bound invalid field excerpts with explicit errors/warnings before persisting preview rows. Validate large base64 in linear form and test an oversized invalid record alongside a valid record through preview, skip and commit.
+- **Pointers:** `functions/src/imports/roster.ts`, `tests/backend/imports.test.mjs`.
+
+### 2026-10-13 — Bind reviews to identities and reuse bounded contact reads
+
+- **Source:** PR #20 · Greptile
+- **Gap:** Publication UI reused row-number/revision matches across different import jobs and event IDs; publishing several same-team events repeated canonical contact and serial Auth reads.
+- **Going forward:** Clear confirmations on job identity changes and compare event IDs alongside revisions. Keep commit confirmation disabled until canonical rows for the displayed preview binding have loaded, including accepted-upload retries. Reuse canonical recipient results only within a transaction attempt and batch bounded Auth lookups; reauthorize on every subsequent command. Test switching saved jobs with equal row revisions and revocation after a multi-event contact review.
+- **Pointers:** `admin/src/RosterImports.tsx`, `functions/src/imports/publication.ts`, schedule browser/backend regressions.
+
+### 2026-10-13 — Fence dispatch after canonical reads
+
+- **Source:** PR #21 · local concurrency audit
+- **Gap:** A lease checked before a long canonical authorization read could expire or be cancelled before the external transport was invoked.
+- **Going forward:** Recheck the owned lease and deadline after preparation and renew it immediately before dispatch. A lost lease must send nothing; unknown errors after invocation terminate as ambiguous rather than automatically retry.
+- **Pointers:** `functions/src/email/worker.ts`, `tests/backend/email.test.mjs`.
+
+### 2026-10-13 — Preserve pending mutations across private refreshes
+
+- **Source:** PR #21 · Greptile
+- **Gap:** Clearing private read data on focus unmounted the preference mutation and discarded its original pending/retry request. All read failures also looked like access loss, hiding useful report-limit and network recovery guidance.
+- **Going forward:** Keep pending mutation state mounted independently from refreshed read values; block new choices until the original request settles and clear stale read values before reopening controls. Classify denied access separately from local report limits and temporary errors without exposing raw provider text. Test delayed pre-commit saves through refresh, uncertain replay, subsequent choices, report limits and recovery.
+- **Pointers:** `admin/src/EmailInformation.tsx`, `admin/tests/email.spec.ts`.
+
+### 2026-10-13 — Rehearsal failures and accessibility coverage
+
+- **Source:** PR #22 · Greptile
+- **Gap:** Fixture initialization happened outside the report finalizer, and enlarged-text tests could pass with empty tables or measure scaled targets instead of phone control size.
+- **Going forward:** Include fixture setup in failure-report cleanup and inject a setup failure. Require populated changed states before asserting accessibility, and measure touch targets at an unzoomed phone viewport independently from zoom/reflow.
+- **Pointers:** `scripts/rehearsal/scenarios.mjs`, `tests/backend/rehearsal-guards.test.mjs`, `admin/tests/accessibility.spec.ts`.
+
+### 2026-10-15 — Use canonical timezone defaults and reuse read authority per transaction
+
+- **Source:** PR #26 · GitHub Codex review
+- **Gap:** New native events defaulted to the device timezone, and canonical event lists repeatedly fetched the same hierarchy and grant documents for every result.
+- **Going forward:** Obtain new-event timezone defaults from the authorized canonical organization; preserve that zone as a selectable value even when it is absent from common presets. Reuse document snapshots and identical management checks only within one read transaction attempt, never across requests or retries. Test a 50-event page's document reads and revoke access before the next request.
+- **Pointers:** `functions/src/operations/events.ts`, `functions/src/operations/reads.ts`, `src/screens/CreateEditEventScreen.tsx`, operational backend and native screen tests.
+
+### 2026-10-15 — Enforce published event history across compatibility commands
+
+- **Source:** PR #26 · GitHub Codex re-review
+- **Gap:** The new lifecycle command recorded reasons/history, but the still-exported compatibility update command could edit published canonical details without those records.
+- **Going forward:** Check every callable entry point when introducing a canonical mutation invariant. Route new published edits through the lifecycle command while preserving authorized, non-mutating replay and server-owned draft promotion. Test both endpoints, not only the new writer.
+- **Pointers:** `functions/src/commands.ts`, `functions/src/operations/events.ts`, `tests/backend/operational-events.test.mjs`.
+
+
+### 2026-10-15 — Preserve canonical instants and approved management roles
+
+- **Source:** PR #26 · GitHub Codex re-review
+- **Gap:** The native schedule sorted display wall times rather than canonical instants, and canonical event authority omitted the captain role explicitly approved in the product plan.
+- **Going forward:** Sort canonical events by `startsAt`, including cross-zone and repeated-hour cases. Check proposed role changes against the approved plan, then apply the same accepted roles to live server grants and native control mapping; retain every-team authority, tenant checks and revocation on replay.
+- **Pointers:** `src/lib/eventSort.ts`, `functions/src/operations/access.ts`, `src/firebase/teams.ts`, `docs/plans/product-plan.md` approved product structure.
+
+
+### 2026-10-15 — Trace navigation through existing readers and revoked assignments
+
+- **Source:** PR #26 · GitHub Codex re-review
+- **Gap:** Enabling canonical active teams exposed a Team tab that still queried the legacy member directory. Revoked canonical assignments also remained preferred navigation candidates and blocked other valid teams.
+- **Going forward:** Follow newly enabled navigation through every existing screen. Keep canonical teams out of legacy roster/invite flows without expanding household directory access. Filter inactive canonical assignments before choosing a team, recheck the live team read, and fall back on denied/missing candidates while surfacing service failures. Test rendered canonical and legacy tabs, retry/switching states and live revocation.
+- **Pointers:** `src/screens/TeamScreen.tsx`, `src/firebase/teams.ts`, TeamScreen and membership tests, `tests/backend/operational-events.test.mjs`.
+
+
+### 2026-10-15 — Separate public projections and expose bounded schedule pages
+
+- **Source:** PR #26 · GitHub Codex full-diff review
+- **Gap:** Canonical family readers exposed private notes/audit identities and full team documents; the native schedule drained all server pages. Staged type edits preserved stale matchup IDs.
+- **Going forward:** Use explicit role-appropriate event/team projections and keep strict storage decoding separate from public decoding. Reauthorize private fields on live staff/coach/captain grants. Render one ordered page at a time, retain earlier results on later-page errors, and test equal-instant cursor boundaries and team switching. Recompute derived matchup fields on every accepted type-change path.
+- **Pointers:** `functions/src/operations/events.ts`, `functions/src/commands.ts`, `shared/contracts.ts`, `shared/operations.ts`, `src/firebase/events.ts`, `src/screens/ScheduleScreen.tsx` and their regression tests.
+
+
+### 2026-10-15 — Preserve page boundaries and defer opponent discovery
+
+- **Source:** PR #26 · GitHub Codex full-diff re-review
+- **Gap:** Reloading a cursor event after rescheduling shifted the ordering boundary and skipped intervening rows. Opponent discovery still drained all team pages during practice form setup.
+- **Going forward:** Encode the original instant/document ID and authorized scope in schedule cursors rather than reconstructing the boundary from mutable records. Load optional opponent teams only on explicit request, one page per action, with retained choices and retry. Reauthorize each request and test moved boundaries, equal timestamps and grant revocation between pages.
+- **Pointers:** `functions/src/operations/events.ts`, `src/firebase/events.ts`, `src/screens/CreateEditEventScreen.tsx`, operational backend and native event-screen regressions.
+
+
+### 2026-10-15 — Trace lifecycle privacy through history and compatibility views
+
+- **Source:** PR #26 · GitHub Codex full-diff re-review and CI
+- **Gap:** Family history still exposed freeform staff reasons, published soft deletion bypassed cancellation history, household calendars omitted lifecycle states, and bounded schedules opened at the oldest archive. CI also caught a cursor variable's definite-assignment error that an unchecked local command sequence missed.
+- **Going forward:** Public history must use an allowlist without freeform staff reasons. Guard both compatibility update and delete paths for published events while preserving authorized receipt replay and staged/legacy compatibility. Show lifecycle status consistently in household calendars, with explicit scheduled-only subscription policy. Open native schedules near current/upcoming events with bounded past navigation. Check every validation command exit and confirm the Functions build succeeds before running tests against its generated output.
+- **Pointers:** canonical event readers/history, `functions/src/commands.ts`, household agenda/subscription callers, native schedule modes and full backend regressions.
+
+
+### 2026-10-15 — Return live capabilities with bounded reads
+
+- **Source:** PR #26 · GitHub Codex full-diff review
+- **Gap:** Canonical Add event controls trusted stale navigation roles, and every page performed team discovery before the authorized page request repeated household discovery.
+- **Going forward:** Return current mutation capability from the same authorized schedule response, including empty pages, and clear it on failed refreshes. Reuse resolved schema only to select the reader; every server page still reauthorizes current grants. Do not use platform support or cached membership as canonical mutation authority.
+- **Pointers:** `functions/src/operations/events.ts`, `src/firebase/events.ts`, `src/screens/ScheduleScreen.tsx`, `App.tsx` and revocation/paging regressions.
+
+### 2026-10-15: Keep capability refresh and object denial scoped
+
+- **Source:** PR #27, GitHub Codex review 5540542434.
+- **Gap:** A successful read-only staff refresh collapsed the selected safe catalog view; denial of an individual event lookup was treated as loss of organization catalog access.
+- **Going forward:** Preserve authorized reader state when write capability is absent. Treat object lookup/assignment denial locally unless the canonical catalog request also denies access. Fence late page responses and capability results so a newer revocation or demotion cannot be undone by an older successful request. Test normal focus, unknown IDs, revocation and demotion with held in-flight responses.
+- **Pointers:** `admin/src/Facilities.tsx`, `admin/tests/facilities.spec.ts`.
+
+### 2026-10-15: Align catalog rollout and history snapshots
+
+- **Source:** PR #27, GitHub Codex review 5540687530.
+- **Gap:** Catalog reads enforced the workspace rollout flag while writes only checked the organization flag; detachment history paired null resource IDs with a previous occupancy fallback.
+- **Going forward:** Apply the same rollout predicate to every catalog mutation and replay. Record consistent before/after resource identity and occupancy, including explicit null after detachment; avoid nullish fallbacks that combine states. Test flag-disabled new writes/replay and the complete immutable detachment row.
+- **Pointers:** `functions/src/facilities/service.ts`, `tests/backend/facilities.test.mjs`.
+
+
+### 2026-10-15: Bound actor intersection cost in pure validators
+
+- **Source:** PR #29, GitHub Codex review 5542781923.
+- **Gap:** Accepted maximum busy snapshots multiplied linear coach-ID membership scans across every game/busy pair, including nonoverlapping intervals, outside the search deadline.
+- **Going forward:** Prefilter temporal conflicts before actor intersection, index actor membership once per snapshot and share immutable fixture indexes across candidate slots. Benchmark accepted array-size combinations as well as team/slot ceilings. Cap detailed conflict output explicitly while retaining the full count and invalid result.
+- **Pointers:** `functions/src/scheduling/validator.ts`, `functions/src/scheduling/search.ts`, maximum busy-snapshot regression and benchmark.
+
+### 2026-10-16: Preserve canonical identity domains at pure-module boundaries
+
+- **Source:** PR #30, GitHub Codex review 5550600840.
+- **Gap:** The scheduler accepted 80-character internal IDs while canonical organization/event contracts permit 128-character team IDs. Passing stored IDs directly broke migrated teams and constraints before generation or revalidation.
+- **Going forward:** Map canonical identities to bounded internal handles and map staff-facing results back to full canonical IDs. Cover generation, nonempty manual saves, replay, constraints and current occupancy with identities beyond the pure module's limit; do not truncate IDs or silently narrow existing contracts.
+- **Pointers:** `functions/src/scheduling/drafts.ts`, `tests/backend/schedule-drafts.test.mjs`.
+
+### 2026-10-16: Bound every multiplying UI dimension
+
+- **Source:** PR #30, GitHub Codex review 5550600840.
+- **Gap:** Paging fixtures alone still multiplied 1,000 slot options across 32 preferences and 20 assignment selectors, in addition to rendering every slot form.
+- **Going forward:** Page slot forms and each choice universe too. Retain off-page selections, keep the current assignment visible, and verify rendered node bounds and saved values on an accepted maximum-size draft through real callables. Removing a slot must also clear assignments that reference it.
+- **Pointers:** `admin/src/ScheduleDrafts.tsx`, `admin/tests/schedule-drafts.spec.ts`.
+
+### 2026-10-16: Exercise nested array ceilings in rendered tests
+
+- **Source:** PR #30, GitHub Codex review 5550772551.
+- **Gap:** The large slot/constraint regression used empty blackout arrays, leaving 32 constraints times 128 interval editors unbounded even after slot paging.
+- **Going forward:** Include accepted nested-array ceilings in rendered tests. Page interval controls per constraint, preserve hidden intervals on save, and assert input counts on a real callable-created maximum-blackout draft.
+- **Pointers:** `admin/src/ScheduleDrafts.tsx`, accepted 32-team/128-blackouts-per-team browser regression.
+
+### 2026-10-16 — Publication recovery and shared marker reads
+
+- **Source:** PR #31 · GitHub Codex review at `2680eed`.
+- **Gap:** A publication panel keyed only by draft ID retained an aborted operation after the same draft was edited and revalidated. Facility reservation scans also read the same operation marker once per event.
+- **Going forward:** Refresh operation state when the draft revision changes, and share transaction-local canonical document reads across command fencing, authority checks and visibility scans. Exercise abort/edit/revalidate/restart without focus or reload, and measure repeated marker reads against a real multi-event publication.
+- **Pointers:** `admin/src/SchedulePublication.tsx`, `functions/src/commandSupport.ts`, `tests/backend/schedule-publication.test.mjs`.
+
+### 2026-10-16 — Bound operational queries by the current decision
+
+- **Source:** PR #32 · actual GitHub Codex review at `b756154`.
+- **Gap:** Lifetime facility closure/event scans and tenant-wide membership scans let unrelated retained history exhaust current read and makeup budgets.
+- **Going forward:** Apply interval and lifecycle filters at the database boundary, include maximum booking/buffer lookback, and scope coach reads to participating and overlapping-event teams. Prime finite visible pages per facility within each transaction attempt. Exercise actual handlers with more than 1,000 unrelated historical records and assert returned query document counts.
+- **Pointers:** `functions/src/facilities/{closures,makeups}.ts`, `functions/src/scheduling/drafts.ts`, `tests/backend/closures.test.mjs`.
+
+### 2026-10-16 — Guard compatibility mutations as well as new workflows
+
+- **Source:** PR #32 · actual second GitHub Codex review at `27daeb0`.
+- **Gap:** The reviewed makeup callable enforced policy but ordinary native lifecycle rescheduling could bypass it after a closure was materialized. Interval-bounded makeup queries still counted inactive events before filtering.
+- **Going forward:** Enforce the reviewed transition at the shared mutation boundary with a server-only adapter flag; exercise the existing client callable for staff and coach bypass attempts, ordinary later postponement, and deliberate mismatch reconciliation. Apply lifecycle/publication/deletion predicates before query limits and seed more than 1,000 inactive records in the exact proposed interval.
+- **Pointers:** `functions/src/operations/events.ts`, `functions/src/facilities/makeups.ts`, `tests/backend/closures.test.mjs`.
+
+### 2026-10-16: Scope event participant discovery before applying bounds
+
+- **Source:** PR #33, actual GitHub Codex review at `2a94be8`.
+- **Gap:** Reusing full household agenda discovery for one event enumerated unrelated staff teams and could exhaust a 100-team limit before returning that event's responses.
+- **Going forward:** Discover personal canonical sources within the target organization and check enrollment only against participating teams. Staff navigation pointers must not widen an event-specific reader. Test a small event with more than 100 unrelated staff teams and stale participant candidates.
+- **Pointers:** `functions/src/operations/availability.ts`, `tests/backend/availability.test.mjs`.
+
+### 2026-10-16: Bound combined candidates and multiplying read dimensions
+
+- **Source:** PR #33, second actual GitHub Codex review at `fabb018`.
+- **Gap:** Independent self/guardian discovery limits still allowed 200 distinct candidates, each fanning out to every event team.
+- **Going forward:** Bound the deduplicated union and candidate-by-team product before roster reads. Exercise both individually valid source limits and accepted candidate counts multiplied across 20 teams, and instrument the actual handler to prove rejection before fan-out.
+- **Pointers:** `functions/src/operations/availability.ts`, `tests/backend/availability.test.mjs`.
+
+### 2026-10-17 — Native permission prompts cross platform AppState boundaries
+
+- **Source:** PR #35 · GitHub Codex review at `f3aebbc`
+- **Gap:** iOS inactive handling preserved the location prompt, but Android temporary system Activities can report background and invalidate acquisition or unmount ancestor household state.
+- **Going forward:** Audit the requesting component and every ancestor refresh handler for platform permission transitions, including secondary location-settings dialogs after permission resolves. Disable optional settings Activities when manual fallback is available. Preserve the explicit prompt transition while checking actual foreground state after permission returns; genuine background results must cancel acquisition and reauthorize on foreground. Test both event orderings and retain original screenshot provenance after feedback.
+- **Pointers:** `src/lib/checkInLocation.ts`, `src/components/ParticipantCheckIn.tsx`, `src/components/EventAvailability.tsx`, `src/screens/HouseholdScreen.tsx`.
+
+### 2026-10-18 — Keep notification queues phase-specific and cursors consumable
+
+- **Source:** PR #37 · GitHub Codex review at `e3f7a31`.
+- **Gap:** Transient authorization reads consumed a send attempt, disabled tenants repeatedly occupied the oldest due page, terminal intents stayed in the scheduler scan, a revoked page-boundary row invalidated its own cursor, and household-only users could not navigate to their inbox. Household access also survived the server-owned household feature being disabled. Retained revoked grants counted against live audience limits, while page authorization repeated the same canonical reads for every notification and source.
+- **Going forward:** Distinguish pre-dispatch failures from provider outcomes, move disabled work outside due indexes with explicit operator recovery, query only the live workflow state being processed, and preserve a consumable boundary before deleting revoked rows. Filter lifecycle state before audience limits, batch and cache shared authority documents across a page, and cap the unique access-source union before reads. Trace every new screen through each authorized navigation shape and apply live rollout predicates to the grants they enable. Cover retained revocation history, realistic page read costs, queue starvation, zero-send transient retries, cursor consumption, rollout revocation and household-only navigation.
+- **Pointers:** `functions/src/notifications/{worker,commands}.ts`, `App.tsx`, `src/screens/HouseholdScreen.tsx`, notification backend and native regressions.
+
+### 2026-10-19 — Bind delivery cleanup and navigation to the exact live resource
+
+- **Source:** PR #38 · GitHub Codex review at `5ea8f7c`.
+- **Gap:** Push ticket errors lost their terminal code, receipt cleanup could revoke a newly rotated token, transient pre-send Auth reads became ambiguous sends, endpoint revocation could block local logout, and a notification target reused the currently selected team even when the authorized update belonged elsewhere. Registration could also exceed the worker's endpoint cap, while terminal delivery state could commit before token cleanup and fallback creation.
+- **Going forward:** Preserve provider error codes through the worker, store a non-secret fingerprint of the token actually sent and condition cleanup on that generation, distinguish pre-send dependencies from ambiguous transport outcomes, make remote cleanup best effort without weakening durable local cleanup, and route only when the live target scope matches the active UI scope. Enforce fan-out bounds at registration and commit terminal state, projection status, token retirement and fallback atomically. Cover ticket and receipt failures, token rotation, dependency outages, account deletion logout, endpoint caps and cross-team links.
+- **Pointers:** `functions/src/notifications/{providers,worker,commands}.ts`, `src/api/auth.ts`, `App.tsx`, notification backend and native regressions.
+
+### 2026-10-21 — Fence storage writers before account-deletion cleanup
+
+- **Source:** PR #46 · GitHub Codex review at `e39e796`.
+- **Gap:** Account deletion removed an attachment row and its current objects without fencing an already-claimed upload or canonicalization worker. A losing worker could write private bytes after cleanup, recreate a deleted ownership slot, or fail while verifying a canonical write before reaching the later cleanup guard.
+- **Going forward:** Mark attachment metadata with a transactional deletion fence before deleting objects. Make every upload and canonicalization completion recheck that fence, never recreate a missing ownership slot, and remove bytes from the write operation's own failure path as well as later transaction failures. Cover claimed-writer, missing-slot, and failed-verification interleavings with emulator Storage assertions.
+- **Pointers:** `functions/src/accounts/deletion.ts`, `functions/src/communications/attachments.ts`, `tests/backend/attachments.test.mjs`.
+
+### 2026-10-21 — Preserve continuous grant history and test scheduled handlers
+
+- **Source:** PR #47 review feedback.
+- **Gap:** Updating permissions on an active guardian grant reset its activation time and hid previously eligible history, while pure alert-summary tests did not exercise the scheduled monitor's enablement or Firestore queries.
+- **Going forward:** Preserve the original start of a continuously active grant, reset it only after revocation and reapproval, and invoke scheduled handlers against emulator data for disabled and enabled paths rather than testing only extracted helpers.
+- **Pointers:** `functions/src/participants/commands.ts`, `tests/backend/participants.test.mjs`, `tests/backend/phase2-monitoring.test.mjs`.

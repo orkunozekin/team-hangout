@@ -32,6 +32,8 @@ import {
 import {
   ensureUserDocument,
 } from '../firebase/users';
+import { clearGameDayCache } from '../lib/gameDayCache';
+import { revokePushNotifications } from '../lib/pushRegistration';
 
 let googleConfigured = false;
 
@@ -244,7 +246,38 @@ export async function resetPassword(
   await sendPasswordResetEmail(auth, email.trim());
 }
 
-export async function logout(): Promise<void> {
+// Push revocation is a network call (the revokePushDevice callable), which can
+// stall for the full callable timeout when the device is offline or the
+// connection is half open. Cap it so local sign-out is never held hostage.
+export const PUSH_REVOCATION_TIMEOUT_MS = 5000;
+
+function withTimeout(promise: Promise<void>, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<void>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('timed out')), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+export async function logout(
+  options: { cacheAlreadyCleared?: boolean } = {},
+): Promise<void> {
+  const uid = auth.currentUser?.uid;
+  if (uid) {
+    try {
+      await withTimeout(revokePushNotifications(uid), PUSH_REVOCATION_TIMEOUT_MS);
+    } catch {
+      // Revocation is best effort. A Functions outage, a hung request or an
+      // account already marked for deletion must not leave the user signed in
+      // locally. The server keeps the device record until it is revoked later.
+    }
+    // Cache clearing is local AsyncStorage work, not a network call, and is
+    // intentionally not time bounded: signing out before it finishes would
+    // leave the prior user's cached game day data on the device.
+    if (!options.cacheAlreadyCleared) {
+      await clearGameDayCache(uid);
+    }
+  }
   try {
     ensureGoogleConfigured();
     if (GoogleSignin.hasPreviousSignIn()) {

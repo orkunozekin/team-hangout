@@ -73,6 +73,24 @@ test('client mutations cannot change authority or references, including for coac
     await assertFails(deleteDoc(doc(db, 'inviteCodes/AAAAAAAA')));
     await assertFails(getDocs(collection(db, 'inviteCodes')));
     await assertFails(getDocs(collection(db, 'commandRequests')));
+    await assertFails(getDoc(doc(db, 'organizations/org-a/conversations/channel-a')));
+    await assertFails(getDoc(doc(db, 'organizations/org-a/conversations/channel-a/messages/message-a')));
+    await assertFails(getDoc(doc(db, 'organizations/org-a/conversations/channel-a/messages/message-a/reactions/player-a_yes')));
+    await assertFails(getDoc(doc(db, 'organizations/org-a/conversations/channel-a/messages/message-a/edits/1')));
+    await assertFails(getDoc(doc(db, 'organizations/org-a/messageSearch/message-a')));
+    await assertFails(setDoc(doc(db, 'organizations/org-a/messageSearch/message-a'), { tokens: ['private'] }));
+    await assertFails(getDoc(doc(db, 'platformConfig/attachmentScanner')));
+    await assertFails(setDoc(doc(db, 'platformConfig/attachmentScanner'), { mode: 'unavailable' }));
+    await assertFails(getDoc(doc(db, 'organizations/org-a/attachments/file-a')));
+    await assertFails(setDoc(doc(db, 'organizations/org-a/attachments/file-a'), { state: 'ready' }));
+    await assertFails(getDoc(doc(db, 'organizations/org-a/attachmentSlots/slot-a')));
+    await assertFails(setDoc(doc(db, 'organizations/org-a/attachmentSlots/slot-a'), { activeIds: ['file-a'] }));
+    await assertFails(getDoc(doc(db, 'organizations/org-a/staffNotes/team_team-a/entries/note-a')));
+    await assertFails(setDoc(doc(db, 'organizations/org-a/staffNotes/team_team-a/entries/note-a'), { body: 'private' }));
+    await assertFails(getDoc(doc(db, 'organizations/org-a/rsvpReminders/event-a')));
+    await assertFails(getDoc(doc(db, 'organizations/org-a/deliveryIssues/issue-a')));
+    await assertFails(getDoc(doc(db, 'organizations/org-a/criticalUpdates/update-a')));
+    await assertFails(setDoc(doc(db, 'organizations/org-a/rsvpReminders/event-a'), { state: 'scheduled' }));
   }
 });
 test('profile field allowlists preserve server-owned authority and immutable identity', async () => {
@@ -135,7 +153,7 @@ test('v2 hierarchy, teams, events and audit data cannot leak through legacy read
   });
   for (const uid of ['coach-a', 'player-a', 'outsider', 'admin']) {
     const db = dbFor(uid);
-    for (const path of ['teams/v2-team', 'events/v2-event', 'organizations/org-a', 'organizations/org-a/members/coach-a', 'organizations/org-a/programs/p', 'organizations/org-a/audit/a', 'organizationOwners/outsider']) {
+    for (const path of ['teams/v2-team', 'events/v2-event', 'organizations/org-a', 'organizations/org-a/members/coach-a', 'organizations/org-a/programs/p', 'organizations/org-a/audit/a', 'organizationOwners/outsider', 'calendarSubscriptions/private-hash', 'commandRequests/calendar-receipt']) {
       await assertFails(getDoc(doc(db, path)));
       await assertFails(setDoc(doc(db, path), { orgId: 'org-a' }));
     }

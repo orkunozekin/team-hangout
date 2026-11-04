@@ -1,12 +1,14 @@
 import React, {
   useCallback,
   useState,
+  useRef,
 } from 'react';
 
 import {
   Alert,
   FlatList,
   RefreshControl,
+  ScrollView,
   Share,
   StyleSheet,
   Text,
@@ -34,6 +36,7 @@ import {
 } from '../lib/roles';
 
 import {
+  DestructiveButton,
   EmptyState,
   PrimaryButton,
   Screen,
@@ -55,6 +58,7 @@ import {
   spacing,
   type,
 } from '../theme/theme';
+import { TeamReportSummary } from '../components/TeamReportSummary';
 
 type Props = {
   teamId: string;
@@ -67,21 +71,32 @@ export default function TeamScreen({ teamId, membership, appRole }: Props) {
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingCode, setLoadingCode] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const request = useRef(0);
   const canManage = canManageTeam({ membership, appRole });
   const isSuperAdmin = isSuperAdminRole(appRole);
 
   const load = useCallback(async () => {
-    const [teamData, memberData] = await Promise.all([
-      getTeam(teamId),
-      listTeamMembers(teamId),
-    ]);
-    setTeam(teamData);
-    setMembers(memberData);
+    const current = ++request.current;
+    setLoadError(null);
+    setTeam(null);
+    setMembers([]);
+    try {
+      const teamData = await getTeam(teamId);
+      if (!teamData) throw new Error('Team unavailable');
+      const memberData = teamData.schemaVersion === 2 ? [] : await listTeamMembers(teamId);
+      if (current !== request.current) return;
+      setTeam(teamData);
+      setMembers(memberData);
+    } catch {
+      if (current === request.current) setLoadError('Unable to load this team. Please try again.');
+    }
   }, [teamId]);
 
   useFocusEffect(
     useCallback(() => {
-      load();
+      void load();
+      return () => { request.current++; };
     }, [load]),
   );
 
@@ -103,39 +118,26 @@ export default function TeamScreen({ teamId, membership, appRole }: Props) {
   }
 
   async function onRegenerate() {
-    Alert.alert(
-      'Regenerate invite code?',
-      'The old code will stop working immediately.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Regenerate',
-          style: 'destructive',
-          onPress: async () => {
-            setLoadingCode(true);
-            try {
-              const result = await regenerateInviteCode({
-                teamId,
-                userId: membership.userId,
-                isSuperAdmin,
-              });
-              setTeam((prev) =>
-                prev
-                  ? { ...prev, inviteCode: result.inviteCode }
-                  : prev,
-              );
-            } catch (err) {
-              Alert.alert(
-                'Failed',
-                err instanceof Error ? err.message : 'Please try again',
-              );
-            } finally {
-              setLoadingCode(false);
-            }
-          },
-        },
-      ],
-    );
+    setLoadingCode(true);
+    try {
+      const result = await regenerateInviteCode({
+        teamId,
+        userId: membership.userId,
+        isSuperAdmin,
+      });
+      setTeam((prev) =>
+        prev
+          ? { ...prev, inviteCode: result.inviteCode }
+          : prev,
+      );
+    } catch (err) {
+      Alert.alert(
+        'Failed',
+        err instanceof Error ? err.message : 'Please try again',
+      );
+    } finally {
+      setLoadingCode(false);
+    }
   }
 
   return (
@@ -144,44 +146,68 @@ export default function TeamScreen({ teamId, membership, appRole }: Props) {
         <Title>{team?.name ?? 'Team'}</Title>
         <Subtitle>
           {team?.sport ? `${team.sport} · ` : ''}
-          Your role: {displayTeamRole(membership.role, appRole)}
+          Your role: {displayTeamRole(membership, appRole)}
         </Subtitle>
 
-        {canManage && team ? (
+        {canManage && team && team.schemaVersion !== 2 ? (
           <View style={styles.inviteBox}>
             <Text style={styles.inviteLabel}>Invite code</Text>
             <Text style={styles.inviteCode}>{team.inviteCode}</Text>
             <PrimaryButton label="Share invite" onPress={onShareInvite} />
-            <SecondaryButton
+            <DestructiveButton
               label={loadingCode ? 'Working...' : 'Regenerate code'}
-              onPress={onRegenerate}
+              confirm={{
+                title: 'Regenerate invite code?',
+                message: 'The old code will stop working immediately.',
+                confirmLabel: 'Regenerate',
+              }}
+              onPress={() => void onRegenerate()}
               disabled={loadingCode}
             />
           </View>
         ) : null}
       </View>
 
-      <Text style={styles.sectionTitle}>Members ({members.length})</Text>
+      {loadError ? (
+        <View style={styles.list}>
+          <Text accessibilityRole="alert">{loadError}</Text>
+          <SecondaryButton label="Retry" onPress={load} />
+        </View>
+      ) : !team ? (
+        <EmptyState message="Loading team..." />
+      ) : team.schemaVersion === 2 ? (
+        <ScrollView contentContainerStyle={styles.list}>
+          <Text>Your organization manages this team's roster.</Text>
+          <SecondaryButton label="Refresh team" onPress={onRefresh} disabled={refreshing} />
+          {membership.role === 'coach' && team.orgId && team.programId && team.seasonId ? (
+            <TeamReportSummary orgId={team.orgId} programId={team.programId} seasonId={team.seasonId} teamId={team.id} />
+          ) : null}
+        </ScrollView>
+      ) : (
+        <>
+          <Text style={styles.sectionTitle}>Members ({members.length})</Text>
 
-      <FlatList
-        data={members}
-        keyExtractor={(item) => item.id}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-        contentContainerStyle={styles.list}
-        ListEmptyComponent={
-          <EmptyState message="No members yet." />
-        }
-        renderItem={({ item }) => (
-          <View style={styles.memberRow}>
-            <View>
-              <Text style={styles.memberName}>{item.displayName}</Text>
-              <Text style={styles.memberRole}>{item.role}</Text>
-            </View>
-          </View>
-        )}
-      />
+          <FlatList
+            data={members}
+            keyExtractor={(item) => item.id}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            }
+            contentContainerStyle={styles.list}
+            ListEmptyComponent={
+              <EmptyState message="No members yet." />
+            }
+            renderItem={({ item }) => (
+              <View style={styles.memberRow}>
+                <View>
+                  <Text style={styles.memberName}>{item.displayName}</Text>
+                  <Text style={styles.memberRole}>{displayTeamRole(item)}</Text>
+                </View>
+              </View>
+            )}
+          />
+        </>
+      )}
     </Screen>
   );
 }

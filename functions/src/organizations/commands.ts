@@ -29,6 +29,9 @@ export function audit(tx: Transaction, orgId: string, uid: string, operation: st
     schemaVersion: 2, actorUid: uid, operation, targetId, revision: newRevision, createdAt: Timestamp.now(),
   });
 }
+function rolloverBuilding(): never {
+  throw new HttpsError('failed-precondition', 'This season is still being created by a rollover.', { domainCode: 'ROLLOVER_IN_PROGRESS' });
+}
 function enabled(organization: Data) {
   if (organization.features?.organizationV2 !== true) throw new HttpsError('failed-precondition', 'Organization features are not enabled.');
 }
@@ -96,6 +99,7 @@ export const saveHierarchyEntity = command('saveHierarchyEntity', data => {
   if (kind === 'division') await hierarchy(tx, orgId, fields.programId, fields.seasonId, undefined, !replay);
   if (replay) return replay;
   if (kind === 'season' && before?.status === 'archived') inactive();
+  if (kind === 'season' && before?.rolloverState === 'building') rolloverBuilding();
   checkRevision(before, payload.expectedRevision);
   const entity = { ...before, ...fields, ...(kind === 'organization' ? {} : { orgId }), ...metadata(uid, before) };
   tx.set(ref, entity);
@@ -105,9 +109,9 @@ export const saveHierarchyEntity = command('saveHierarchyEntity', data => {
 
 export const saveTeam = command('saveTeam', data => {
   keys(data, ['requestId', 'orgId', 'teamId', 'expectedRevision', 'fields']);
-  const fields = object(data.fields); keys(fields, ['name', 'programId', 'seasonId', 'divisionId', 'status']);
+  const fields = object(data.fields); keys(fields, ['name', 'programId', 'seasonId', 'divisionId', 'status', 'externalId']);
   return { orgId: id(data.orgId, 'orgId'), teamId: data.teamId == null ? null : id(data.teamId, 'teamId'), expectedRevision: revision(data.expectedRevision),
-    fields: { name: text(fields.name, 'name'), programId: id(fields.programId, 'programId'), seasonId: id(fields.seasonId, 'seasonId'), divisionId: id(fields.divisionId, 'divisionId'), status: choice(fields.status, ['active', 'archived'], 'status') } };
+    fields: { ...(Object.prototype.hasOwnProperty.call(fields, 'externalId') ? { externalId: optional(fields.externalId, 'externalId', 128) } : {}), name: text(fields.name, 'name'), programId: id(fields.programId, 'programId'), seasonId: id(fields.seasonId, 'seasonId'), divisionId: id(fields.divisionId, 'divisionId'), status: choice(fields.status, ['active', 'archived'], 'status') } };
 }, async (tx, payload, uid, _actor, replay) => {
   const scope = await staffScope(tx, payload.orgId, uid); enabled(scope.organization); requireProgram(scope, payload.fields.programId);
   const db = getFirestore(); const ref = db.collection('teams').doc(payload.teamId ?? replay?.team?.id ?? db.collection('teams').doc().id);
@@ -170,6 +174,7 @@ export const archiveSeason = command('archiveSeason', data => {
   if (!before || before.orgId !== payload.orgId) denied();
   requireProgram(scope, before!.programId); await hierarchy(tx, payload.orgId, before!.programId, undefined, undefined, !replay);
   if (replay) return replay;
+  if (before!.rolloverState === 'building') rolloverBuilding();
   checkRevision(before, payload.expectedRevision);
   const season = { ...before, status: payload.status, ...metadata(uid, before) };
   tx.set(ref, season); audit(tx, payload.orgId, uid, 'archiveSeason', ref.id, season.revision);
@@ -191,6 +196,32 @@ function page(data: Data): Data {
   if (!Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 50) invalid('pageSize must be 1 through 50.');
   return { pageSize, cursor: data.cursor == null ? null : id(data.cursor, 'cursor') };
 }
+/** Browser entry reauthorizes direct URLs against canonical membership, never discovery links. */
+export const getAdminWorkspace = readCommand(data => {
+  keys(data, ['orgId']); return { orgId: id(data.orgId, 'orgId') };
+}, async (tx, payload, uid) => {
+  const scope = await staffScope(tx, payload.orgId, uid);
+  if (scope.organization.features?.adminWorkspace !== true) {
+    throw new HttpsError('failed-precondition', 'The admin workspace is not enabled for this organization.', { domainCode: 'ADMIN_WORKSPACE_DISABLED' });
+  }
+  const org = scope.organization;
+  return { organization: { id: payload.orgId, name: org.name, kind: org.kind, timeZone: org.timeZone, status: org.status, revision: org.revision },
+    admin: scope.admin, programIds: scope.admin ? [] : scope.programIds };
+});
+
+export const listOrganizationStaff = readCommand(data => {
+  keys(data, ['orgId', 'pageSize', 'cursor']); return { orgId: id(data.orgId, 'orgId'), ...page(data) };
+}, async (tx, payload, uid) => {
+  const scope = await staffScope(tx, payload.orgId, uid);
+  if (!scope.admin) denied();
+  let query = getFirestore().collection(`organizations/${payload.orgId}/members`).orderBy(FieldPath.documentId()).limit(payload.pageSize + 1);
+  if (payload.cursor) query = query.startAfter(payload.cursor);
+  const result = await tx.get(query);
+  return { items: result.docs.slice(0, payload.pageSize).map(doc => {
+    const member = doc.data();
+    return { id: doc.id, roles: member.roles, programIds: member.programIds, status: member.status, revision: member.revision };
+  }), nextCursor: result.size > payload.pageSize ? result.docs[payload.pageSize - 1].id : null };
+});
 export const listMyOrganizations = readCommand(data => {
   keys(data, ['pageSize', 'cursor']); return page(data);
 }, async (tx, payload, uid) => {
@@ -238,8 +269,13 @@ export const listOrganizationHierarchy = readCommand(data => {
   query = query.orderBy(FieldPath.documentId()).limit(payload.pageSize + 1);
   if (payload.cursor) query = query.startAfter(payload.cursor);
   const result = await tx.get(query);
+  const docs = result.docs.slice(0, payload.pageSize);
+  // A rollover target and its divisions and teams stay hidden until the job completes.
+  const seasonIds = payload.kind === 'season' ? [] : [...new Set(docs.map(doc => doc.data().seasonId).filter((value): value is string => typeof value === 'string'))];
+  const seasons = seasonIds.length ? await tx.getAll(...seasonIds.map(seasonId => db.doc(`organizations/${payload.orgId}/seasons/${seasonId}`))) : [];
+  const building = new Set(seasons.filter(doc => doc.data()?.rolloverState === 'building').map(doc => doc.id));
   return { organization: { id: payload.orgId, name: scope.organization.name, status: scope.organization.status, timeZone: scope.organization.timeZone },
-    items: result.docs.slice(0, payload.pageSize).map(doc => ({ id: doc.id, ...doc.data() })),
+    items: docs.filter(doc => doc.data().rolloverState !== 'building' && !building.has(doc.data().seasonId)).map(doc => ({ id: doc.id, ...doc.data() })),
     nextCursor: result.size > payload.pageSize ? result.docs[payload.pageSize - 1].id : null };
 });
 

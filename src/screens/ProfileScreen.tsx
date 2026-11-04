@@ -27,6 +27,7 @@ import {
 } from '../firebase/users';
 
 import {
+  DestructiveButton,
   FieldLabel,
   LinkButton,
   PrimaryButton,
@@ -48,6 +49,7 @@ import {
 } from '../types/models';
 
 import {
+  displayTeamRole,
   isSuperAdminRole,
 } from '../lib/roles';
 
@@ -83,6 +85,7 @@ export default function ProfileScreen({
   );
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const isSuperAdmin = isSuperAdminRole(appRole);
   const legal = getLegalUrls();
 
@@ -108,6 +111,8 @@ export default function ProfileScreen({
   }
 
   async function onLogout() {
+    if (signingOut) return;
+    setSigningOut(true);
     try {
       await logout();
     } catch (err) {
@@ -115,34 +120,23 @@ export default function ProfileScreen({
         'Logout failed',
         err instanceof Error ? err.message : 'Please try again',
       );
+    } finally {
+      setSigningOut(false);
     }
   }
 
-  function onDeleteAccount() {
-    Alert.alert(
-      'Delete account?',
-      'Your access ends immediately. Cleanup may continue after sign-out. Child profiles, other guardians, teams and events remain. If you are the last organization admin, support must restore administrative control. Calendar entries and emails already copied elsewhere remain. This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            setDeleting(true);
-            try {
-              await deleteAccount();
-            } catch (err) {
-              Alert.alert(
-                'Delete failed',
-                getDeleteAccountErrorMessage(err),
-              );
-            } finally {
-              setDeleting(false);
-            }
-          },
-        },
-      ],
-    );
+  async function onDeleteAccount() {
+    setDeleting(true);
+    try {
+      await deleteAccount();
+    } catch (err) {
+      Alert.alert(
+        'Delete failed',
+        getDeleteAccountErrorMessage(err),
+      );
+    } finally {
+      setDeleting(false);
+    }
   }
 
   return (
@@ -152,7 +146,7 @@ export default function ProfileScreen({
         <Subtitle>
           {isSuperAdmin ? 'Super Admin · ' : ''}
           {team
-            ? `${team.name} · ${membership?.role ?? 'member'}`
+            ? `${team.name} · ${membership ? displayTeamRole(membership, appRole) : 'Member'}`
             : 'No team selected'}
         </Subtitle>
 
@@ -170,12 +164,13 @@ export default function ProfileScreen({
           label="Save profile"
           onPress={onSave}
           loading={loading}
-          disabled={deleting}
+          disabled={deleting || signingOut}
         />
 
         <SecondaryButton
           label="Sign out"
           onPress={onLogout}
+          loading={signingOut}
           disabled={loading || deleting}
         />
 
@@ -218,11 +213,16 @@ export default function ProfileScreen({
           </>
         ) : null}
 
-        <SecondaryButton
+        <DestructiveButton
           label="Delete account"
-          onPress={onDeleteAccount}
+          confirm={{
+            title: 'Delete account?',
+            message: 'Your access ends immediately. Cleanup may continue after sign-out. Child profiles, other guardians, teams and events remain. If you are the last organization admin, support must restore administrative control. Calendar entries and emails already copied elsewhere remain. This cannot be undone.',
+            confirmLabel: 'Delete',
+          }}
+          onPress={() => void onDeleteAccount()}
           loading={deleting}
-          disabled={loading}
+          disabled={loading || signingOut}
         />
       </ScrollView>
     </Screen>

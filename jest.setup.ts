@@ -26,3 +26,6 @@ jest.mock('./src/firebase/config', () => ({
   db: {},
   functions: {},
 }));
+
+// Icon fonts load through the native asset registry, which jest does not provide.
+jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));

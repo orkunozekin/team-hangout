@@ -60,5 +60,49 @@ jobs:
           java-version: '21'
       - run: yarn install --frozen-lockfile
       - run: yarn --cwd functions install --frozen-lockfile
-      - name: Run isolated Firestore, Auth and callable tests
-        run: yarn test:backend
+      - name: Run general Firestore, Auth and callable tests
+        run: yarn test:backend:ci-general
+      - name: Run schedule publication tests in a fresh emulator
+        run: yarn test:backend:ci-schedule-publication
+      - name: Verify pure scheduling constraints and seeded benchmarks
+        run: yarn test:scheduling && node scripts/benchmark-scheduling.mjs
+      - name: Rehearse synthetic migration, revocation and deletion
+        run: yarn rehearse:phase1 "$RUNNER_TEMP/phase1-operations.json" operations
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase1-operations-evidence
+          path: ${{ runner.temp }}/phase1-operations.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+  browser-tests:
+    name: Browser workspace & production build
+    # Playwright 1.56.1 does not support the Ubuntu 26.04 image behind ubuntu-latest.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+          cache-dependency-path: |
+            yarn.lock
+            admin/yarn.lock
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: yarn install --frozen-lockfile
+      - run: yarn --cwd functions install --frozen-lockfile
+      - run: yarn --cwd admin install --frozen-lockfile
+      - run: yarn --cwd admin playwright install --with-deps chromium
+      - name: Build and test browser against synthetic emulators
+        run: yarn test:admin
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-test-results
+          path: admin/test-results/
+          if-no-files-found: ignore

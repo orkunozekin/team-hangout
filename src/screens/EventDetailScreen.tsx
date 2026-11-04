@@ -1,13 +1,30 @@
+import { agendaTime } from '../lib/agendaTime';
+import { eventCardContent } from '../lib/eventCard';
+import { eventConversationTarget } from '../lib/conversationNavigation';
+import EventAttendance from '../components/EventAttendance';
+import EventAvailability from "../components/EventAvailability";
+import EventLineup from "../components/EventLineup";
+import EventPlayTime from "../components/EventPlayTime";
+import EventResult from "../components/EventResult";
+import EventStandings from "../components/EventStandings";
+import EventBracket from "../components/EventBracket";
+import EventVolunteers from "../components/EventVolunteers";
+import EventPracticePlan from "../components/EventPracticePlan";
+import EventRides from "../components/EventRides";
 import React, {
   useCallback,
+  useEffect,
   useState,
+  useRef,
 } from 'react';
 
 import {
   Alert,
+  AppState,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 
@@ -26,9 +43,11 @@ import {
 import {
   getEvent,
   softDeleteEvent,
+  mutateEventSchedule,
 } from '../firebase/events';
 
 import {
+  DestructiveButton,
   EmptyState,
   PrimaryButton,
   Screen,
@@ -56,13 +75,24 @@ import {
   spacing,
   type,
 } from '../theme/theme';
+import OfflineNotice from '../components/OfflineNotice';
+import {
+  clearGameDayCache,
+  isGameDayCacheAccessLoss,
+  loadCachedEvent,
+  saveCachedEvent,
+  type CachedValue,
+} from '../lib/gameDayCache';
 
 type RootStackParamList = {
   EventDetail: { eventId: string };
-  CreateEditEvent: { eventId?: string };
+  CreateEditEvent: { eventId?: string; action?: 'reschedule' };
+  Conversation: { orgId: string; scopeType: 'organization' | 'division' | 'team' | 'event'; scopeId: string };
 };
 
 type Props = {
+  userId?: string;
+  cacheScope?: string;
   membership: TeamMember;
   appRole?: AppRole;
   navigation: NativeStackNavigationProp<RootStackParamList, 'EventDetail'>;
@@ -70,58 +100,97 @@ type Props = {
 };
 
 export default function EventDetailScreen({
+  userId,
+  cacheScope,
   membership,
   appRole,
   navigation,
   route,
 }: Props) {
+  const generation = useRef(0);
   const [event, setEvent] = useState<TeamEvent | null>(null);
   const [loading, setLoading] = useState(true);
-  const canManage = canManageTeam({ membership, appRole });
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [cached, setCached] = useState<CachedValue<TeamEvent> | null>(null);
+  const canManage = !cached && (event?.schemaVersion === 2 ? event.canManage : canManageTeam({ membership, appRole }));
 
   const load = useCallback(async () => {
-    const data = await getEvent(route.params.eventId);
-    setEvent(data);
-  }, [route.params.eventId]);
+    const token = ++generation.current;
+    try {
+      const data = await getEvent(route.params.eventId);
+      if (token === generation.current) {
+        setCached(null);
+        setEvent(data);
+        if (data && userId && cacheScope) void saveCachedEvent(userId, cacheScope, data).catch(() => undefined);
+      }
+    } catch (error) {
+      const denied = isGameDayCacheAccessLoss(error);
+      if (denied && userId) await clearGameDayCache(userId).catch(() => undefined);
+      const copy = userId && cacheScope && !denied
+        ? await loadCachedEvent(userId, cacheScope, route.params.eventId)
+        : null;
+      if (token === generation.current && copy) {
+        setCached(copy);
+        setEvent(copy.value);
+        setError('');
+        return;
+      }
+      throw error;
+    }
+  }, [route.params.eventId, userId, cacheScope]);
 
   useFocusEffect(
     useCallback(() => {
       let active = true;
       (async () => {
-        setLoading(true);
+        setLoading(true); setEvent(null); setError('');
         try {
           await load();
-        } finally {
+        } catch (error) { setError(error instanceof Error ? error.message : 'Event unavailable.'); setEvent(null); } finally {
           if (active) setLoading(false);
         }
       })();
       return () => {
-        active = false;
+        active = false; generation.current++;
       };
     }, [load]),
   );
 
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') {
+        setLoading(true);
+        void load()
+          .catch(error => {
+            setError(error instanceof Error ? error.message : 'Event unavailable.');
+            setEvent(null);
+          })
+          .finally(() => setLoading(false));
+      }
+    });
+    return () => sub?.remove();
+  }, [load]);
+
+  async function lifecycle(action: string) {
+    if (!event) return;
+    setSaving(true); setError('');
+    try {
+      await mutateEventSchedule(event.id, event.revision ?? 0, action, {}, reason);
+      setReason(''); await load();
+    } catch (error) { setError(error instanceof Error ? error.message : 'Please try again.'); }
+    finally { setSaving(false); }
+  }
+
   async function onDelete() {
-    Alert.alert(
-      'Delete event?',
-      'This removes the event from the team schedule.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              if (!event) throw new Error('Reload the event before deleting.');
-              await softDeleteEvent(route.params.eventId, event.revision ?? 0);
-              navigation.goBack();
-            } catch (error) {
-              Alert.alert('Could not delete event', error instanceof Error ? error.message : 'Please try again');
-            }
-          },
-        },
-      ],
-    );
+    try {
+      if (!event) throw new Error('Reload the event before deleting.');
+      await softDeleteEvent(route.params.eventId, event.revision ?? 0);
+      navigation.goBack();
+    } catch (error) {
+      Alert.alert('Could not delete event', error instanceof Error ? error.message : 'Please try again');
+    }
   }
 
   if (loading) {
@@ -135,14 +204,16 @@ export default function EventDetailScreen({
   if (!event) {
     return (
       <Screen edges={['bottom']}>
-        <EmptyState message="Event not found." />
+        <EmptyState message={error || "Event not found."} />
       </Screen>
     );
   }
 
+  const headerTeams = eventCardContent({ title: event.title, type: event.type, teamNames: event.teams?.map(team => team.name) }).teams;
   return (
     <Screen edges={['bottom']}>
       <ScrollView>
+        {cached ? <OfflineNotice savedAt={cached.savedAt} olderThanTtl={cached.olderThanTtl} /> : null}
         <View
           style={[
             styles.badge,
@@ -162,9 +233,15 @@ export default function EventDetailScreen({
         </View>
 
         <Title>{event.title}</Title>
+        {event.schemaVersion === 2 ? <>
+          {headerTeams ? <Text style={styles.row}>{headerTeams}</Text> : null}
+          {event.status === 'postponed' ? <Text style={styles.row}>Awaiting a new schedule. The previous time is shown below.</Text> : null}
+          {event.status === 'cancelled' ? <Text style={styles.row}>Cancelled. This event is retained in schedule history.</Text> : null}
+          {event.status === 'completed' ? <Text style={styles.row}>Completed.</Text> : null}
+        </> : null}
 
         <Text style={styles.row}>
-          {formatEventDateLabel(event.date)} at {event.time}
+          {event.schemaVersion === 2 && event.startsAt && event.endsAt && event.timeZone ? agendaTime(event.startsAt, event.endsAt, event.timeZone) : `${formatEventDateLabel(event.date)} at ${event.time}`}
         </Text>
 
         {event.location?.name ? (
@@ -178,7 +255,29 @@ export default function EventDetailScreen({
           <Text style={styles.notes}>{event.notes}</Text>
         ) : null}
 
-        {canManage ? (
+        {cached ? <Text style={styles.row}>Updates, responses, check-in, and attendance require a connection. No offline changes are queued.</Text> : null}
+        {!cached && event.schemaVersion === 2 ? <EventAvailability key={`${event.id}:${event.revision}`} eventId={event.id} canManage={canManage} /> : null}
+        {!cached && eventConversationTarget(event) ? <SecondaryButton label="Conversation" onPress={() => navigation.navigate('Conversation', { orgId: event.orgId!, scopeType: 'event', scopeId: event.id })} /> : null}
+        {!cached && event.schemaVersion === 2 ? <EventAttendance key={`attendance:${event.id}:${event.revision}`} eventId={event.id} teamId={membership.teamId} /> : null}
+        {!cached && event.schemaVersion === 2 && event.orgId ? <EventLineup key={`lineup:${event.id}:${membership.teamId}`} orgId={event.orgId} eventId={event.id} teamId={membership.teamId} canCoach={membership.role === 'coach'} /> : null}
+        {!cached && event.schemaVersion === 2 && event.orgId && membership.role === 'coach' ? <EventPlayTime key={`playtime:${event.id}:${membership.teamId}`} orgId={event.orgId} eventId={event.id} teamId={membership.teamId} /> : null}
+        {!cached && event.schemaVersion === 2 && event.orgId && event.type === 'match' && membership.role === 'coach' ? <EventResult key={`result:${event.id}:${membership.teamId}`} eventId={event.id} teamId={membership.teamId} /> : null}
+        {!cached && event.schemaVersion === 2 && event.orgId && event.type === 'match' ? <EventStandings key={`standings:${event.id}:${membership.teamId}`} eventId={event.id} teamId={membership.teamId} /> : null}
+        {!cached && event.schemaVersion === 2 && event.orgId && event.type === 'practice' ? <EventPracticePlan key={`practice:${event.id}:${membership.teamId}`} orgId={event.orgId} eventId={event.id} teamId={membership.teamId} /> : null}
+        {!cached && event.schemaVersion === 2 && event.orgId ? <EventVolunteers key={`volunteers:${event.id}:${membership.teamId}`} orgId={event.orgId} eventId={event.id} teamId={membership.teamId} /> : null}
+        {!cached && event.schemaVersion === 2 && event.orgId ? <EventRides key={`rides:${event.id}:${membership.teamId}`} orgId={event.orgId} eventId={event.id} teamId={membership.teamId} /> : null}
+        {!cached && event.schemaVersion === 2 && event.orgId && event.type === 'match' ? <EventBracket key={`bracket:${event.id}:${membership.teamId}`} eventId={event.id} teamId={membership.teamId} /> : null}
+        {event.history?.length ? <>
+          <Text style={styles.row}>Schedule history{event.historyHasMore ? ' (latest 20)' : ''}</Text>
+          {event.history.map(row => <Text key={row.revision} style={styles.row}>
+            Revision {row.revision}: {row.action} · {row.previousStatus} → {row.status}{row.reason ? `\n${row.reason}` : ''}
+            {row.action === 'reschedule' ? `\n${new Date(row.previousStartsAt).toLocaleString('en-US', { timeZone: row.previousTimeZone ?? event.timeZone })} → ${new Date(row.startsAt).toLocaleString('en-US', { timeZone: row.timeZone ?? event.timeZone })}` : ''}
+          </Text>)}
+        </> : null}
+        {error ? <><Text accessibilityRole="alert" style={styles.row}>{error}</Text>
+          <SecondaryButton label="Reload event" onPress={async () => { try { setError(''); await load(); } catch (error) { setError(error instanceof Error ? error.message : 'Event unavailable.'); } }} />
+        </> : null}
+        {canManage && !['cancelled', 'completed'].includes(event.status ?? '') ? (
           <>
             <PrimaryButton
               label="Edit event"
@@ -188,7 +287,14 @@ export default function EventDetailScreen({
                 })
               }
             />
-            <SecondaryButton label="Delete event" onPress={onDelete} />
+            {event.schemaVersion === 2 ? <>
+              <SecondaryButton label="Reschedule" onPress={() => navigation.navigate('CreateEditEvent', { eventId: event.id, action: 'reschedule' })} />
+              <Text style={styles.row}>Reason for status change</Text>
+              <TextInput accessibilityLabel="Reason for status change" value={reason} onChangeText={setReason} maxLength={500} style={{ ...styles.row, borderWidth: 1, borderColor: colors.border, padding: spacing.sm }} />
+              {event.status === 'scheduled' ? <SecondaryButton label="Postpone" disabled={saving || !reason.trim()} onPress={() => lifecycle('postpone')} /> : null}
+              <DestructiveButton label="Cancel event" disabled={saving || !reason.trim()} confirm={{ title: 'Cancel this event?', message: 'The event is marked cancelled for everyone on the team, with the reason you entered.', confirmLabel: 'Yes, cancel' }} onPress={() => void lifecycle('cancel')} />
+              {event.status === 'scheduled' ? <SecondaryButton label="Complete event" disabled={saving || !reason.trim()} onPress={() => lifecycle('complete')} /> : null}
+            </> : <DestructiveButton label="Delete event" confirm={{ title: 'Delete event?', message: 'This removes the event from the team schedule.', confirmLabel: 'Delete' }} onPress={() => void onDelete()} />}
           </>
         ) : null}
       </ScrollView>

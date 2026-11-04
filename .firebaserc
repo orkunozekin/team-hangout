@@ -1,0 +1,13 @@
+{
+  "projects": {},
+  "targets": {
+    "team-hangout-staging": {
+      "hosting": {
+        "admin-staging": [
+          "team-hangout-staging"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

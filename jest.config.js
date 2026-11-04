@@ -1,5 +1,6 @@
 /** @type {import('jest').Config} */
 module.exports = {
+  testPathIgnorePatterns: ['/node_modules/', '/admin/'],
   preset: 'jest-expo',
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
   transformIgnorePatterns: [

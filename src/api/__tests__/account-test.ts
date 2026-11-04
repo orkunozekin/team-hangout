@@ -5,9 +5,15 @@ jest.mock('firebase/functions', () => ({
 }));
 
 const mockLogout = jest.fn();
+const mockGetCurrentUser = jest.fn();
+const mockClearGameDayCache = jest.fn();
 
 jest.mock('../auth', () => ({
   logout: (...args: unknown[]) => mockLogout(...args),
+  getCurrentUser: () => mockGetCurrentUser(),
+}));
+jest.mock('../../lib/gameDayCache', () => ({
+  clearGameDayCache: (...args: unknown[]) => mockClearGameDayCache(...args),
 }));
 
 import {
@@ -27,6 +33,8 @@ describe('api/account', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (httpsCallable as jest.Mock).mockReturnValue(mockCallable);
+    mockGetCurrentUser.mockReturnValue({ uid: 'deleting-user' });
+    mockClearGameDayCache.mockResolvedValue(undefined);
   });
 
   it('calls deleteAccount and logs out', async () => {
@@ -42,20 +50,18 @@ describe('api/account', () => {
       'deleteAccount',
     );
     expect(mockCallable).toHaveBeenCalled();
-    expect(mockLogout).toHaveBeenCalled();
+    expect(mockClearGameDayCache).toHaveBeenCalledWith('deleting-user');
+    expect(mockLogout).toHaveBeenCalledWith({ cacheAlreadyCleared: true });
     expect(result).toEqual({ ok: true, membershipsRemoved: 2 });
   });
 
-  it('still returns result if local logout fails', async () => {
+  it('does not report deletion complete if local logout fails', async () => {
     mockCallable.mockResolvedValue({
       data: { ok: true, membershipsRemoved: 0 },
     });
     mockLogout.mockRejectedValue(new Error('already gone'));
 
-    await expect(deleteAccount()).resolves.toEqual({
-      ok: true,
-      membershipsRemoved: 0,
-    });
+    await expect(deleteAccount()).rejects.toThrow('already gone');
   });
 
   it('maps callable error codes', () => {

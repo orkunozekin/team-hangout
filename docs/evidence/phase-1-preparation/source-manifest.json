@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "preparedDate": "2026-10-13",
+  "candidateSourceSha": "11aa852a1fe70c272bdddf04d0f8856989684bd3",
+  "candidatePullRequest": "https://github.com/orkunozekin/team-hangout/pull/22",
+  "status": "source-inventory-only",
+  "deployed": false,
+  "pilotReady": false,
+  "stagingProjectId": null,
+  "hostingReleaseId": null,
+  "nativeBuildId": null,
+  "functionsRevisions": [],
+  "compositeIndexDefinitionCount": 13,
+  "indexesReadyVerified": false,
+  "files": [
+    {
+      "path": "firebase.json",
+      "sha256": "61a0447fa51cfe889e1b6817b58d9bf8215afa3d3660a541e1be1e99ca2ac70a"
+    },
+    {
+      "path": "firebase.admin-staging.json",
+      "sha256": "6b271be0fb4a6451733cc55b1b7e2e0634a1fb311411e369dbeaf578fe8ba97c"
+    },
+    {
+      "path": "firestore.rules",
+      "sha256": "da6961ba91df1988fba3bf1b1a38d839b1120beff555ed9ee9966b9609844a86"
+    },
+    {
+      "path": "firestore.indexes.json",
+      "sha256": "48bea255c11e2c752987a4f7c2f0feb4ae91214b049e3cb5398a7e39f599c5f2"
+    },
+    {
+      "path": "storage.rules",
+      "sha256": "2f89acc11ae3144a8995782fe4544a58a8149550e50023e5374882ceec86f09f"
+    },
+    {
+      "path": "package.json",
+      "sha256": "f576df7f4abd2c05bb046b982490374b50219c2c6aeface67d1fe453603787a6"
+    },
+    {
+      "path": "yarn.lock",
+      "sha256": "1346429965d019ddd3d47ddbe276ba1050ec0ed7d1e2f5ad47f365d171f3e174"
+    },
+    {
+      "path": "functions/package.json",
+      "sha256": "ca3b4d53f8f20bffb69e818a5317bafe55ddcc6345ca1d966870f5f3283c3d6b"
+    },
+    {
+      "path": "functions/yarn.lock",
+      "sha256": "818d4316facd61b7b06592f092fd08be97126ae6cfe31a1249ecc16d78f30472"
+    },
+    {
+      "path": "admin/package.json",
+      "sha256": "05bdb61a9f3714cf10555e5a11f69af77cc3e92d4e7581da4f3995d6bc121238"
+    },
+    {
+      "path": "admin/yarn.lock",
+      "sha256": "14c35d9b7065b81bc94dd79bbb34de29e9c4a080b80e2009fcf36a32fec979a9"
+    },
+    {
+      "path": "functions/src/index.ts",
+      "sha256": "a15a7d1a4e2b4db91f15f64c7f5f6eebdc703117eed9bcfe5eb09964f1ef10bc"
+    }
+  ],
+  "limitations": [
+    "Hashes describe committed source files, not built or deployed artifacts.",
+    "No staging credentials, deployment, synthetic fixture creation, email delivery or pilot exposure authorized.",
+    "All release gates require dated named-owner acceptance and actual evidence."
+  ]
+}

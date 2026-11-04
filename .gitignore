@@ -52,3 +52,14 @@ firebase-service-account.json
 
 # Emulator scratch logs
 *-debug.log
+
+# Browser test artifacts
+admin/test-results/
+admin/playwright-report/
+
+# Project-specific backend configuration
+functions/.env.*
+!functions/.env.example
+
+# Local Firebase deployment cache
+.firebase/

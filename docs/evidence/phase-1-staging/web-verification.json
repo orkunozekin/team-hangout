@@ -1,0 +1,31 @@
+{
+  "host": "https://team-hangout-staging.web.app",
+  "checkedAt": "2026-10-13T19:46:06.705Z",
+  "assets": [
+    {
+      "path": "/index.html",
+      "sha256": "f18deecb38a4f80cce13f0e8f1e7ba8d9dad323d196d1c3fce910b966d8b4c17",
+      "status": 200
+    },
+    {
+      "path": "/assets/index-CEjF8Y5e.js",
+      "sha256": "7d60c70cd8e67230ea5c367e4f864da3417f1de825407f8ed30678e9d9e3cb0b",
+      "status": 200
+    },
+    {
+      "path": "/assets/index-CuGlQhww.css",
+      "sha256": "16629645d8bcf343a059ba36b949e7876ac87f356d6e19fb424c408d18b542d6",
+      "status": 200
+    }
+  ],
+  "spaRouteStatus": 200,
+  "headers": {
+    "cacheControl": "no-store",
+    "referrerPolicy": "no-referrer",
+    "frameOptions": "DENY",
+    "contentTypeOptions": "nosniff"
+  },
+  "passed": true,
+  "browserBuildSourceSha": "142b14b685b6536ed38706919f9972746950a86a",
+  "uiTreeUnchangedAtSourceSha": "2152c66b72ee345e9fb302c0d0d4d371ea522c37"
+}
