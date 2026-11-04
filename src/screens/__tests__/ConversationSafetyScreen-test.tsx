@@ -19,7 +19,7 @@ const report = {
 const block = { id: 'b1', scopeType: 'team' as const, scopeId: 'team', createdAt: '2026-10-21T12:00:00.000Z' };
 
 test('households see only their blocked members and can unblock', async () => {
-  (api.listConversationReports as jest.Mock).mockRejectedValue(new Error('denied'));
+  (api.listConversationReports as jest.Mock).mockRejectedValue(Object.assign(new Error('denied'), { code: 'functions/permission-denied' }));
   (api.listConversationBlocks as jest.Mock).mockResolvedValueOnce({ items: [block] }).mockResolvedValueOnce({ items: [] });
   (api.unblockConversationMember as jest.Mock).mockResolvedValue({ id: 'b1', blocked: false });
   await render(<ConversationSafetyScreen orgId="org" organizationName="Synthetic League" />);
@@ -30,20 +30,21 @@ test('households see only their blocked members and can unblock', async () => {
   expect(api.unblockConversationMember).toHaveBeenCalledWith({ orgId: 'org', blockId: 'b1' });
 });
 
-test('moderators see the reporter and remove a message through the moderation command after confirming', async () => {
+test('moderators see the reporter and remove a message after confirming, continuing until related reports close', async () => {
   (api.listConversationBlocks as jest.Mock).mockResolvedValue({ items: [] });
   (api.listConversationReports as jest.Mock).mockResolvedValueOnce({ items: [report], nextCursor: null }).mockResolvedValueOnce({ items: [], nextCursor: null });
-  (api.moderateConversationMessage as jest.Mock).mockResolvedValue({ id: 'm1', tombstoned: true });
-  (api.resolveConversationReport as jest.Mock).mockResolvedValue({ id: 'r1', status: 'removed' });
+  (api.resolveConversationReport as jest.Mock)
+    .mockResolvedValueOnce({ id: 'r1', status: 'removed', remaining: true })
+    .mockResolvedValueOnce({ id: 'r1', status: 'removed', remaining: false });
   await render(<ConversationSafetyScreen orgId="org" />);
   expect(await screen.findByText('Unkind words')).toBeTruthy();
   expect(screen.getByText(/Reported by guardian/)).toBeTruthy();
   expect(screen.getByText('Reporter note: Aimed at my child')).toBeTruthy();
   await fireEvent.press(screen.getByLabelText('Remove message'));
-  expect(api.moderateConversationMessage).not.toHaveBeenCalled();
+  expect(api.resolveConversationReport).not.toHaveBeenCalled();
   await fireEvent.press(screen.getAllByText('Remove message')[1]);
   expect(await screen.findByText('No open reports.')).toBeTruthy();
-  expect(api.moderateConversationMessage).toHaveBeenCalledWith({ orgId: 'org', scopeType: 'team', scopeId: 'team', messageId: 'm1', reason: 'Report: Harassment or bullying' });
+  expect(api.resolveConversationReport).toHaveBeenCalledTimes(2);
   expect(api.resolveConversationReport).toHaveBeenCalledWith({ orgId: 'org', reportId: 'r1', resolution: 'removed' });
 });
 
@@ -56,5 +57,25 @@ test('moderators dismiss a report and see an error when it fails', async () => {
   await fireEvent.press(screen.getAllByText('Dismiss report')[1]);
   expect(await screen.findByText('The report was not dismissed. Try again.')).toBeTruthy();
   await waitFor(() => expect(api.resolveConversationReport).toHaveBeenCalledWith({ orgId: 'org', reportId: 'r1', resolution: 'dismissed' }));
-  expect(api.moderateConversationMessage).not.toHaveBeenCalled();
+});
+
+test('a failed queue load shows a retry instead of hiding the queue', async () => {
+  (api.listConversationBlocks as jest.Mock).mockResolvedValue({ items: [] });
+  (api.listConversationReports as jest.Mock)
+    .mockRejectedValueOnce(Object.assign(new Error('offline'), { code: 'functions/unavailable' }))
+    .mockResolvedValueOnce({ items: [report], nextCursor: null });
+  await render(<ConversationSafetyScreen orgId="org" />);
+  expect(await screen.findByText('Reported messages could not be loaded.')).toBeTruthy();
+  await fireEvent.press(screen.getByText('Retry loading reports'));
+  expect(await screen.findByText('Unkind words')).toBeTruthy();
+  expect(screen.queryByText('Reported messages could not be loaded.')).toBeNull();
+});
+
+test('a permission denial hides the queue without an error', async () => {
+  (api.listConversationBlocks as jest.Mock).mockResolvedValue({ items: [] });
+  (api.listConversationReports as jest.Mock).mockRejectedValue(Object.assign(new Error('denied'), { code: 'functions/permission-denied' }));
+  await render(<ConversationSafetyScreen orgId="org" />);
+  expect(await screen.findByText('You have not blocked anyone.')).toBeTruthy();
+  expect(screen.queryByText('Reported messages')).toBeNull();
+  expect(screen.queryByText('Reported messages could not be loaded.')).toBeNull();
 });

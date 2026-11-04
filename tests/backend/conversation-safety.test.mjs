@@ -96,11 +96,11 @@ test('moderators dismiss reports or remove the message, and others cannot resolv
   }
   const crossOrg = await fail('safe-foreign-admin', 'resolveConversationReport', { requestId: 'safe-resolve-cross', orgId: 'foreign-org', reportId: first.id, resolution: 'dismissed' });
   assert.equal(crossOrg.code, 'functions/permission-denied');
-  const early = await fail('safe-staff', 'resolveConversationReport', { requestId: 'safe-resolve-early', orgId: 'safe-org', reportId: first.id, resolution: 'removed' });
-  assert.equal(early.details?.domainCode, 'MESSAGE_NOT_REMOVED');
-  await call('safe-staff', 'moderateConversationMessage', { requestId: 'safe-resolve-moderate', ...team, messageId: message.id, reason: 'Report reviewed' });
   const resolved = await call('safe-staff', 'resolveConversationReport', { requestId: 'safe-resolve-remove', orgId: 'safe-org', reportId: first.id, resolution: 'removed' });
   assert.equal(resolved.status, 'removed');
+  assert.equal(resolved.remaining, false);
+  const moderated = await call('safe-coach', 'listConversationMessages', { ...team, pageSize: 50 });
+  assert.equal(moderated.items.find(row => row.id === message.id).tombstoned, true, 'removal tombstones the message');
   for (const id of [first.id, second.id]) {
     const row = (await db.doc(`organizations/safe-org/conversationReports/${id}`).get()).data();
     assert.equal(row.status, 'removed');
@@ -201,4 +201,44 @@ test('cross-organization callers and revoked guardians cannot report or block', 
   } finally {
     await grant.update({ status: 'active' });
   }
+});
+
+test('archived channels keep reports resolvable and removal closes every related report in batches', async () => {
+  const message = await post('safe-parent', team, 'Widely reported message');
+  const first = await call('safe-guardian', 'reportConversationMessage', { requestId: 'safe-many-1', ...team, messageId: message.id, reason: 'spam' });
+  const stored = (await db.doc(`organizations/safe-org/conversationReports/${first.id}`).get()).data();
+  const writer = db.bulkWriter();
+  for (let index = 0; index < 205; index += 1) {
+    writer.set(db.doc(`organizations/safe-org/conversationReports/bulk-${index}`), { ...stored, reporterUid: `bulk-reporter-${index}`, createdAt: Timestamp.now() });
+  }
+  await writer.close();
+  await db.doc('teams/safe-team').update({ status: 'archived' });
+  try {
+    const denied = await fail('safe-other-staff', 'resolveConversationReport', { requestId: 'safe-many-deny', orgId: 'safe-org', reportId: first.id, resolution: 'removed' });
+    assert.equal(denied.code, 'functions/permission-denied');
+    const firstBatch = await call('safe-staff', 'resolveConversationReport', { requestId: 'safe-many-a', orgId: 'safe-org', reportId: first.id, resolution: 'removed' });
+    assert.equal(firstBatch.remaining, true);
+    const tombstoned = (await db.doc(`organizations/safe-org/conversations/${stored.conversationId}/messages/${message.id}`).get()).data();
+    assert.equal(tombstoned.tombstoned, true);
+    const secondBatch = await call('safe-staff', 'resolveConversationReport', { requestId: 'safe-many-b', orgId: 'safe-org', reportId: first.id, resolution: 'removed' });
+    assert.equal(secondBatch.remaining, false);
+    const open = await db.collection('organizations/safe-org/conversationReports').where('messageId', '==', message.id).where('status', '==', 'open').get();
+    assert.equal(open.size, 0);
+    const other = await call('safe-guardian', 'reportConversationMessage', { requestId: 'safe-archived-before', ...team, messageId: message.id, reason: 'spam' }).catch(error => error);
+    assert.equal(other.code, 'functions/permission-denied', 'archived channels stay unreadable');
+  } finally {
+    await db.doc('teams/safe-team').update({ status: 'active' });
+  }
+});
+
+test('a message whose author deleted their account can still be reported', async () => {
+  const message = await post('safe-parent', team, 'Orphaned message');
+  const page = await call('safe-coach', 'listConversationMessages', { ...team, pageSize: 50 });
+  const conversationId = page.conversationId;
+  await db.doc(`organizations/safe-org/conversations/${conversationId}/messages/${message.id}`).update({ authorUid: null, authorIdentity: { kind: 'deleted' } });
+  const report = await call('safe-guardian', 'reportConversationMessage', { requestId: 'safe-orphan', ...team, messageId: message.id, reason: 'inappropriate' });
+  const row = (await call('safe-admin', 'listConversationReports', { orgId: 'safe-org' })).items.find(item => item.id === report.id);
+  assert.equal(row.authorUid, null);
+  const block = await fail('safe-guardian', 'blockConversationMember', { requestId: 'safe-orphan-block', ...team, messageId: message.id });
+  assert.equal(block.code, 'functions/failed-precondition');
 });

@@ -262,3 +262,10 @@ test('hides block for staff views and safety actions on your own or removed mess
   expect(await screen.findAllByText('Report message')).toHaveLength(1);
   expect(screen.queryByLabelText('Block author')).toBeNull();
 });
+
+test('keeps reporting for a deleted author but offers no block', async () => {
+  (api.listConversationMessages as jest.Mock).mockResolvedValue({ ...page, canBlock: true, items: [{ ...parentMessage, authorUid: null, authorLabel: 'Deleted user' }] });
+  await render(<ConversationScreen orgId="org" scopeType="team" scopeId="team" />);
+  expect(await screen.findByText('Report message')).toBeTruthy();
+  expect(screen.queryByLabelText('Block author')).toBeNull();
+});

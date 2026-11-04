@@ -749,22 +749,28 @@ export const moderateConversationMessage = command("moderateConversationMessage"
   const message = await tx.get(messageRef);
   if (!message.exists) throw new HttpsError("not-found", "Message not found.");
   if (message.data()?.tombstoned === true) return { id: payload.messageId, tombstoned: true as const };
+  tombstoneConversationMessage(tx, payload.orgId, decision.conversationId, row, message, uid, payload.reason);
+  return { id: payload.messageId, tombstoned: true as const };
+});
+
+/** Writes a moderator tombstone. Callers read the conversation and message first and check authority. */
+export function tombstoneConversationMessage(tx: Transaction, orgId: string, conversationId: string, conversation: Data | undefined, message: DocumentSnapshot, uid: string, reason: string) {
+  const ref = getFirestore().doc(`organizations/${orgId}/conversations/${conversationId}`);
   const previousRevision = message.data()?.revision ?? 0;
   const nextRevision = previousRevision + 1;
-  const pinned = (Array.isArray(row?.pinnedMessageIds) ? row.pinnedMessageIds : []).filter((id: string) => id !== payload.messageId);
-  tx.update(messageRef, {
+  const pinned = (Array.isArray(conversation?.pinnedMessageIds) ? conversation.pinnedMessageIds : []).filter((id: string) => id !== message.id);
+  tx.update(message.ref, {
     body: FieldValue.delete(),
     tombstoned: true,
-    moderationReason: payload.reason,
+    moderationReason: reason,
     moderatedBy: uid,
     moderatedAt: Timestamp.now(),
     revision: nextRevision,
   });
-  tx.delete(searchReference(payload.orgId, payload.messageId));
-  writeAudit(tx, messageRef, payload.orgId, decision.conversationId, payload.messageId, uid, previousRevision, nextRevision, "tombstone");
-  tx.set(ref, { pinnedMessageIds: pinned, revision: (row?.revision ?? 0) + 1, updatedAt: Timestamp.now() }, { merge: true });
-  return { id: payload.messageId, tombstoned: true as const };
-});
+  tx.delete(searchReference(orgId, message.id));
+  writeAudit(tx, message.ref, orgId, conversationId, message.id, uid, previousRevision, nextRevision, "tombstone");
+  tx.set(ref, { pinnedMessageIds: pinned, revision: (conversation?.revision ?? 0) + 1, updatedAt: Timestamp.now() }, { merge: true });
+}
 
 export const editConversationMessage = command("editConversationMessage", (data) => {
   keys(data, ["requestId", "orgId", "scopeType", "scopeId", "messageId", "text", "expectedRevision"]);

@@ -44,7 +44,7 @@ export async function moderateConversationMessage(input: ChannelQuery & { messag
   return runCommand('moderateConversationMessage', input, requestId());
 }
 export async function resolveConversationReport(input: { orgId: string; reportId: string; resolution: 'dismissed' | 'removed' }) {
-  return runCommand('resolveConversationReport', input, requestId());
+  return runCommand<{ id: string; status: string; remaining: boolean }>('resolveConversationReport', input, requestId());
 }
 /** Organizations where the caller is current staff, so moderators without household channels reach the report queue. */
 export async function listModeratedOrganizations(): Promise<{ orgId: string; organizationName?: string }[]> {

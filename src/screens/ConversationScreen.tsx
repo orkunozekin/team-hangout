@@ -155,7 +155,7 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
           return <Pressable key={choice.code} accessibilityRole="button" accessibilityLabel={`React with ${choice.emoji}`} accessibilityState={{ selected: reaction?.mine === true }} onPress={() => void react(item, choice.emoji)}><Text style={styles.pin}>{choice.emoji} {reaction?.count ?? 0}</Text></Pressable>;
         })}</View>}
         {item.mine && !item.tombstoned ? <SecondaryButton label="Edit message" onPress={() => { setEditing(item); setDraft(item.body ?? ''); }} /> : null}
-        {!item.mine && !item.tombstoned && item.authorUid ? <MessageSafety canBlock={page?.canBlock === true} onReport={(reason, note) => report(item, reason, note)} onBlock={() => block(item)} /> : null}
+        {!item.mine && !item.tombstoned ? <MessageSafety canBlock={page?.canBlock === true && item.authorUid != null} onReport={(reason, note) => report(item, reason, note)} onBlock={() => block(item)} /> : null}
       </View>)}
       {page?.nextCursor ? <SecondaryButton label={loadingOlder ? 'Loading older messages' : 'Load older messages'} disabled={loadingOlder} onPress={() => void older()} /> : null}
       {page?.attachments === 'enabled' && page.canPost ? <SecondaryButton label={uploading ? 'Uploading file' : 'Choose a JPEG, PNG, or PDF'} disabled={uploading} onPress={() => void chooseFile()} /> : null}

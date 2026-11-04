@@ -13,6 +13,7 @@ import {
   membership,
   organizationOf,
   supervisorUids,
+  tombstoneConversationMessage,
   transactionReader,
 } from "./conversations";
 
@@ -132,6 +133,8 @@ export const listConversationReports = readCommand((data) => {
   };
 });
 
+const RELATED_BATCH = 200;
+
 export const resolveConversationReport = command("resolveConversationReport", (data) => {
   keys(data, ["requestId", "orgId", "reportId", "resolution"]);
   if (typeof data.resolution !== "string" || !RESOLUTIONS.includes(data.resolution as (typeof RESOLUTIONS)[number])) invalid("Invalid resolution.");
@@ -140,31 +143,34 @@ export const resolveConversationReport = command("resolveConversationReport", (d
   const reportRef = reportsOf(payload.orgId).doc(payload.reportId);
   const report = (await tx.get(reportRef)).data();
   if (!report || report.orgId !== payload.orgId) denied();
-  const decision = await authorizeConversation(tx, payload.orgId, report!.scopeType, report!.scopeId, uid);
-  if (!decision.moderate) denied();
+  // Live staff grants and the report's program decide, so archiving a team or division never strands its reports.
+  await organizationOf(tx, payload.orgId);
+  const member = await membership(tx, payload.orgId, uid);
+  const key = report!.programKey;
+  if (!member.staff || !(member.admin || key === "organization" || member.programIds.includes(key))) denied();
   if (replay) return replay;
-  if (report!.status !== "open") return { id: payload.reportId, status: report!.status };
-  const related = [reportRef];
-  if (payload.resolution === "removed") {
-    const message = (await tx.get(messageRef(payload.orgId, report!.conversationId, report!.messageId))).data();
-    if (message && message.tombstoned !== true) {
-      throw new HttpsError("failed-precondition", "Remove the message before closing the report.", { domainCode: "MESSAGE_NOT_REMOVED" });
+  const removing = payload.resolution === "removed";
+  // A closed report only continues an unfinished removal cleanup.
+  if (report!.status !== "open" && !(removing && report!.status === "removed")) return { id: payload.reportId, status: report!.status, remaining: false };
+  let tombstone: (() => void) | null = null;
+  let related: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+  if (removing) {
+    const conversationRef = getFirestore().doc(`organizations/${payload.orgId}/conversations/${report!.conversationId}`);
+    const [conversation, message] = await tx.getAll(conversationRef, messageRef(payload.orgId, report!.conversationId, report!.messageId));
+    const others = await tx.get(reportsOf(payload.orgId).where("messageId", "==", report!.messageId).where("status", "==", "open").limit(RELATED_BATCH + 2));
+    related = others.docs.filter((doc) => doc.id !== payload.reportId && doc.get("conversationId") === report!.conversationId);
+    if (message.exists && message.data()?.tombstoned !== true) {
+      tombstone = () => tombstoneConversationMessage(tx, payload.orgId, report!.conversationId, conversation.data(), message, uid, `Report: ${report!.reason}`);
     }
-    // Removing the message settles every open report about it.
-    const others = await tx.get(reportsOf(payload.orgId).where("messageId", "==", report!.messageId).where("status", "==", "open").limit(50));
-    for (const doc of others.docs) if (doc.id !== payload.reportId && doc.get("conversationId") === report!.conversationId) related.push(doc.ref);
   }
+  const batch = related.slice(0, RELATED_BATCH);
+  const remaining = related.length > RELATED_BATCH;
+  tombstone?.();
   const now = Timestamp.now();
-  for (const ref of related) {
-    tx.update(ref, {
-      status: payload.resolution,
-      resolvedBy: uid,
-      resolvedAt: now,
-      reportedBody: FieldValue.delete(),
-      revision: FieldValue.increment(1),
-    });
-  }
-  return { id: payload.reportId, status: payload.resolution };
+  const close = { status: payload.resolution, resolvedBy: uid, resolvedAt: now, reportedBody: FieldValue.delete(), revision: FieldValue.increment(1) };
+  if (report!.status === "open") tx.update(reportRef, close);
+  for (const doc of batch) tx.update(doc.ref, close);
+  return { id: payload.reportId, status: payload.resolution, remaining };
 });
 
 export const blockConversationMember = command("blockConversationMember", (data) => {

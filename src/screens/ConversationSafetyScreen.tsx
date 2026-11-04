@@ -3,7 +3,6 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-nat
 import {
   listConversationBlocks,
   listConversationReports,
-  moderateConversationMessage,
   resolveConversationReport,
   unblockConversationMember,
 } from '../firebase/conversations';
@@ -17,6 +16,7 @@ const SCOPE_LABELS: Record<ConversationScopeType, string> = {
   team: 'Team conversation',
   event: 'Event conversation',
 };
+const MAX_CLEANUP_BATCHES = 10;
 const reasonLabel = (code: string) => CONVERSATION_REPORT_REASONS.find(choice => choice.code === code)?.label ?? 'Something else';
 const day = (value: string) => new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 
@@ -26,6 +26,7 @@ export default function ConversationSafetyScreen({ orgId, organizationName }: { 
   const [reports, setReports] = useState<ConversationReport[] | null>(null);
   const [reportCursor, setReportCursor] = useState<string | null>(null);
   const [moderator, setModerator] = useState(false);
+  const [queueFailed, setQueueFailed] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,12 +37,16 @@ export default function ConversationSafetyScreen({ orgId, organizationName }: { 
     else { setBlocks([]); setError('Blocked members could not be loaded.'); }
     if (reportResult.status === 'fulfilled') {
       setModerator(true);
+      setQueueFailed(false);
       setReports(reportResult.value.items);
       setReportCursor(reportResult.value.nextCursor);
-    } else {
-      // A denied queue read means this person does not moderate the organization.
+    } else if ((reportResult.reason as { code?: string })?.code === 'functions/permission-denied') {
+      // Only a denial means this person does not moderate the organization.
       setModerator(false);
+      setQueueFailed(false);
       setReports(null);
+    } else {
+      setQueueFailed(true);
     }
   }, [orgId]);
   useEffect(() => { void load(); }, [load]);
@@ -60,17 +65,22 @@ export default function ConversationSafetyScreen({ orgId, organizationName }: { 
       setReportCursor(next.nextCursor);
     } catch { setError('More reports could not be loaded.'); }
   }
+  // The server tombstones the message and closes related reports in batches, so continue until none remain.
   const remove = (report: ConversationReport) => act(report.id, async () => {
-    if (!report.messageRemoved) {
-      await moderateConversationMessage({ orgId, scopeType: report.scopeType, scopeId: report.scopeId, messageId: report.messageId, reason: `Report: ${reasonLabel(report.reason)}` });
+    for (let batch = 0; batch < MAX_CLEANUP_BATCHES; batch++) {
+      const result = await resolveConversationReport({ orgId, reportId: report.id, resolution: 'removed' });
+      if (!result.remaining) return;
     }
-    await resolveConversationReport({ orgId, reportId: report.id, resolution: 'removed' });
   }, 'The message was not removed. Try again.');
 
   return <Screen><ScrollView contentContainerStyle={styles.list}>
     <Title>Safety</Title>
     {organizationName ? <Subtitle>{organizationName}</Subtitle> : null}
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+    {queueFailed ? <>
+      <Text accessibilityRole="alert" style={styles.error}>Reported messages could not be loaded.</Text>
+      <SecondaryButton label="Retry loading reports" onPress={() => void load()} />
+    </> : null}
     {moderator ? <>
       <Text accessibilityRole="header" style={styles.heading}>Reported messages</Text>
       {!reports?.length ? <EmptyState message="No open reports." /> : reports.map(report => <View key={report.id} style={styles.card}>
