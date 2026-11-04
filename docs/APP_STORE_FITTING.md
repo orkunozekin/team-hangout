@@ -73,8 +73,11 @@ Status values: `done` | `in_progress` | `blocked_on_human` | `deferred`
 | User ID (Firebase UID) | Yes | Yes | No |
 | Crash / location / photos / IDFA | No | — | — |
 
-| Other user content (messages, event notes, attachments) | Yes | Yes | No |
-| Coarse/precise location | Only if check-in location is used; one-shot, optional | Yes | No |
+| Phone number (participant profiles in Household) | Yes | Yes | No |
+| Photos or videos (JPEG/PNG conversation attachments) | Yes | Yes | No |
+| Precise location (optional one-shot check-in sample) | Yes | Yes | No |
+| Device ID (push installation id in `notificationEndpoints`) | Yes | Yes | No |
+| Other user content (messages, event notes, other attachments) | Yes | Yes | No |
 | Contacts, health, financial, IDFA, crash data | No | — | — |
 
 All collected types are for App Functionality only; no tracking, no third-party advertising. Disclose Google, Apple and Firebase (Google Cloud) as processors in the privacy policy.
@@ -96,7 +99,7 @@ Steps marked **OWNER** need the owner's own accounts; agents never log in to Exp
 3. **OWNER** Create an APNs auth key (.p8) and an App Store Connect API key. Keep both out of the repo (`*.p8` is git-ignored). Upload them with `eas credentials` or let `eas build` prompt.
 4. **OWNER** `npx eas-cli login`, then `npx eas-cli init` to link the project; set `EXPO_PUBLIC_EAS_PROJECT_ID` to the returned id.
 5. **OWNER** Add the `production` EAS environment variables (`eas env:create --environment production`): all `EXPO_PUBLIC_FIREBASE_*` values from the `team-hangout-ddf27` web app, `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`, `EXPO_PUBLIC_EAS_PROJECT_ID` and the legal URLs. Never rely on `.env.local`; it is git-ignored and not uploaded, and it points at development.
-6. **OWNER** For non-interactive submit, provide `EXPO_ASC_API_KEY_PATH`, `EXPO_ASC_KEY_ID`, `EXPO_ASC_ISSUER_ID` and `EXPO_APPLE_TEAM_ID` in your shell (or as EAS secrets), or add `ascAppId` to `submit.production.ios`. These are placeholders here on purpose.
+6. **OWNER** Add `ascAppId` (the numeric Apple ID from step 2) to `submit.production.ios`; non-interactive submit requires it. Also give submit credentials: either assign the App Store Connect API key to Expo Submit in `eas credentials` (simplest), or add `ascApiKeyPath`, `ascApiKeyId`, `ascApiKeyIssuerId` and `appleTeamId` to `submit.production.ios` pointing at a local, git-ignored key. Never commit the `.p8`.
 7. **OWNER** `npx eas-cli build --profile production --platform ios` (build number auto-increments remotely).
 8. **OWNER** `npx eas-cli submit --profile production --platform ios --latest`, then add internal testers in TestFlight.
 9. Before external testers or review: deploy production Functions (account deletion), host legal URLs, and file privacy labels.

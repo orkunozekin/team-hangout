@@ -75,6 +75,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           collectedForAppFunctionality('NSPrivacyCollectedDataTypeEmailAddress'),
           collectedForAppFunctionality('NSPrivacyCollectedDataTypeName'),
           collectedForAppFunctionality('NSPrivacyCollectedDataTypeUserID'),
+          collectedForAppFunctionality('NSPrivacyCollectedDataTypePhoneNumber'),
+          collectedForAppFunctionality('NSPrivacyCollectedDataTypePhotosorVideos'),
+          collectedForAppFunctionality('NSPrivacyCollectedDataTypePreciseLocation'),
+          collectedForAppFunctionality('NSPrivacyCollectedDataTypeDeviceID'),
           collectedForAppFunctionality('NSPrivacyCollectedDataTypeOtherUserContent'),
         ],
         // Firebase Auth persistence (AsyncStorage) and Expo/React Native core.
