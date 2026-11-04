@@ -303,3 +303,40 @@ test('blocking during a search clears the pending search so it can run again', a
   await fireEvent.press(screen.getByText('Search messages'));
   expect(await screen.findByText('No matching messages.')).toBeTruthy();
 });
+
+test('search results outside the loaded pages can be reported and their author blocked', async () => {
+  const found = { ...parentMessage, id: 'm-found', body: 'Hidden far back' };
+  const orphan = { ...parentMessage, id: 'm-orphan', authorUid: null, authorLabel: 'Deleted user', body: 'Orphaned far back' };
+  const own = { ...parentMessage, id: 'm-own', mine: true, body: 'My far back note' };
+  (api.listConversationMessages as jest.Mock).mockResolvedValue({ ...page, items: [], canBlock: true });
+  (api.searchConversationMessages as jest.Mock).mockResolvedValue({ items: [found, orphan, own], nextCursor: null, partial: false });
+  (api.reportConversationMessage as jest.Mock).mockResolvedValue({ id: 'r1', status: 'open' });
+  (api.blockConversationMember as jest.Mock).mockResolvedValue({ id: 'b1', blocked: true });
+  await render(<ConversationScreen orgId="org" scopeType="team" scopeId="team" />);
+  await fireEvent.changeText(await screen.findByLabelText('Search words'), 'far');
+  await fireEvent.press(screen.getByText('Search messages'));
+  expect(await screen.findByText('Hidden far back')).toBeTruthy();
+  expect(screen.getAllByText('Report message')).toHaveLength(2);
+  expect(screen.getAllByLabelText('Block author')).toHaveLength(1);
+  await fireEvent.press(screen.getAllByText('Report message')[0]);
+  await fireEvent.press(screen.getByLabelText('Spam'));
+  await fireEvent.press(screen.getByText('Send report'));
+  expect(await screen.findByText('Reported. Organization moderators will review it.')).toBeTruthy();
+  expect(api.reportConversationMessage).toHaveBeenCalledWith({ orgId: 'org', scopeType: 'team', scopeId: 'team', messageId: 'm-found', reason: 'spam' });
+  await fireEvent.press(screen.getByLabelText('Block author'));
+  expect(api.blockConversationMember).not.toHaveBeenCalledWith(expect.objectContaining({ messageId: 'm-found' }));
+  await fireEvent.press(screen.getByText('Block member'));
+  await waitFor(() => expect(screen.queryByText('Hidden far back')).toBeNull());
+  expect(api.blockConversationMember).toHaveBeenCalledWith({ orgId: 'org', scopeType: 'team', scopeId: 'team', messageId: 'm-found' });
+});
+
+test('staff and announcement search results offer report but never block', async () => {
+  (api.listConversationMessages as jest.Mock).mockResolvedValue({ ...page, mode: 'adult', items: [], canBlock: false });
+  (api.searchConversationMessages as jest.Mock).mockResolvedValue({ items: [{ ...parentMessage, id: 'm-ann', body: 'Season notice' }], nextCursor: null, partial: false });
+  await render(<ConversationScreen orgId="org" scopeType="organization" scopeId="org" />);
+  await fireEvent.changeText(await screen.findByLabelText('Search words'), 'season');
+  await fireEvent.press(screen.getByText('Search messages'));
+  expect(await screen.findByText('Season notice')).toBeTruthy();
+  expect(screen.getByText('Report message')).toBeTruthy();
+  expect(screen.queryByLabelText('Block author')).toBeNull();
+});

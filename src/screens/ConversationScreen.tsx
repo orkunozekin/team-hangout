@@ -145,6 +145,10 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
       setTransport(caught instanceof Error && caught.message ? caught.message : 'This file was not uploaded.');
     } finally { if (generation === uploadGeneration.current) setUploading(false); }
   }
+  // Search hits can sit outside the loaded pages, so they carry the same report and block controls.
+  const safety = (item: ConversationMessage) => !item.mine && !item.tombstoned
+    ? <MessageSafety canBlock={page?.canBlock === true && item.authorUid != null} onReport={(reason, note) => report(item, reason, note)} onBlock={() => block(item)} />
+    : null;
   const youthClosed = page?.mode === 'youth' && page.youthPosting === 'closed';
   const title = scopeType === 'event' ? 'Event conversation' : scopeType === 'team' ? 'Team conversation' : scopeType === 'division' ? 'Division announcements' : 'Organization announcements';
   return <Screen><ScrollView contentContainerStyle={styles.list}>
@@ -164,7 +168,7 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
           return <Pressable key={choice.code} accessibilityRole="button" accessibilityLabel={`React with ${choice.emoji}`} accessibilityState={{ selected: reaction?.mine === true }} onPress={() => void react(item, choice.emoji)}><Text style={styles.pin}>{choice.emoji} {reaction?.count ?? 0}</Text></Pressable>;
         })}</View>}
         {item.mine && !item.tombstoned ? <SecondaryButton label="Edit message" onPress={() => { setEditing(item); setDraft(item.body ?? ''); }} /> : null}
-        {!item.mine && !item.tombstoned ? <MessageSafety canBlock={page?.canBlock === true && item.authorUid != null} onReport={(reason, note) => report(item, reason, note)} onBlock={() => block(item)} /> : null}
+        {safety(item)}
       </View>)}
       {page?.nextCursor ? <SecondaryButton label={loadingOlder ? 'Loading older messages' : 'Load older messages'} disabled={loadingOlder} onPress={() => void older()} /> : null}
       {page?.attachments === 'enabled' && page.canPost ? <SecondaryButton label={uploading ? 'Uploading file' : 'Choose a JPEG, PNG, or PDF'} disabled={uploading} onPress={() => void chooseFile()} /> : null}
@@ -177,7 +181,7 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
       <SecondaryButton label={searching ? 'Searching messages' : 'Search messages'} disabled={searching} onPress={() => void find()} />
       {search?.partial ? <Text style={styles.banner}>More matches may remain. Continue the search.</Text> : null}
       {search && !search.items.length ? <EmptyState message="No matching messages." /> : null}
-      {search?.items.map(item => <View key={item.id} style={styles.card}>{item.authorLabel ? <Text style={styles.author}>{item.authorLabel}</Text> : null}<Text style={styles.body}>{item.body}</Text></View>)}
+      {search?.items.map(item => <View key={item.id} style={styles.card}>{item.authorLabel ? <Text style={styles.author}>{item.authorLabel}</Text> : null}<Text style={styles.body}>{item.body}</Text>{safety(item)}</View>)}
       {search?.nextCursor ? <SecondaryButton label="Continue search" onPress={() => void find(search.nextCursor ?? undefined)} /> : null}
     </View>}
   </ScrollView></Screen>;
