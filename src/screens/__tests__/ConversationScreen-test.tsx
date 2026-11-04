@@ -288,3 +288,18 @@ test('an older page still loading when a block completes cannot re-add the block
   });
   expect(screen.queryByText('Older unkind words')).toBeNull();
 });
+
+test('blocking during a search clears the pending search so it can run again', async () => {
+  (api.listConversationMessages as jest.Mock).mockResolvedValue({ ...page, items: [parentMessage], canBlock: true });
+  (api.searchConversationMessages as jest.Mock).mockReturnValueOnce(new Promise(() => {})).mockResolvedValueOnce({ items: [], nextCursor: null, partial: false });
+  (api.blockConversationMember as jest.Mock).mockResolvedValue({ id: 'b1', blocked: true });
+  await render(<ConversationScreen orgId="org" scopeType="team" scopeId="team" />);
+  await fireEvent.changeText(await screen.findByLabelText('Search words'), 'field');
+  await fireEvent.press(screen.getByText('Search messages'));
+  expect(await screen.findByText('Searching messages')).toBeTruthy();
+  await fireEvent.press(screen.getByLabelText('Block author'));
+  await fireEvent.press(screen.getByText('Block member'));
+  expect(await screen.findByText('Search messages')).toBeTruthy();
+  await fireEvent.press(screen.getByText('Search messages'));
+  expect(await screen.findByText('No matching messages.')).toBeTruthy();
+});

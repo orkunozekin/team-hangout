@@ -104,6 +104,7 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
     }
     searchToken.current += 1;
     setSearch(null);
+    setSearching(false);
     await refresh();
   }
   async function find(cursor?: string) {
