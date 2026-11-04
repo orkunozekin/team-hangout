@@ -15,13 +15,22 @@
       }
     },
     "production": {
+      "environment": "production",
+      "distribution": "store",
       "autoIncrement": true,
       "env": {
         "APP_VARIANT": "production"
+      },
+      "ios": {
+        "resourceClass": "m-medium"
       }
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {
+        "bundleIdentifier": "com.orkunozekin.teamhangout"
+      }
+    }
   }
 }

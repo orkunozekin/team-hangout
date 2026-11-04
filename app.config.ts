@@ -7,6 +7,13 @@ import {
  * APP_VARIANT=production (set in EAS production profile) omits expo-dev-client
  * so store binaries do not ship the dev-client plugin.
  */
+const collectedForAppFunctionality = (type: string) => ({
+  NSPrivacyCollectedDataType: type,
+  NSPrivacyCollectedDataTypeLinked: true,
+  NSPrivacyCollectedDataTypeTracking: false,
+  NSPrivacyCollectedDataTypePurposes: ['NSPrivacyCollectedDataTypePurposeAppFunctionality'],
+});
+
 export default ({ config }: ConfigContext): ExpoConfig => {
   const isProduction = process.env.APP_VARIANT === 'production';
 
@@ -57,6 +64,30 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       usesAppleSignIn: true,
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
+      },
+      entitlements: {
+        'aps-environment': isProduction ? 'production' : 'development',
+      },
+      privacyManifests: {
+        NSPrivacyTracking: false,
+        NSPrivacyTrackingDomains: [],
+        NSPrivacyCollectedDataTypes: [
+          collectedForAppFunctionality('NSPrivacyCollectedDataTypeEmailAddress'),
+          collectedForAppFunctionality('NSPrivacyCollectedDataTypeName'),
+          collectedForAppFunctionality('NSPrivacyCollectedDataTypeUserID'),
+          collectedForAppFunctionality('NSPrivacyCollectedDataTypePhoneNumber'),
+          collectedForAppFunctionality('NSPrivacyCollectedDataTypePhotosorVideos'),
+          collectedForAppFunctionality('NSPrivacyCollectedDataTypePreciseLocation'),
+          collectedForAppFunctionality('NSPrivacyCollectedDataTypeDeviceID'),
+          collectedForAppFunctionality('NSPrivacyCollectedDataTypeOtherUserContent'),
+        ],
+        // Firebase Auth persistence (AsyncStorage) and Expo/React Native core.
+        NSPrivacyAccessedAPITypes: [
+          { NSPrivacyAccessedAPIType: 'NSPrivacyAccessedAPICategoryUserDefaults', NSPrivacyAccessedAPITypeReasons: ['CA92.1'] },
+          { NSPrivacyAccessedAPIType: 'NSPrivacyAccessedAPICategoryFileTimestamp', NSPrivacyAccessedAPITypeReasons: ['C617.1', '0A2A.1', '3B52.1'] },
+          { NSPrivacyAccessedAPIType: 'NSPrivacyAccessedAPICategorySystemBootTime', NSPrivacyAccessedAPITypeReasons: ['35F9.1'] },
+          { NSPrivacyAccessedAPIType: 'NSPrivacyAccessedAPICategoryDiskSpace', NSPrivacyAccessedAPITypeReasons: ['E174.1', '85F4.1'] },
+        ],
       },
     },
     android: {
