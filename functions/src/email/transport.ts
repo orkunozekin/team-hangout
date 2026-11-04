@@ -2,6 +2,9 @@ import { createHash } from "node:crypto";
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
 import { defineSecret } from "firebase-functions/params";
 export const essentialEmailApiKey = defineSecret("ESSENTIAL_EMAIL_API_KEY");
+// Reviewed deploy switch from functions/.env.<project>, read at discovery. Off means no provider secret is bound and email stays disabled.
+export const essentialEmailProviderConfigured = () =>
+  process.env.ESSENTIAL_EMAIL_PROVIDER_CONFIGURED === "true";
 export type Mail = { to: string; subject: string; text: string };
 export interface Transport {
   send(key: string, mail: Mail): Promise<string>;
@@ -52,6 +55,7 @@ export function senderConfig(): SenderConfig | null {
     };
   // These are deployment contracts, not defaults that silently enable delivery.
   if (
+    !essentialEmailProviderConfigured() ||
     process.env.ESSENTIAL_EMAIL_ENABLED !== "true" ||
     process.env.ESSENTIAL_EMAIL_POLICY_APPROVED !== "true"
   )

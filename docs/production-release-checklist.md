@@ -16,7 +16,7 @@ Each value is generated with a CSPRNG and piped straight into the CLI, never pri
 1. **OWNER** `ATTACHMENT_UPLOAD_KEY` (>= 32 random bytes): `openssl rand -base64 48 | firebase functions:secrets:set ATTACHMENT_UPLOAD_KEY --data-file=- --project team-hangout-ddf27`.
 2. **OWNER** `CONVERSATION_SEARCH_CURSOR_KEY` (>= 32 random bytes), same pattern.
 3. **OWNER** `INVITATION_DELIVERY_KEY` (32 random bytes encoded as exactly 64 hexadecimal characters; `seal()` rejects anything else and invitations fail with "Invitation delivery encryption is not configured"): `openssl rand -hex 32 | firebase functions:secrets:set INVITATION_DELIVERY_KEY --data-file=- --project team-hangout-ddf27`.
-4. **OWNER** `ESSENTIAL_EMAIL_API_KEY`: needs a real email provider account and sender domain. Blocked until the owner chooses a provider and approves email policy. Two exports bind this secret outside staging: `resumeEssentialEmail` (`functions/src/email/worker.ts`) and `resumeNotificationInbox` (`functions/src/notifications/worker.ts`, staging-only omission). Without the secret, deploy stays blocked until either the provider key exists or a reviewed code change omits the binding for production as it does for staging (see step 3.3).
+4. **OWNER** `ESSENTIAL_EMAIL_API_KEY`: needs a real email provider account and sender domain. Not required for the first deploy. Only `resumeEssentialEmail` (`functions/src/email/worker.ts`) and `resumeNotificationInbox` (`functions/src/notifications/worker.ts`) can bind it, and both do so only when `ESSENTIAL_EMAIL_PROVIDER_CONFIGURED=true` (see step 2). Create the secret before turning that switch on.
 5. Verify with `firebase functions:secrets:describe <NAME> --project team-hangout-ddf27` (shows versions only, not values).
 
 ## 2. Functions environment
@@ -27,6 +27,7 @@ Each value is generated with a CSPRNG and piped straight into the CLI, never pri
 | --- | --- | --- |
 | `IMPORT_BUCKET` | production Storage bucket name | **OWNER** confirms bucket |
 | `IMPORT_RETENTION_DAYS` | e.g. `30` | **OWNER** approves real participant data retention; staging uses 1 day for fixtures only |
+| `ESSENTIAL_EMAIL_PROVIDER_CONFIGURED` | `false` | Reviewed deploy switch, read at deploy discovery. `false` or absent: no export binds `ESSENTIAL_EMAIL_API_KEY`, `resumeEssentialEmail` is not deployed, `senderConfig()` returns no sender and email deliveries pause as `PROVIDER_NOT_CONFIGURED` while in-app and push delivery continue. Set `true` only after the provider secret exists |
 | `ESSENTIAL_EMAIL_ENABLED` | `false` | Turn on only after provider and policy approval |
 | `ESSENTIAL_EMAIL_POLICY_APPROVED` | `false` | **OWNER** policy decision |
 | `ESSENTIAL_EMAIL_FROM`, `ESSENTIAL_EMAIL_REPLY_TO` | verified sender and reply-to | **OWNER** sender domain with SPF/DKIM/DMARC. `senderConfig()` keeps email off until all four email settings are set |
@@ -42,7 +43,7 @@ All commands use explicit `--project team-hangout-ddf27`. Each step is **OWNER**
 
 1. **OWNER** Indexes first: `firebase deploy --only firestore:indexes --project team-hangout-ddf27`. Poll `firebase firestore:indexes --project team-hangout-ddf27` and the console until every composite index in `firestore.indexes.json` is READY. Do not continue while any index is building.
 2. **OWNER** Storage rules: `firebase deploy --only storage --project team-hangout-ddf27`.
-3. **OWNER** Functions: `firebase deploy --only functions --project team-hangout-ddf27`. Deploy in batches of at most ten (`--only functions:a,functions:b,...`) if first-time provisioning races occur, and retry only the failed names. If `ESSENTIAL_EMAIL_API_KEY` does not exist, deploy is blocked: both `resumeEssentialEmail` and `resumeNotificationInbox` bind it, and the omission is keyed to the staging project id only. Excluding one export is not enough. Create the secret with the real provider key, or land a separately reviewed change that omits the binding for production while email stays disabled. Verify every export is ACTIVE with `firebase functions:list`.
+3. **OWNER** Functions: `firebase deploy --only functions --project team-hangout-ddf27`. Deploy in batches of at most ten (`--only functions:a,functions:b,...`) if first-time provisioning races occur, and retry only the failed names. With `ESSENTIAL_EMAIL_PROVIDER_CONFIGURED` false or absent the deploy needs no `ESSENTIAL_EMAIL_API_KEY` and `resumeEssentialEmail` is not part of the export list. Turning email on later means creating the secret, setting the switch to `true` and redeploying. Verify every export is ACTIVE with `firebase functions:list`.
 4. **OWNER** Firestore rules last: `firebase deploy --only firestore:rules --project team-hangout-ddf27`. Rules go after callables so new clients never reach rules that expect missing backend paths.
 5. Record deployed SHA, function count, index READY count and rules release in a production evidence file under `docs/evidence/`.
 

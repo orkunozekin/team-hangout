@@ -334,6 +334,33 @@ test('email fallback uses the isolated mailbox only for the verified current acc
   if (previous.enabled == null) delete process.env.NOTIFICATION_EMAIL_ENABLED; else process.env.NOTIFICATION_EMAIL_ENABLED = previous.enabled;
 });
 
+test('provider switch off pauses email without reading the provider key while in-app delivery continues', async () => {
+  const keys = ['FUNCTIONS_EMULATOR', 'ESSENTIAL_EMAIL_PROVIDER_CONFIGURED', 'NOTIFICATION_EMAIL_ENABLED', 'ESSENTIAL_EMAIL_ENABLED', 'ESSENTIAL_EMAIL_POLICY_APPROVED', 'ESSENTIAL_EMAIL_FROM', 'ESSENTIAL_EMAIL_REPLY_TO', 'ESSENTIAL_EMAIL_BROWSER_ORIGIN', 'ESSENTIAL_EMAIL_PRIVACY_URL'];
+  const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  const providers = require('./lib/notifications/providers.js'), worker = require('./lib/notifications/worker.js');
+  try {
+    await db.doc('organizations/notify-org').update({ 'features.notificationEmailFallback': true });
+    await db.doc(intentPath('intent-email-off')).set({ ...meta, orgId: 'notify-org', sourceType: 'event', sourceId: 'event-email-off', sourceRevision: 2,
+      templateKey: 'event:edit', critical: false, state: 'pending', audience: { teamIds: ['notify-team'] } });
+    await worker.expandNotificationIntent('notify-org', 'intent-email-off');
+    // A production runtime with every other email setting on still has no provider while the switch is off.
+    delete process.env.ESSENTIAL_EMAIL_PROVIDER_CONFIGURED;
+    Object.assign(process.env, { FUNCTIONS_EMULATOR: 'false', NOTIFICATION_EMAIL_ENABLED: 'true', ESSENTIAL_EMAIL_ENABLED: 'true', ESSENTIAL_EMAIL_POLICY_APPROVED: 'true',
+      ESSENTIAL_EMAIL_FROM: 'team@example.test', ESSENTIAL_EMAIL_REPLY_TO: 'help@example.test', ESSENTIAL_EMAIL_BROWSER_ORIGIN: 'https://example.test', ESSENTIAL_EMAIL_PRIVACY_URL: 'https://example.test/privacy' });
+    assert.equal(providers.notificationEmailProvider(), null);
+    const deliveries = (await db.collection('notificationDeliveries').where('intentId', '==', 'intent-email-off').get()).docs;
+    const email = deliveries.find(doc => doc.data().channel === 'email'), inApp = deliveries.find(doc => doc.data().channel === 'fake');
+    assert.ok(email); assert.ok(inApp);
+    assert.equal(await worker.processNotificationDelivery('notify-org', email.id, { now: Date.now() + 1000 }), 'disabled');
+    const paused = (await email.ref.get()).data();
+    assert.equal(paused.status, 'paused'); assert.equal(paused.failureCode, 'PROVIDER_NOT_CONFIGURED');
+    assert.notEqual(await worker.processNotificationDelivery('notify-org', inApp.id, { now: Date.now() + 1000 }), 'disabled');
+    assert.ok((await db.doc(`users/${inApp.data().recipientUid}/notifications/${inApp.data().notificationId}`).get()).exists);
+  } finally {
+    for (const key of keys) if (previous[key] == null) delete process.env[key]; else process.env[key] = previous[key];
+  }
+});
+
 test('a revoked row at the page boundary leaves a usable cursor for older notifications', async () => {
   const collection = db.collection('users/notify-self/notifications'), revoked = collection.doc('cursor-revoked'), older = collection.doc('cursor-older');
   await revoked.set({ ...meta, id: revoked.id, orgId: 'notify-org', recipientUid: 'notify-self', title: 'Revoked', body: 'Hidden', critical: false,

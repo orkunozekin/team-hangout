@@ -5,7 +5,7 @@ import { HttpsError } from 'firebase-functions/v2/https';
 import { Data } from '../commandSupport';
 import { fingerprint } from '../operations/requests';
 import { accountAvailable } from '../accountAccess';
-import { essentialEmailApiKey } from '../email/transport';
+import { essentialEmailApiKey, essentialEmailProviderConfigured } from '../email/transport';
 import { expoPushProvider, expoReceiptProvider, notificationEmailProvider, ProviderResult, ReceiptProvider } from './providers';
 import { recheckExplicitRecipients } from './audience';
 import { criticalUpdateRef, recordCriticalUpdate, recordDeliveryIssue } from './issues';
@@ -470,7 +470,7 @@ export async function processPushReceipt(deliveryId: string, provider: ReceiptPr
 
 /** Fake-adapter worker stays inert until an organization explicitly enables the development-only server flag. */
 export const resumeNotificationInbox = onSchedule({ schedule: 'every 1 minutes',
-  secrets: process.env.GCLOUD_PROJECT === 'team-hangout-staging' ? [] : [essentialEmailApiKey] }, async () => {
+  secrets: essentialEmailProviderConfigured() ? [essentialEmailApiKey] : [] }, async () => {
   const db = getFirestore();
   const scan = db.doc('notificationWorkerScans/intents'), cursor = (await scan.get()).data()?.cursor;
   let query = db.collectionGroup('outbox').where('state', '==', 'pending').orderBy(FieldPath.documentId()).limit(25);

@@ -1,5 +1,7 @@
 # Staging operations drills, 2026-10-31
 
+Superseded: the credential-blocked drills ran on 2026-11-03, see `staging-ops-drills-2026-11-03.md`.
+
 Project: team-hangout-staging only. Deployed SHA 09de28b (see PR #68). Production was not touched.
 
 ## Result summary
