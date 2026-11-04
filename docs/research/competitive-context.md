@@ -1,6 +1,6 @@
 # Competitive research context
 
-Research recorded: 2026-10-10. Audience: product planning and future implementation. Related document: [approved product plan](../plans/product-plan.md).
+Research recorded: 2026-10-10; profile L and its gap audit added 2026-10-12. Audience: product planning and future implementation. Related document: [approved product plan](../plans/product-plan.md).
 
 ## Method and limitations
 
@@ -90,6 +90,17 @@ The research did not sign in to administrative products, test app workflows, ver
 Official materials describe registration, memberships, facility booking, front-desk transactions, financial reporting, and recreational league management. This is a broader replacement scope than team coordination. The research did not evaluate its mobile reviews or establish comparative usability. Product implication: support imported registrations and rosters before attempting to replace a department's broader operation.
 
 Sources, accessed 2026-10-10: [K1: platform overview](https://recdesk.com/cap-recreation-management-software/), [K2: league management](https://recdesk.com/features/league-management/).
+
+### Competitor L: Team operations with game-following and media
+
+- Advertised capabilities: rosters, calendars, single/bulk RSVPs, reminders, team messaging, announcements, season rollover and score/video tools. Essential team coordination is advertised as free; some fan features require subscriptions. Organization scheduling includes shared matchups and CSV imports.
+- Positive review evidence: families value consolidated multi-child schedules, communication and following distant relatives' games.
+- Negative review evidence: surfaced reviewers report an update disrupting team access/video, a password-reset loop and subscription frustration. Other reviewers request named message readers, actual practice attendance, snack signups, widgets and occasional-game purchase options. These are individual reports or requests, not verified current defects or prevalence estimates.
+- Scope qualification: published organization support lists five sports, excluding soccer, although the team app supports soccer. Official help says organizations lack built-in bracket creation. Multiple guardians and organization administration already exist, so neither is a novel differentiator by itself.
+- Product implication: prioritize reliable family workflows, scoped administration and league operations. See the [main-versus-plan gap audit](team-operations-gap-audit.md) for coverage and proposed additions. New recommendations are not approved roadmap changes.
+- Sources, accessed 2026-10-12: [L1: reviews](https://apps.apple.com/us/app/gamechanger/id1308415878?platform=iphone&see-all=reviews), [L2: additional review view](https://apps.apple.com/us/app/gamechanger/id1308415878?platform=ipad&see-all=reviews), [L3: coordination features](https://www.gc.com/app-features/team-management), [L4: organization scope and limitations](https://help.gc.com/hc/en-us/articles/44768057639949-Organizations-FAQ-s), [L5: relationship roles](https://help.gc.com/hc/en-us/articles/42602635189901-Team-Roles).
+
+The two review views overlap and must not be counted as independent samples. Displayed dates often omit years or are relative; access date does not establish review publication year. Complaints about paid video do not establish that basic schedules, messaging or RSVPs require payment. Advertised support and surfaced reviews are not hands-on verification.
 
 ## Cross-product findings and interpretation
 
