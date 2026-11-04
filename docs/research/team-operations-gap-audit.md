@@ -1,4 +1,6 @@
-# Team operations: current implementation and roadmap gaps
+# Team operations: implementation and roadmap gaps (October 2026 snapshot)
+
+> **Historical snapshot.** This audit reflects `main` at `a46a725` on 2026-10-12. Phase 1 Steps 1-15, Phase 2 and Phase 3 have since merged, so its "main today" coverage and its recommended order are out of date: imports, invitations, RSVP, attendance, messaging, lineups and results now exist. Do not plan implementation from the "Recommended order" section. For current capability and rollout status, see [pilot readiness](../pilot-readiness.md). The competitor comparison and the approval-pending proposals below remain useful as product input.
 
 Audited: 2026-10-12. Repository baseline: remote `main` at `a46a725`, the merge of PR #10. Comparison target: [competitor L](competitive-context.md#competitor-l-team-operations-with-game-following-and-media). This is a source and public-document review, not a deployed-app test. New recommendations below are **proposed, approval pending**; existing approved capabilities retain their approval. **Business model selection pending.**
 
@@ -67,7 +69,7 @@ These are audit recommendations, **not approved additions to the numbered implem
 - Streaming, replay clips, advanced player statistics and AI recaps remain deferred in our approved roadmap. A competitor's media offering does not approve that cost/scope for this product. Basic final-score publication and standings are already planned; live play-by-play is a separate, unapproved capability.
 - Preserve safe season rollover. Returning-family convenience can use a reviewed re-enrollment/invitation campaign; never silently copy revoked permissions, waivers or obligations. Our Phase 3/4 plans already require this separation; the one-click continuity UX is not specified.
 
-## Recommended order
+## Recommended order (as of 2026-10-12, superseded)
 
 Continue Phase 1 Step 7 rather than diverting into media parity. Before its later calendar/import steps, resolve the general-event and recovery-test proposals. Before Phase 2 RSVP/communications, decide bulk-response and critical-recipient reporting requirements. Scope scorekeeper delegation when Phase 3 competition starts. Validate optional spectator/public-sharing demand with actual community-center partners.
 

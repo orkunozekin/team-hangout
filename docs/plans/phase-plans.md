@@ -2,7 +2,7 @@
 
 Recorded: 2026-10-10. Updated: 2026-10-20. Product scope is approved; **business model selection pending**. Phase 1 implementation steps are merged. Phase 2 code is complete through P2.20 in this change and is not pilot-ready: staging indexes, secrets, provider credentials, retention policy, and native device checks remain in [the Phase 2 runbook](../phase-2-pilot-runbook.md). Phase 3 and Phase 4 are not started. These documents elaborate the [product plan](product-plan.md), informed by [anonymized competitive research](../research/competitive-context.md).
 
-The [current implementation and competitor gap audit](../research/team-operations-gap-audit.md) distinguishes approved work still unbuilt from additional proposals. Those proposals are **approval pending** and do not change the numbered implementation sequence. Historical baseline checks below retain their original date.
+The [October 2026 competitor gap audit](../research/team-operations-gap-audit.md) is a historical snapshot of `main` at `a46a725`; its coverage and order are superseded (see [pilot readiness](../pilot-readiness.md) for current status). It still separates approved work from additional proposals. Those proposals are **approval pending** and do not change the numbered implementation sequence. Historical baseline checks below retain their original date.
 
 ## Plans and execution order
 
