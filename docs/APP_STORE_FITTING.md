@@ -24,7 +24,7 @@ Refreshed 2026-11-03.
 | PrivacyInfo.xcprivacy | Required Reason APIs | `done` | `ios.privacyManifests` in `app.config.ts`; verified via local prebuild. Re-check after adding native modules |
 | App Privacy nutrition labels | 5.1.2 | `blocked_on_human` | Suggested answers below; file in ASC |
 | Age rating / COPPA | 1.3 / 5.1.4 | `blocked_on_human` | Not in Kids category; see notes below |
-| UGC report/block | 1.2 | `in_progress` | Conversation report/block built in a parallel PR |
+| UGC report/block | 1.2 | `done` | Report and block on conversation messages, staff report queue under Conversations › Safety; semantics in `docs/conversations.md` |
 | Restrict team `get` inviteCode | Security | `deferred` | |
 | Data export | GDPR nicety | `deferred` | |
 

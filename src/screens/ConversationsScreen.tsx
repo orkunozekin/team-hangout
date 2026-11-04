@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { listHouseholdAgenda } from '../firebase/agenda';
+import { listModeratedOrganizations } from '../firebase/conversations';
 import {
   householdConversationTargets,
   teamConversationTargets,
@@ -31,6 +32,23 @@ export function mergeConversationTargets(...groups: ConversationTarget[][]): Con
   });
 }
 
+const ANNOUNCEMENT_SUFFIX = ' announcements';
+
+/** One safety entry per organization, named from its announcement channel when the household has one. */
+export function safetyOrganizations(targets: ConversationTarget[], moderated: { orgId: string; organizationName?: string }[] = []) {
+  const orgs = new Map<string, { orgId: string; organizationName?: string }>();
+  for (const target of targets) {
+    const named = target.scopeType === 'organization' && target.label.endsWith(ANNOUNCEMENT_SUFFIX)
+      ? target.label.slice(0, -ANNOUNCEMENT_SUFFIX.length) : undefined;
+    const current = orgs.get(target.orgId);
+    if (!current || (!current.organizationName && named)) orgs.set(target.orgId, { orgId: target.orgId, ...(named ? { organizationName: named } : {}) });
+  }
+  for (const org of moderated) {
+    if (!orgs.get(org.orgId)?.organizationName) orgs.set(org.orgId, org);
+  }
+  return [...orgs.values()];
+}
+
 async function loadAgendaConversations(from: Date, to: Date): Promise<ConversationTarget[]> {
   const found: ConversationTarget[][] = [];
   let cursor: string | undefined;
@@ -46,13 +64,18 @@ async function loadAgendaConversations(from: Date, to: Date): Promise<Conversati
 export default function ConversationsScreen({
   activeTeam,
   onOpen,
+  onSafety,
 }: {
   activeTeam?: { id: string; name: string; schemaVersion?: number; orgId?: string } | null;
   onOpen: (target: ConversationRoute) => void;
+  onSafety?: (target: { orgId: string; organizationName?: string }) => void;
 }) {
   const [targets, setTargets] = useState<ConversationTarget[] | null>(null);
   const [error, setError] = useState('');
   const [version, setVersion] = useState(0);
+  const showSafety = onSafety != null;
+  const [moderated, setModerated] = useState<{ orgId: string; organizationName?: string }[]>([]);
+  const [safetyError, setSafetyError] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -70,8 +93,17 @@ export default function ConversationsScreen({
         setTargets(teamTargets);
         setError('Unable to load all conversations. Check your connection and try again.');
       });
+    if (showSafety) {
+      listModeratedOrganizations()
+        .then(found => { if (active) { setModerated(found); setSafetyError(''); } })
+        .catch(() => {
+          if (!active) return;
+          setModerated([]);
+          setSafetyError('Unable to load the organizations you moderate. Refresh conversations to try again.');
+        });
+    }
     return () => { active = false; };
-  }, [activeTeam, version]);
+  }, [activeTeam, version, showSafety]);
 
   const reload = useCallback(() => setVersion(v => v + 1), []);
 
@@ -81,7 +113,8 @@ export default function ConversationsScreen({
         <Title>Conversations</Title>
         {error ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{error}</Text> : null}
         {!targets ? <ActivityIndicator accessibilityLabel="Loading conversations" /> : null}
-        {targets && !targets.length && !error ? (
+        {safetyError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{safetyError}</Text> : null}
+        {targets && !targets.length && !error && !safetyError ? (
           <Text style={styles.copy}>No conversations yet. Team, event and organization conversations appear here once your organization publishes them.</Text>
         ) : null}
         {targets ? SECTIONS.map(section => {
@@ -110,6 +143,13 @@ export default function ConversationsScreen({
             </React.Fragment>
           );
         }) : null}
+        {targets && onSafety ? safetyOrganizations(targets, moderated).map(org => (
+          <SecondaryButton
+            key={org.orgId}
+            label={org.organizationName ? `Safety and reports · ${org.organizationName}` : 'Safety and reports'}
+            onPress={() => onSafety(org)}
+          />
+        )) : null}
         <SecondaryButton label="Refresh conversations" onPress={reload} />
       </ScrollView>
     </Screen>

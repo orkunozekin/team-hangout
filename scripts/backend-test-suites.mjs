@@ -16,6 +16,7 @@ export const OPERATIONS_SUITES = [
   'tests/backend/rsvp-reminders.test.mjs',
   'tests/backend/conversations.test.mjs',
   'tests/backend/conversation-search.test.mjs',
+  'tests/backend/conversation-safety.test.mjs',
   'tests/backend/attachment-scan.test.mjs',
   'tests/backend/attachments.test.mjs',
   'tests/backend/attendance.test.mjs',

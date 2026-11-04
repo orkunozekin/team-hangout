@@ -1,5 +1,5 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { DocumentReference, FieldPath, FieldValue, getFirestore, Timestamp, Transaction } from "firebase-admin/firestore";
+import { DocumentReference, DocumentSnapshot, FieldPath, Query, QuerySnapshot, FieldValue, getFirestore, Timestamp, Transaction } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
 import { accountAvailable } from "../accountAccess";
@@ -28,6 +28,7 @@ type Decision = {
   conversationId: string;
   attachments: boolean;
   historySince: Timestamp | null;
+  teamIds: string[];
 };
 export type ConversationDecision = Decision;
 
@@ -265,14 +266,14 @@ function disabled(): never {
   });
 }
 
-async function organizationOf(tx: Transaction, orgId: string) {
+export async function organizationOf(tx: Transaction, orgId: string) {
   const organization = (await tx.get(getFirestore().doc(`organizations/${orgId}`))).data();
   if (!organization || organization.schemaVersion !== 2 || organization.status !== "active") denied();
   if (organization.features?.conversations !== true) disabled();
   return organization;
 }
 
-async function membership(tx: Transaction, orgId: string, uid: string) {
+export async function membership(tx: Transaction, orgId: string, uid: string) {
   const grant = (
     await tx.get(getFirestore().doc(`organizations/${orgId}/members/${uid}`))
   ).data();
@@ -413,6 +414,7 @@ async function authorize(
       conversationId,
       attachments: organization.features?.attachments === true,
       historySince: member.staff ? null : orgHousehold.historySince,
+      teamIds: [],
     };
   }
   if (scope === "division") {
@@ -438,6 +440,7 @@ async function authorize(
       conversationId,
       attachments: organization.features?.attachments === true,
       historySince: staff ? null : household.historySince,
+      teamIds: teams.docs.map((doc) => doc.id),
     };
   }
   let programId: string | null = null;
@@ -472,6 +475,7 @@ async function authorize(
     conversationId,
     attachments: organization.features?.attachments === true,
     historySince: adultPoster ? null : household.historySince,
+    teamIds,
   };
 }
 
@@ -535,6 +539,57 @@ export function conversationMessageVisible(decision: ConversationDecision, row: 
 }
 function requireVisibleMessage(decision: Decision, row: Data | undefined) {
   if (!conversationMessageVisible(decision, row)) denied();
+}
+
+export const BLOCK_LIMIT = 100;
+export type SafetyReader = {
+  query: (query: Query) => Promise<QuerySnapshot>;
+  getAll: (...refs: DocumentReference[]) => Promise<DocumentSnapshot[]>;
+};
+export function transactionReader(tx: Transaction): SafetyReader {
+  return { query: (query) => tx.get(query), getAll: (...refs) => tx.getAll(...refs) };
+}
+function databaseReader(): SafetyReader {
+  const db = getFirestore();
+  return { query: (query) => query.get(), getAll: (...refs) => db.getAll(...refs) };
+}
+/** Blocks only filter household views of youth channels. Staff and coaches keep the full channel for supervision. */
+export function blockFilterApplies(decision: ConversationDecision) {
+  return decision.mode === "youth" && !decision.pin;
+}
+/** Current org staff, and coaches of the channel's teams, are never hidden by a block. */
+export async function supervisorUids(reader: SafetyReader, orgId: string, teamIds: string[], uids: string[]) {
+  const db = getFirestore();
+  const exempt = new Set<string>();
+  if (!uids.length) return exempt;
+  const refs = uids.flatMap((uid) => [
+    db.doc(`organizations/${orgId}/members/${uid}`),
+    ...teamIds.map((teamId) => db.doc(`teamMembers/${teamId}_${uid}`)),
+  ]);
+  const rows: DocumentSnapshot[] = [];
+  for (let index = 0; index < refs.length; index += 100) rows.push(...await reader.getAll(...refs.slice(index, index + 100)));
+  const stride = 1 + teamIds.length;
+  uids.forEach((uid, position) => {
+    const [member, ...coaches] = rows.slice(position * stride, (position + 1) * stride).map((row) => row.data());
+    const roles = Array.isArray(member?.roles) ? member!.roles as string[] : [];
+    if (member?.status === "active" && member.orgId === orgId && (roles.includes("orgAdmin") || roles.includes("programStaff"))) exempt.add(uid);
+    if (coaches.some((row) => row?.status === "active" && row.orgId === orgId && row.userId === uid && Array.isArray(row.roles) && row.roles.some((role: string) => role === "coach" || role === "captain"))) exempt.add(uid);
+  });
+  return exempt;
+}
+export function blockQuery(orgId: string, uid: string) {
+  return getFirestore().collection(`organizations/${orgId}/userBlocks`).where("blockerUid", "==", uid).limit(BLOCK_LIMIT);
+}
+async function hiddenAuthors(reader: SafetyReader, orgId: string, uid: string, decision: Decision, authors: unknown[]) {
+  const hidden = new Set<string>();
+  if (!blockFilterApplies(decision)) return hidden;
+  const candidates = new Set(authors.filter((author): author is string => typeof author === "string" && author !== uid));
+  if (!candidates.size) return hidden;
+  const blocks = await reader.query(blockQuery(orgId, uid));
+  const blocked = [...new Set(blocks.docs.map((doc) => doc.data()).filter((row) => row.status === "active" && row.orgId === orgId && row.blockerUid === uid && candidates.has(row.blockedUid)).map((row) => row.blockedUid as string))];
+  const exempt = await supervisorUids(reader, orgId, decision.teamIds, blocked);
+  for (const author of blocked) if (!exempt.has(author)) hidden.add(author);
+  return hidden;
 }
 
 async function loadConversation(tx: Transaction, orgId: string, conversationId: string) {
@@ -637,18 +692,22 @@ export const listConversationMessages = readCommand((data) => {
     ? conversation.pinnedMessageIds.filter((item: unknown): item is string => typeof item === "string").slice(0, 3)
     : [];
   const pinnedRows = pinnedCandidates.length ? await tx.getAll(...pinnedCandidates.map((messageId) => messages.doc(messageId))) : [];
-  const pinned = new Set(pinnedRows.filter((doc) => doc.exists && conversationMessageVisible(decision, doc.data())).map((doc) => doc.id));
-  const mine = await reactionMine(tx, page, uid);
-  const views = await attachmentViews(tx, payload.orgId, page);
+  const hidden = await hiddenAuthors(transactionReader(tx), payload.orgId, uid, decision, [...page, ...pinnedRows].map((doc) => doc.data()?.authorUid));
+  const shown = page.filter((doc) => !hidden.has(doc.data().authorUid));
+  const pinned = new Set(pinnedRows.filter((doc) => doc.exists && conversationMessageVisible(decision, doc.data()) && !hidden.has(doc.data()?.authorUid)).map((doc) => doc.id));
+  const mine = await reactionMine(tx, shown, uid);
+  const views = await attachmentViews(tx, payload.orgId, shown);
   return {
     conversationId: decision.conversationId,
     mode: decision.mode,
     youthPosting: decision.youthPosting,
     pinnedIds: [...pinned],
-    items: page.map((doc) => projectMessage(doc, pinned, uid, mine.get(doc.id) ?? new Set(), views)),
+    items: shown.map((doc) => projectMessage(doc, pinned, uid, mine.get(doc.id) ?? new Set(), views)),
+    // The cursor follows the unfiltered page so blocked authors never end pagination early.
     nextCursor: visible.length > page.length && page.length ? sequenceCursor(page[page.length - 1].data().sequence, page[page.length - 1].id) : null,
     attachments: decision.attachments ? "enabled" : "disabled",
     canPost: decision.post,
+    canBlock: blockFilterApplies(decision),
   };
 });
 
@@ -690,22 +749,28 @@ export const moderateConversationMessage = command("moderateConversationMessage"
   const message = await tx.get(messageRef);
   if (!message.exists) throw new HttpsError("not-found", "Message not found.");
   if (message.data()?.tombstoned === true) return { id: payload.messageId, tombstoned: true as const };
+  tombstoneConversationMessage(tx, payload.orgId, decision.conversationId, row, message, uid, payload.reason);
+  return { id: payload.messageId, tombstoned: true as const };
+});
+
+/** Writes a moderator tombstone. Callers read the conversation and message first and check authority. */
+export function tombstoneConversationMessage(tx: Transaction, orgId: string, conversationId: string, conversation: Data | undefined, message: DocumentSnapshot, uid: string, reason: string) {
+  const ref = getFirestore().doc(`organizations/${orgId}/conversations/${conversationId}`);
   const previousRevision = message.data()?.revision ?? 0;
   const nextRevision = previousRevision + 1;
-  const pinned = (Array.isArray(row?.pinnedMessageIds) ? row.pinnedMessageIds : []).filter((id: string) => id !== payload.messageId);
-  tx.update(messageRef, {
+  const pinned = (Array.isArray(conversation?.pinnedMessageIds) ? conversation.pinnedMessageIds : []).filter((id: string) => id !== message.id);
+  tx.update(message.ref, {
     body: FieldValue.delete(),
     tombstoned: true,
-    moderationReason: payload.reason,
+    moderationReason: reason,
     moderatedBy: uid,
     moderatedAt: Timestamp.now(),
     revision: nextRevision,
   });
-  tx.delete(searchReference(payload.orgId, payload.messageId));
-  writeAudit(tx, messageRef, payload.orgId, decision.conversationId, payload.messageId, uid, previousRevision, nextRevision, "tombstone");
-  tx.set(ref, { pinnedMessageIds: pinned, revision: (row?.revision ?? 0) + 1, updatedAt: Timestamp.now() }, { merge: true });
-  return { id: payload.messageId, tombstoned: true as const };
-});
+  tx.delete(searchReference(orgId, message.id));
+  writeAudit(tx, message.ref, orgId, conversationId, message.id, uid, previousRevision, nextRevision, "tombstone");
+  tx.set(ref, { pinnedMessageIds: pinned, revision: (conversation?.revision ?? 0) + 1, updatedAt: Timestamp.now() }, { merge: true });
+}
 
 export const editConversationMessage = command("editConversationMessage", (data) => {
   keys(data, ["requestId", "orgId", "scopeType", "scopeId", "messageId", "text", "expectedRevision"]);
@@ -958,6 +1023,8 @@ export const searchConversationMessages = onCall(emulatorDemo() ? {} : { secrets
   }
   decision = await liveRead(uid, scope.orgId, scope.scopeType, scope.scopeId);
   matches = matches.filter((match) => conversationMessageVisible(decision, match.message));
+  const hidden = await hiddenAuthors(databaseReader(), scope.orgId, uid, decision, matches.map((match) => match.message.authorUid));
+  matches = matches.filter((match) => !hidden.has(match.message.authorUid));
   const conversation = (await db.doc(`organizations/${scope.orgId}/conversations/${decision.conversationId}`).get()).data();
   const pinned = new Set<string>(Array.isArray(conversation?.pinnedMessageIds) ? conversation.pinnedMessageIds : []);
   const messageRefs = matches.map((match) => db.doc(`organizations/${scope.orgId}/conversations/${decision.conversationId}/messages/${match.messageId}`));

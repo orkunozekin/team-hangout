@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { createAttachmentUpload, finalizeAttachment } from '../firebase/attachments';
-import { editConversationMessage, listConversationMessages, postConversationMessage, reactToConversationMessage, searchConversationMessages } from '../firebase/conversations';
+import { blockConversationMember, editConversationMessage, reportConversationMessage, listConversationMessages, postConversationMessage, reactToConversationMessage, searchConversationMessages } from '../firebase/conversations';
 import { pickConversationAttachment, uploadConversationFile } from '../lib/attachmentTransport';
-import { CONVERSATION_REACTIONS, type ConversationMessage, type ConversationPage, type ConversationScopeType, type ConversationSearchPage } from '../../shared/conversations';
+import { CONVERSATION_REACTIONS, type ConversationMessage, type ConversationPage, type ConversationReportReason, type ConversationScopeType, type ConversationSearchPage } from '../../shared/conversations';
+import { MessageSafety } from '../components/MessageSafety';
 import { EmptyState, PrimaryButton, Screen, SecondaryButton, Subtitle, Title } from '../components/ui';
 import { colors, radius, spacing, type } from '../theme/theme';
 
@@ -25,15 +26,20 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
   const [uploading, setUploading] = useState(false);
   const searchToken = useRef(0);
   const uploadGeneration = useRef(0);
+  // Each refresh starts a new generation so an older-page response read before a block cannot re-add hidden messages.
+  const pageGeneration = useRef(0);
   async function refresh(initial = false) {
+    const generation = ++pageGeneration.current;
     if (initial) { setLoading(true); setPage(null); setItems([]); setDenied(false); }
     setError(null);
     try {
       const next = await listConversationMessages({ orgId, scopeType, scopeId });
+      if (generation !== pageGeneration.current) return;
       setPage(next);
       setItems(next.items);
       setDenied(false);
     } catch {
+      if (generation !== pageGeneration.current) return;
       searchToken.current += 1;
       setPage(null);
       setItems([]);
@@ -45,13 +51,16 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
   }
   async function older() {
     if (!page?.nextCursor || loadingOlder) return;
+    const generation = pageGeneration.current;
     setLoadingOlder(true);
     setError(null);
     try {
       const next = await listConversationMessages({ orgId, scopeType, scopeId, cursor: page.nextCursor });
+      if (generation !== pageGeneration.current) return;
       setItems(current => [...current, ...next.items.filter(item => !current.some(row => row.id === item.id))]);
       setPage(next);
     } catch {
+      if (generation !== pageGeneration.current) return;
       setError('Older messages could not be loaded. Try again.');
     } finally { setLoadingOlder(false); }
   }
@@ -82,6 +91,21 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
     } catch {
       setError('That reaction was not saved.');
     }
+  }
+  async function report(item: ConversationMessage, reason: ConversationReportReason, note: string) {
+    await reportConversationMessage({ orgId, scopeType, scopeId, messageId: item.id, reason, ...(note ? { note } : {}) });
+  }
+  async function block(item: ConversationMessage) {
+    try {
+      await blockConversationMember({ orgId, scopeType, scopeId, messageId: item.id });
+    } catch (caught) {
+      const code = (caught as { details?: { domainCode?: string } }).details?.domainCode;
+      throw new Error(code === 'BLOCK_NOT_ALLOWED' ? 'Staff and coaches cannot be blocked. Report the message instead.' : 'This member was not blocked.');
+    }
+    searchToken.current += 1;
+    setSearch(null);
+    setSearching(false);
+    await refresh();
   }
   async function find(cursor?: string) {
     if (!query.trim()) return;
@@ -121,6 +145,10 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
       setTransport(caught instanceof Error && caught.message ? caught.message : 'This file was not uploaded.');
     } finally { if (generation === uploadGeneration.current) setUploading(false); }
   }
+  // Search hits can sit outside the loaded pages, so they carry the same report and block controls.
+  const safety = (item: ConversationMessage) => !item.mine && !item.tombstoned
+    ? <MessageSafety canBlock={page?.canBlock === true && item.authorUid != null} onReport={(reason, note) => report(item, reason, note)} onBlock={() => block(item)} />
+    : null;
   const youthClosed = page?.mode === 'youth' && page.youthPosting === 'closed';
   const title = scopeType === 'event' ? 'Event conversation' : scopeType === 'team' ? 'Team conversation' : scopeType === 'division' ? 'Division announcements' : 'Organization announcements';
   return <Screen><ScrollView contentContainerStyle={styles.list}>
@@ -140,6 +168,7 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
           return <Pressable key={choice.code} accessibilityRole="button" accessibilityLabel={`React with ${choice.emoji}`} accessibilityState={{ selected: reaction?.mine === true }} onPress={() => void react(item, choice.emoji)}><Text style={styles.pin}>{choice.emoji} {reaction?.count ?? 0}</Text></Pressable>;
         })}</View>}
         {item.mine && !item.tombstoned ? <SecondaryButton label="Edit message" onPress={() => { setEditing(item); setDraft(item.body ?? ''); }} /> : null}
+        {safety(item)}
       </View>)}
       {page?.nextCursor ? <SecondaryButton label={loadingOlder ? 'Loading older messages' : 'Load older messages'} disabled={loadingOlder} onPress={() => void older()} /> : null}
       {page?.attachments === 'enabled' && page.canPost ? <SecondaryButton label={uploading ? 'Uploading file' : 'Choose a JPEG, PNG, or PDF'} disabled={uploading} onPress={() => void chooseFile()} /> : null}
@@ -152,7 +181,7 @@ export default function ConversationScreen({ orgId, scopeType, scopeId }: { orgI
       <SecondaryButton label={searching ? 'Searching messages' : 'Search messages'} disabled={searching} onPress={() => void find()} />
       {search?.partial ? <Text style={styles.banner}>More matches may remain. Continue the search.</Text> : null}
       {search && !search.items.length ? <EmptyState message="No matching messages." /> : null}
-      {search?.items.map(item => <View key={item.id} style={styles.card}>{item.authorLabel ? <Text style={styles.author}>{item.authorLabel}</Text> : null}<Text style={styles.body}>{item.body}</Text></View>)}
+      {search?.items.map(item => <View key={item.id} style={styles.card}>{item.authorLabel ? <Text style={styles.author}>{item.authorLabel}</Text> : null}<Text style={styles.body}>{item.body}</Text>{safety(item)}</View>)}
       {search?.nextCursor ? <SecondaryButton label="Continue search" onPress={() => void find(search.nextCursor ?? undefined)} /> : null}
     </View>}
   </ScrollView></Screen>;

@@ -67,6 +67,7 @@ import AdminScreen from './src/screens/AdminScreen';
 import NotificationsScreen from './src/screens/NotificationsScreen';
 import ConversationScreen from './src/screens/ConversationScreen';
 import ConversationsScreen from './src/screens/ConversationsScreen';
+import ConversationSafetyScreen from './src/screens/ConversationSafetyScreen';
 import TeamsScreen from './src/screens/TeamsScreen';
 import CalendarSubscriptionsScreen from './src/screens/CalendarSubscriptionsScreen';
 import { Screen } from './src/components/ui';
@@ -122,6 +123,7 @@ export type OnboardingStackParamList = {
   Inbox: undefined;
   Conversations: undefined;
   Conversation: ConversationRoute;
+  ConversationSafety: { orgId: string; organizationName?: string };
   CreateTeam: undefined;
   JoinTeam: { code?: string } | undefined;
   AdminHome: undefined;
@@ -132,6 +134,7 @@ export type RootStackParamList = {
   EventDetail: { eventId: string };
   CreateEditEvent: { eventId?: string };
   Conversation: ConversationRoute;
+  ConversationSafety: { orgId: string; organizationName?: string };
   TeamDetail: { teamId: string; teamName: string; membership: TeamMember };
 };
 
@@ -199,10 +202,13 @@ function OnboardingNavigator({
         {() => <NotificationsScreen userId={user.uid} pushProjectId={pushProjectId} notice={notice} />}
       </OnboardingStack.Screen>
       <OnboardingStack.Screen name="Conversations" options={{ headerShown: true, title: 'Conversations' }}>
-        {({ navigation }) => <ConversationsScreen onOpen={(target) => navigation.navigate('Conversation', target)} />}
+        {({ navigation }) => <ConversationsScreen onOpen={(target) => navigation.navigate('Conversation', target)} onSafety={(target) => navigation.navigate('ConversationSafety', target)} />}
       </OnboardingStack.Screen>
       <OnboardingStack.Screen name="Conversation" options={{ headerShown: true, title: 'Conversation' }}>
         {({ route }) => <ConversationScreen orgId={route.params.orgId} scopeType={route.params.scopeType} scopeId={route.params.scopeId} />}
+      </OnboardingStack.Screen>
+      <OnboardingStack.Screen name="ConversationSafety" options={{ headerShown: true, title: 'Safety' }}>
+        {({ route }) => <ConversationSafetyScreen orgId={route.params.orgId} organizationName={route.params.organizationName} />}
       </OnboardingStack.Screen>
       <OnboardingStack.Screen name="CreateTeam" options={{ headerShown: true, title: 'Teams', headerBackTitle: 'Household' }}>
         {({ navigation }) => (
@@ -340,7 +346,7 @@ export function MainTabs({
         )}
       </Tab.Screen>
       <Tab.Screen name="Conversations">
-        {({ navigation }) => <ConversationsScreen activeTeam={team} onOpen={(target) => navigation.navigate('Conversation', target)} />}
+        {({ navigation }) => <ConversationsScreen activeTeam={team} onOpen={(target) => navigation.navigate('Conversation', target)} onSafety={(target) => navigation.getParent()?.navigate('ConversationSafety', target)} />}
       </Tab.Screen>
       <Tab.Screen name="CalendarSubscriptions" options={{ title: 'Calendar subscriptions' }}>
         {({ navigation }) => <CalendarSubscriptionsTab userId={user.uid} onBack={() => navigation.navigate('Household')} />}
@@ -427,6 +433,9 @@ function AppNavigator({
       </RootStack.Screen>
       <RootStack.Screen name="Conversation" options={{ title: 'Conversation' }}>
         {({ route }) => <ConversationScreen orgId={route.params.orgId} scopeType={route.params.scopeType} scopeId={route.params.scopeId} />}
+      </RootStack.Screen>
+      <RootStack.Screen name="ConversationSafety" options={{ title: 'Safety' }}>
+        {({ route }) => <ConversationSafetyScreen orgId={route.params.orgId} organizationName={route.params.organizationName} />}
       </RootStack.Screen>
       <RootStack.Screen
         name="CreateEditEvent"
