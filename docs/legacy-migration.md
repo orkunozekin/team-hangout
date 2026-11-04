@@ -33,7 +33,7 @@ node scripts/migrations/legacy-live.mjs --project team-hangout-staging --apply -
 node scripts/migrations/legacy-live.mjs --project team-hangout-staging --reconcile --plan "$PRIVATE_DIR/plan.json" --checksum "$SHA"
 ```
 
-The first apply simulates an interruption, the second resumes to completion with automatic reconciliation, the third is the idempotent replay.
+The first apply simulates an interruption, the second resumes to completion with automatic reconciliation, the third is the idempotent replay. These commands passed on staging on 2026-11-03 with synthetic data; see `docs/evidence/staging-ops-drills-2026-11-03.md`.
 
 ## Demo-only emulator rehearsal (historical)
 

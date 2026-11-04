@@ -347,6 +347,22 @@ test("suppression preference and verified contact changes prevent sends; correla
   assert.equal(await processOutbox(await queue()), "cancelled");
   await db.doc(`emailSuppressions/${contactKey(orgId, email(uid))}`).delete();
 });
+test("provider switch keeps a fully configured production sender off until a provider is configured", () => {
+  const keys = ["FUNCTIONS_EMULATOR", "ESSENTIAL_EMAIL_PROVIDER_CONFIGURED", "ESSENTIAL_EMAIL_ENABLED", "ESSENTIAL_EMAIL_POLICY_APPROVED", "ESSENTIAL_EMAIL_FROM", "ESSENTIAL_EMAIL_REPLY_TO", "ESSENTIAL_EMAIL_BROWSER_ORIGIN", "ESSENTIAL_EMAIL_PRIVACY_URL"];
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  try {
+    Object.assign(process.env, { FUNCTIONS_EMULATOR: "false", ESSENTIAL_EMAIL_ENABLED: "true", ESSENTIAL_EMAIL_POLICY_APPROVED: "true", ESSENTIAL_EMAIL_FROM: "team@example.test", ESSENTIAL_EMAIL_REPLY_TO: "help@example.test", ESSENTIAL_EMAIL_BROWSER_ORIGIN: "https://example.test", ESSENTIAL_EMAIL_PRIVACY_URL: "https://example.test/privacy" });
+    for (const value of [undefined, "false", "1"]) {
+      if (value === undefined) delete process.env.ESSENTIAL_EMAIL_PROVIDER_CONFIGURED;
+      else process.env.ESSENTIAL_EMAIL_PROVIDER_CONFIGURED = value;
+      assert.equal(senderConfig(), null);
+    }
+    process.env.ESSENTIAL_EMAIL_PROVIDER_CONFIGURED = "true";
+    assert.equal(senderConfig()?.from, "team@example.test");
+  } finally {
+    for (const key of keys) if (previous[key] == null) delete process.env[key]; else process.env[key] = previous[key];
+  }
+});
 test("production sender gate is closed by default and adapter sanitizes results without live requests", async () => {
   process.env.FUNCTIONS_EMULATOR = "false";
   assert.equal(senderConfig(), null);

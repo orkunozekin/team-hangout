@@ -51,7 +51,7 @@ Do this in the approved staging project only, with synthetic data. Do not put th
 
 The built-in scanner is not a malware appliance. Metadata that exists only inside a compressed PDF stream is not rewritten. `Crypt`, `LZWDecode`, and `RunLengthDecode` are rejected as active content. JPEG, JPX, CCITT, and JBIG2 streams stay opaque.
 
-Finalize and download each hold the object in memory, up to 10 MiB, inside a 512 MiB function with a 60-second timeout. Staging discovery sets concurrency 1 and max instances 2. A real 10 MiB JPEG and a real 10 MiB PDF on staging are still an owner drill. This repository does not upload a 10 MiB object in the emulator suite.
+Finalize and download each hold the object in memory, up to 10 MiB, inside a 512 MiB function with a 60-second timeout. Staging discovery sets concurrency 1 and max instances 2. A real 10 MiB JPEG and PDF passed on staging on 2026-11-03. This repository does not upload a 10 MiB object in the emulator suite.
 
 ## Indexes to confirm before writers
 
@@ -89,13 +89,14 @@ Every row needs a named owner, a date, and an attached result. Empty cells mean 
 | Staging indexes | Deploy `firestore.indexes.json` to the isolated staging project and record READY for the attachment and schedule-operation indexes above | Not done in this change |
 | Upload secret | Create `ATTACHMENT_UPLOAD_KEY` of at least 32 characters. Leave `features.attachments` off until the scanner drill passes | Not created here |
 | External scanner | Optional. `ATTACHMENT_SCANNER_URL` over `https` only, never stored in Firestore | Not configured |
-| 10 MiB drill | One JPEG and one PDF at the cap through finalize and download on staging | Not run. Functions buffer the object |
+| 10 MiB drill | One JPEG and one PDF at the cap through finalize and download on staging | Passed on staging 2026-11-03, see docs/evidence/staging-ops-drills-2026-11-03.md |
 | Retention | Apply the accepted tombstone policy and name an owner/date for the organization retention duration | Product owner accepted 12 months after season end on 2026-10-21; automated purge and hold workflow remain a production-expansion gate |
 | Youth history | Approve who can post and what a new guardian can read | Product owner accepted on 2026-10-21: new guardians see messages created at or after their current grant became active |
 | Push and email | Expo project, APNs, FCM, verified sender, bounce webhook, and physical iOS and Android receipt tests | Credentials and devices pending |
 | Native QA | Work the consolidated list in `docs/phase-2-ui-qa-backlog.md` | Open |
-| Monitoring | Alert on a publication or deletion job stuck over 10 minutes, three `SCAN_FAILED` rows in 15 minutes, and `CLEANUP_RETRY_REQUIRED` | Staging email channel and four log policies installed 2026-10-21; function deploy, config enablement, email verification, and synthetic alert exercise remain |
-| Ops drills 2026-10-31 | See docs/evidence/staging-ops-drills-2026-10-31.md | Monitors deployed and running; data-dependent drills blocked on staging credentials |
+| Monitoring | Alert on a publication or deletion job stuck over 10 minutes, three `SCAN_FAILED` rows in 15 minutes, and `CLEANUP_RETRY_REQUIRED` | Staging email channel and four log policies installed 2026-10-21; all four codes exercised on staging 2026-11-03 (docs/evidence/staging-ops-drills-2026-11-03.md); email verification remains |
+| Ops drills 2026-10-31 | See docs/evidence/staging-ops-drills-2026-10-31.md | Superseded by the 2026-11-03 drills |
+| Ops drills 2026-11-03 | See docs/evidence/staging-ops-drills-2026-11-03.md | Migration, monitors, attachments (10 MiB, scanner, expiry, purge), deletion resume and rollback passed; calendar feed blocked on `CALENDAR_FEED_BASE_URL` and `CALENDAR_UID_DOMAIN` |
 | Pilot partners | One synthetic organization, then consenting organizations, flags one at a time | Not approved |
 | Commercial | No pricing, ads, or paid messaging | Still pending |
 
