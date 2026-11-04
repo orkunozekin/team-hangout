@@ -51,7 +51,7 @@ Use the existing development client with a Metro server from this checkout, and 
 3. Start emulators (background triggers must stay enabled): `firebase emulators:start --config firebase.emulators.json --project demo-team-hangout --only auth,firestore,functions`.
 4. Seed in another terminal: `GCLOUD_PROJECT=demo-team-hangout FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 FUNCTIONS_EMULATOR_HOST=127.0.0.1:5001 yarn seed:phase3`. Change the three host variables if you run the emulators on other ports.
 5. Move `.env.local` aside so Metro cannot load real config: `mv .env.local .env.local.bak`.
-6. Start Metro: `EXPO_NO_DOTENV=1 EXPO_PUBLIC_USE_EMULATORS=1 EXPO_PUBLIC_FIREBASE_PROJECT_ID=demo-team-hangout EXPO_PUBLIC_FIREBASE_API_KEY=demo-key EXPO_PUBLIC_FIREBASE_APP_ID=1:000:ios:demo yarn start`, then open the iOS development client.
+6. Start Metro: `EXPO_NO_DOTENV=1 EXPO_PUBLIC_USE_EMULATORS=1 EXPO_PUBLIC_FIREBASE_PROJECT_ID=demo-team-hangout EXPO_PUBLIC_FIREBASE_API_KEY=demo-key EXPO_PUBLIC_FIREBASE_APP_ID=1:000:ios:demo yarn start`, then open the iOS development client. If the emulators use other ports, also pass the matching `EXPO_PUBLIC_AUTH_EMULATOR_PORT`, `EXPO_PUBLIC_FIRESTORE_EMULATOR_PORT` and `EXPO_PUBLIC_FUNCTIONS_EMULATOR_PORT` (defaults 9099, 8080 and 5001) so the app connects to the same emulators you seeded.
 7. When done, restore it: `mv .env.local.bak .env.local`.
 
 Logins all use password `SyntheticPassword123!`: `p3demo-coach@example.test` (Foxes coach), `p3demo-guardian@example.test` (guardian of Jamie Parent), `p3demo-manager@example.test` (org admin) and `p3demo-editor@example.test` (program staff practice editor).
